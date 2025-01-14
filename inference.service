@@ -1,0 +1,11 @@
+[Unit]
+Description=Inference Service
+After=network.target
+
+[Service]
+ExecStart= < absolute_path_to_bash_script >
+Restart=always
+User=ec2-user
+
+[Install]
+WantedBy=multi-user.target
