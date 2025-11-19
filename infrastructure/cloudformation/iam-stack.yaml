@@ -31,6 +31,10 @@ Parameters:
     Type: String
     Description: ARN of the CostTracking DynamoDB table
 
+  CheckpointMetadataTableArn:
+    Type: String
+    Description: ARN of the CheckpointMetadata DynamoDB table
+
 Resources:
   # IAM Role for ECS Fargate Tasks (Generation Workers)
   ECSTaskRole:
@@ -45,8 +49,6 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
       Policies:
         - PolicyName: BedrockAccess
           PolicyDocument:
@@ -83,9 +85,13 @@ Resources:
                   - dynamodb:UpdateItem
                   - dynamodb:GetItem
                   - dynamodb:Query
+                  - dynamodb:DeleteItem
                 Resource:
                   - !Ref JobsTableArn
+                  - !Ref QueueTableArn
+                  - !Ref TemplatesTableArn
                   - !Ref CostTrackingTableArn
+                  - !Ref CheckpointMetadataTableArn
         - PolicyName: CloudWatchLogsAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -99,6 +105,29 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'plot-palette-ecs-role-${EnvironmentName}'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: plot-palette
+
+  # IAM Role for ECS Task Execution (Infrastructure-level permissions)
+  ECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'plot-palette-ECSExecutionRole-${EnvironmentName}'
+      Description: IAM role for ECS task execution (infrastructure)
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub 'plot-palette-ecs-execution-role-${EnvironmentName}'
         - Key: Environment
           Value: !Ref EnvironmentName
         - Key: Project
@@ -140,6 +169,7 @@ Resources:
                   - !Ref QueueTableArn
                   - !Ref TemplatesTableArn
                   - !Ref CostTrackingTableArn
+                  - !Ref CheckpointMetadataTableArn
                   - !Sub '${JobsTableArn}/index/*'
                   - !Sub '${TemplatesTableArn}/index/*'
         - PolicyName: CognitoReadAccess
@@ -172,7 +202,9 @@ Resources:
                 Resource: '*'
               - Effect: Allow
                 Action: iam:PassRole
-                Resource: !GetAtt ECSTaskRole.Arn
+                Resource:
+                  - !GetAtt ECSTaskRole.Arn
+                  - !GetAtt ECSExecutionRole.Arn
       Tags:
         - Key: Name
           Value: !Sub 'plot-palette-lambda-role-${EnvironmentName}'
@@ -238,6 +270,18 @@ Outputs:
     Value: !Ref ECSTaskRole
     Export:
       Name: !Sub '${AWS::StackName}-ECSTaskRoleName'
+
+  ECSExecutionRoleArn:
+    Description: ARN of the ECS Execution Role
+    Value: !GetAtt ECSExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSExecutionRoleArn'
+
+  ECSExecutionRoleName:
+    Description: Name of the ECS Execution Role
+    Value: !Ref ECSExecutionRole
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSExecutionRoleName'
 
   LambdaExecutionRoleArn:
     Description: ARN of the Lambda Execution Role
