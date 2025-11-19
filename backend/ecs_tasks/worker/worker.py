@@ -319,27 +319,132 @@ class Worker:
         return len(text) // 4
 
     def load_checkpoint(self, job_id):
-        """Load checkpoint - stub for Task 5."""
-        logger.info(f"load_checkpoint called for {job_id} (stub)")
-        return {
-            'job_id': job_id,
-            'records_generated': 0,
-            'current_batch': 1,
-            'tokens_used': 0,
-            'cost_accumulated': 0.0,
-            'last_updated': datetime.utcnow().isoformat(),
-            '_version': 0
-        }
+        """Load checkpoint from S3 with version from DynamoDB."""
+        bucket = os.environ.get('BUCKET_NAME', '')
+        key = f"jobs/{job_id}/checkpoint.json"
+
+        try:
+            # Load checkpoint blob from S3
+            response = s3_client.get_object(Bucket=bucket, Key=key)
+            checkpoint_data = json.loads(response['Body'].read())
+
+            # Load version from DynamoDB
+            metadata_response = checkpoint_metadata_table.get_item(
+                Key={'job_id': job_id}
+            )
+            if 'Item' in metadata_response:
+                checkpoint_data['_version'] = metadata_response['Item'].get('version', 0)
+            else:
+                checkpoint_data['_version'] = 0
+
+            logger.info(f"Loaded checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {checkpoint_data['_version']})")
+            return checkpoint_data
+
+        except s3_client.exceptions.NoSuchKey:
+            logger.info(f"No checkpoint found for job {job_id}, starting fresh")
+            return {
+                'job_id': job_id,
+                'records_generated': 0,
+                'current_batch': 1,
+                'tokens_used': 0,
+                'cost_accumulated': 0.0,
+                'last_updated': datetime.utcnow().isoformat(),
+                '_version': 0
+            }
+        except Exception as e:
+            logger.error(f"Error loading checkpoint: {str(e)}", exc_info=True)
+            # Return empty checkpoint on error
+            return {
+                'job_id': job_id,
+                'records_generated': 0,
+                'current_batch': 1,
+                'tokens_used': 0,
+                'cost_accumulated': 0.0,
+                'last_updated': datetime.utcnow().isoformat(),
+                '_version': 0
+            }
 
     def save_checkpoint(self, job_id, checkpoint_data):
-        """Save checkpoint - stub for Task 5."""
-        logger.info(f"save_checkpoint called for {job_id} (stub)")
-        pass
+        """Save checkpoint using DynamoDB for concurrency control and S3 for blob storage."""
+        bucket = os.environ.get('BUCKET_NAME', '')
+        s3_key = f"jobs/{job_id}/checkpoint.json"
+
+        checkpoint_data['last_updated'] = datetime.utcnow().isoformat()
+
+        # Get current version from checkpoint_data (or 0 for first write)
+        current_version = checkpoint_data.pop('_version', 0)
+        new_version = current_version + 1
+
+        checkpoint_json = json.dumps(checkpoint_data, indent=2)
+
+        # First, try to claim write permission via DynamoDB conditional update
+        try:
+            checkpoint_metadata_table.update_item(
+                Key={'job_id': job_id},
+                UpdateExpression='SET #version = :new_version, records_generated = :records, last_updated = :now',
+                ConditionExpression='attribute_not_exists(#version) OR #version = :current_version',
+                ExpressionAttributeNames={'#version': 'version'},
+                ExpressionAttributeValues={
+                    ':new_version': new_version,
+                    ':current_version': current_version,
+                    ':records': checkpoint_data['records_generated'],
+                    ':now': datetime.utcnow().isoformat()
+                }
+            )
+
+            # Successfully claimed write permission - now write to S3
+            s3_client.put_object(
+                Bucket=bucket,
+                Key=s3_key,
+                Body=checkpoint_json.encode('utf-8'),
+                ContentType='application/json'
+            )
+
+            # Store the new version for next write
+            checkpoint_data['_version'] = new_version
+
+            logger.info(f"Saved checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {new_version})")
+
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                logger.warning(f"Checkpoint version conflict for job {job_id}, reloading and merging")
+
+                # Another task updated checkpoint - reload and merge
+                current_checkpoint = self.load_checkpoint(job_id)
+
+                # Merge strategy: take maximum records_generated
+                if checkpoint_data['records_generated'] > current_checkpoint['records_generated']:
+                    # Retry save with new version
+                    checkpoint_data['_version'] = current_checkpoint['_version']
+                    self.save_checkpoint(job_id, checkpoint_data)
+                else:
+                    logger.info("Current checkpoint is already ahead, skipping save")
+            else:
+                raise
+
+        except Exception as e:
+            logger.error(f"Error saving checkpoint: {str(e)}", exc_info=True)
+            raise
 
     def save_batch(self, job_id, batch_number, records):
-        """Save batch - stub for Task 5."""
-        logger.info(f"save_batch called for {job_id} batch {batch_number} with {len(records)} records (stub)")
-        pass
+        """Save batch of generated records to S3 as JSONL."""
+        if not records:
+            return
+
+        bucket = os.environ.get('BUCKET_NAME', '')
+        key = f"jobs/{job_id}/outputs/batch-{batch_number:04d}.jsonl"
+
+        # Write as JSONL (one JSON object per line)
+        jsonl_content = '\n'.join([json.dumps(record) for record in records])
+
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=jsonl_content.encode('utf-8'),
+            ContentType='application/x-ndjson'
+        )
+
+        logger.info(f"Saved batch {batch_number} for job {job_id}: {len(records)} records")
 
     def calculate_current_cost(self, job_id):
         """Calculate current cost - stub for Task 6."""
