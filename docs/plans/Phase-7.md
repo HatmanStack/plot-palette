@@ -303,13 +303,13 @@ Create master CloudFormation template that orchestrates all nested stacks in cor
        --exclude "__pycache__/*" \
        --region $REGION
 
-   # Validate templates
+   # Validate templates (use local files to avoid S3 bucket policy issues)
    echo "Validating templates..."
    for template in infrastructure/cloudformation/*.yaml; do
        if [ "$(basename $template)" != "master-stack.yaml" ]; then
            echo "  Validating $(basename $template)..."
            aws cloudformation validate-template \
-               --template-url https://$BUCKET_NAME.s3.amazonaws.com/$(basename $template) \
+               --template-body "file://$template" \
                --region $REGION > /dev/null
        fi
    done
@@ -406,60 +406,82 @@ Create environment-specific parameter files and validation scripts to ensure cor
 
 ### Implementation Steps
 
-1. **Create production.json:**
+1. **Create production.json (CloudFormation parameter array format):**
    ```json
-   {
-     "Parameters": {
-       "EnvironmentName": "production",
-       "AdminEmail": "admin@plotpalette.com",
-       "InitialBudgetLimit": 100,
-       "LogRetentionDays": 30,
-       "TemplatesBucketName": ""
+   [
+     {
+       "ParameterKey": "EnvironmentName",
+       "ParameterValue": "production"
      },
-     "Tags": {
-       "Environment": "production",
-       "Project": "plot-palette",
-       "ManagedBy": "cloudformation",
-       "CostCenter": "engineering"
+     {
+       "ParameterKey": "AdminEmail",
+       "ParameterValue": "admin@plotpalette.com"
+     },
+     {
+       "ParameterKey": "InitialBudgetLimit",
+       "ParameterValue": "100"
+     },
+     {
+       "ParameterKey": "LogRetentionDays",
+       "ParameterValue": "30"
+     },
+     {
+       "ParameterKey": "TemplatesBucketName",
+       "ParameterValue": ""
      }
-   }
+   ]
    ```
 
 2. **Create staging.json:**
    ```json
-   {
-     "Parameters": {
-       "EnvironmentName": "staging",
-       "AdminEmail": "staging-admin@plotpalette.com",
-       "InitialBudgetLimit": 50,
-       "LogRetentionDays": 7,
-       "TemplatesBucketName": ""
+   [
+     {
+       "ParameterKey": "EnvironmentName",
+       "ParameterValue": "staging"
      },
-     "Tags": {
-       "Environment": "staging",
-       "Project": "plot-palette",
-       "ManagedBy": "cloudformation"
+     {
+       "ParameterKey": "AdminEmail",
+       "ParameterValue": "staging-admin@plotpalette.com"
+     },
+     {
+       "ParameterKey": "InitialBudgetLimit",
+       "ParameterValue": "50"
+     },
+     {
+       "ParameterKey": "LogRetentionDays",
+       "ParameterValue": "7"
+     },
+     {
+       "ParameterKey": "TemplatesBucketName",
+       "ParameterValue": ""
      }
-   }
+   ]
    ```
 
 3. **Create development.json:**
    ```json
-   {
-     "Parameters": {
-       "EnvironmentName": "development",
-       "AdminEmail": "dev@plotpalette.com",
-       "InitialBudgetLimit": 10,
-       "LogRetentionDays": 1,
-       "TemplatesBucketName": ""
+   [
+     {
+       "ParameterKey": "EnvironmentName",
+       "ParameterValue": "development"
      },
-     "Tags": {
-       "Environment": "development",
-       "Project": "plot-palette",
-       "ManagedBy": "cloudformation",
-       "AutoShutdown": "true"
+     {
+       "ParameterKey": "AdminEmail",
+       "ParameterValue": "dev@plotpalette.com"
+     },
+     {
+       "ParameterKey": "InitialBudgetLimit",
+       "ParameterValue": "10"
+     },
+     {
+       "ParameterKey": "LogRetentionDays",
+       "ParameterValue": "1"
+     },
+     {
+       "ParameterKey": "TemplatesBucketName",
+       "ParameterValue": ""
      }
-   }
+   ]
    ```
 
 4. **Create validate-parameters.sh:**
@@ -483,10 +505,10 @@ Create environment-specific parameter files and validation scripts to ensure cor
        exit 1
    fi
 
-   # Extract parameters
-   ADMIN_EMAIL=$(jq -r '.Parameters.AdminEmail' "$PARAM_FILE")
-   BUDGET_LIMIT=$(jq -r '.Parameters.InitialBudgetLimit' "$PARAM_FILE")
-   LOG_RETENTION=$(jq -r '.Parameters.LogRetentionDays' "$PARAM_FILE")
+   # Extract parameters (from array format)
+   ADMIN_EMAIL=$(jq -r '.[] | select(.ParameterKey=="AdminEmail") | .ParameterValue' "$PARAM_FILE")
+   BUDGET_LIMIT=$(jq -r '.[] | select(.ParameterKey=="InitialBudgetLimit") | .ParameterValue' "$PARAM_FILE")
+   LOG_RETENTION=$(jq -r '.[] | select(.ParameterKey=="LogRetentionDays") | .ParameterValue' "$PARAM_FILE")
 
    # Validate email format
    if ! echo "$ADMIN_EMAIL" | grep -E '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$' > /dev/null; then
@@ -701,6 +723,7 @@ Implement safe stack update process using CloudFormation change sets with backup
        --change-set-name $CHANGE_SET_NAME \
        --template-body file://infrastructure/cloudformation/master-stack.yaml \
        --parameters file://infrastructure/parameters/${ENVIRONMENT}.json \
+       --tags Key=Environment,Value=${ENVIRONMENT} Key=Project,Value=plot-palette Key=ManagedBy,Value=cloudformation \
        --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
        --region $REGION
 
