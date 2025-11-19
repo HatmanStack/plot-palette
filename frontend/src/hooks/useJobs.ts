@@ -1,0 +1,10 @@
+import { useQuery } from '@tanstack/react-query'
+import { fetchJobs } from '../services/api'
+
+export function useJobs() {
+  return useQuery({
+    queryKey: ['jobs'],
+    queryFn: fetchJobs,
+    refetchInterval: 10000, // Refetch every 10 seconds for live updates
+  })
+}
