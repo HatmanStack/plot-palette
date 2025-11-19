@@ -12,7 +12,11 @@ import json
 import os
 import time
 import random
+import io
 import boto3
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from datetime import datetime, timedelta
 from botocore.exceptions import ClientError
 from template_engine import TemplateEngine
@@ -558,9 +562,178 @@ class Worker:
             logger.error(f"Error updating job progress: {str(e)}", exc_info=True)
 
     def export_data(self, job_id, config):
-        """Export data - stub for Task 7."""
-        logger.info(f"export_data called for {job_id} (stub)")
-        pass
+        """Export batch files to final formats (JSONL, Parquet, CSV)."""
+        logger.info(f"Exporting data for job {job_id}")
+
+        output_format = config.get('output_format', 'JSONL')
+        partition_strategy = config.get('partition_strategy', 'none')
+
+        # Load all batch files
+        records = self.load_all_batches(job_id)
+
+        if not records:
+            logger.warning(f"No records to export for job {job_id}")
+            return
+
+        bucket = os.environ.get('BUCKET_NAME', '')
+
+        # Normalize output_format to set for consistent checking
+        if isinstance(output_format, str):
+            formats = {output_format}
+        elif isinstance(output_format, list):
+            formats = set(output_format)
+        else:
+            formats = {'JSONL'}
+
+        # Export based on format
+        if 'JSONL' in formats:
+            self.export_jsonl(job_id, records, partition_strategy, bucket)
+
+        if 'PARQUET' in formats:
+            self.export_parquet(job_id, records, partition_strategy, bucket)
+
+        if 'CSV' in formats:
+            self.export_csv(job_id, records, partition_strategy, bucket)
+
+        logger.info(f"Export complete for job {job_id}: {len(records)} records in {len(formats)} format(s)")
+
+    def load_all_batches(self, job_id):
+        """Load all batch files from S3."""
+        bucket = os.environ.get('BUCKET_NAME', '')
+        prefix = f"jobs/{job_id}/outputs/"
+
+        records = []
+
+        try:
+            paginator = s3_client.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                if 'Contents' not in page:
+                    continue
+
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    if not key.endswith('.jsonl'):
+                        continue
+
+                    # Download batch file
+                    response = s3_client.get_object(Bucket=bucket, Key=key)
+                    content = response['Body'].read().decode('utf-8')
+
+                    # Parse JSONL
+                    for line in content.strip().split('\n'):
+                        if line:
+                            records.append(json.loads(line))
+
+            logger.info(f"Loaded {len(records)} records from batches")
+            return records
+
+        except Exception as e:
+            logger.error(f"Error loading batches: {str(e)}", exc_info=True)
+            return []
+
+    def export_jsonl(self, job_id, records, partition_strategy, bucket):
+        """Export as JSONL format."""
+        if partition_strategy == 'none':
+            # Single file
+            key = f"jobs/{job_id}/exports/dataset.jsonl"
+            jsonl_content = '\n'.join([json.dumps(record) for record in records])
+
+            s3_client.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=jsonl_content.encode('utf-8'),
+                ContentType='application/x-ndjson'
+            )
+            logger.info(f"Exported JSONL: {key} ({len(records)} records)")
+
+        elif partition_strategy == 'timestamp':
+            # Partition by date
+            partitions = {}
+            for record in records:
+                timestamp = record['timestamp'][:10]  # YYYY-MM-DD
+                if timestamp not in partitions:
+                    partitions[timestamp] = []
+                partitions[timestamp].append(record)
+
+            for date, date_records in partitions.items():
+                key = f"jobs/{job_id}/exports/partitioned/date={date}/records.jsonl"
+                jsonl_content = '\n'.join([json.dumps(r) for r in date_records])
+                s3_client.put_object(
+                    Bucket=bucket,
+                    Key=key,
+                    Body=jsonl_content.encode('utf-8'),
+                    ContentType='application/x-ndjson'
+                )
+
+            logger.info(f"Exported {len(partitions)} date partitions (JSONL)")
+
+    def export_parquet(self, job_id, records, partition_strategy, bucket):
+        """Export as Parquet format."""
+        # Flatten nested JSON for Parquet
+        flattened_records = []
+        for record in records:
+            flat = {
+                'id': record['id'],
+                'job_id': record['job_id'],
+                'timestamp': record['timestamp'],
+                'seed_data_id': record.get('seed_data_id', 'unknown'),
+                'generation_result': json.dumps(record['generation_result'])  # Serialize nested JSON
+            }
+            flattened_records.append(flat)
+
+        # Convert to pandas DataFrame
+        df = pd.DataFrame(flattened_records)
+
+        # Convert to PyArrow Table
+        table = pa.Table.from_pandas(df)
+
+        # Write Parquet
+        if partition_strategy == 'none':
+            key = f"jobs/{job_id}/exports/dataset.parquet"
+
+            # Write to buffer
+            buffer = io.BytesIO()
+            pq.write_table(table, buffer)
+
+            # Upload to S3
+            buffer.seek(0)
+            s3_client.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=buffer.read(),
+                ContentType='application/octet-stream'
+            )
+
+            logger.info(f"Exported Parquet: {key} ({len(records)} records)")
+
+    def export_csv(self, job_id, records, partition_strategy, bucket):
+        """Export as CSV format."""
+        # Flatten records
+        flattened_records = []
+        for record in records:
+            flat = {
+                'id': record['id'],
+                'job_id': record['job_id'],
+                'timestamp': record['timestamp'],
+                'seed_data_id': record.get('seed_data_id', 'unknown'),
+                'generation_result': json.dumps(record['generation_result'])
+            }
+            flattened_records.append(flat)
+
+        df = pd.DataFrame(flattened_records)
+
+        # Convert to CSV
+        csv_content = df.to_csv(index=False)
+
+        key = f"jobs/{job_id}/exports/dataset.csv"
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=csv_content.encode('utf-8'),
+            ContentType='text/csv'
+        )
+
+        logger.info(f"Exported CSV: {key} ({len(records)} records)")
 
     def mark_job_complete(self, job_id):
         """Mark job as COMPLETED."""
