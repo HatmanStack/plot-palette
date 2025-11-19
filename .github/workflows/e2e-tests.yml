@@ -1,0 +1,150 @@
+name: E2E Tests
+
+on:
+  schedule:
+    # Run E2E tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      environment:
+        description: 'Environment to test'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  e2e-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Get environment URL
+        id: get-url
+        run: |
+          ENV="${{ github.event.inputs.environment || 'staging' }}"
+          STACK_NAME="plot-palette-${ENV}"
+
+          # Get frontend URL from CloudFormation
+          FRONTEND_URL=$(aws cloudformation describe-stacks \
+            --stack-name ${STACK_NAME} \
+            --query 'Stacks[0].Outputs[?OutputKey==`FrontendUrl`].OutputValue' \
+            --output text)
+
+          echo "frontend-url=${FRONTEND_URL}" >> $GITHUB_OUTPUT
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run Playwright tests
+        env:
+          FRONTEND_URL: ${{ steps.get-url.outputs.frontend-url }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          npx playwright test \
+            --config=playwright.config.ts \
+            --reporter=html,json,junit
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload test videos
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-videos
+          path: test-results/
+          retention-days: 7
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: playwright-results.xml
+          check_name: E2E Test Results
+
+  visual-regression:
+    name: Visual Regression Tests
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    if: success()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+
+      - name: Run visual regression tests
+        env:
+          FRONTEND_URL: ${{ needs.e2e-tests.outputs.frontend-url }}
+        run: |
+          npx playwright test \
+            --config=playwright.config.ts \
+            --grep="@visual" \
+            --update-snapshots=false
+
+      - name: Upload visual diff
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: visual-diff
+          path: test-results/
+          retention-days: 7
+
+  notify-results:
+    name: Notify Test Results
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, visual-regression]
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.e2e-tests.result }}" == "success" ]; then
+            echo "✅ E2E tests passed"
+          else
+            echo "❌ E2E tests failed"
+          fi
+
+          if [ "${{ needs.visual-regression.result }}" == "success" ]; then
+            echo "✅ Visual regression tests passed"
+          elif [ "${{ needs.visual-regression.result }}" == "skipped" ]; then
+            echo "⏭️ Visual regression tests skipped"
+          else
+            echo "❌ Visual regression tests failed"
+          fi
