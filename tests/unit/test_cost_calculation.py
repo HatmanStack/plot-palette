@@ -7,20 +7,14 @@ Tests total job cost calculation, budget enforcement, and cost tracking.
 import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
-import sys
-import os
 
-# Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend/shared'))
-
-from constants import MODEL_PRICING, FARGATE_SPOT_PRICING, S3_PRICING
-from utils import (
+from backend.shared.constants import MODEL_PRICING, FARGATE_SPOT_PRICING, S3_PRICING, JobStatus
+from backend.shared.utils import (
     calculate_bedrock_cost,
     calculate_fargate_cost,
     calculate_s3_cost,
 )
-from models import CostBreakdown, JobConfig
-from constants import JobStatus
+from backend.shared.models import CostBreakdown, JobConfig
 
 
 class TestCostCalculation:

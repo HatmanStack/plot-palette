@@ -15,14 +15,10 @@ from unittest.mock import MagicMock, patch, Mock
 from datetime import datetime
 from moto import mock_dynamodb
 import boto3
-import sys
 
-# Add backend paths
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend/shared'))
-
-from models import JobConfig, CostBreakdown
-from constants import JobStatus
-from utils import calculate_bedrock_cost, calculate_fargate_cost, calculate_s3_cost
+from backend.shared.models import JobConfig, CostBreakdown
+from backend.shared.constants import JobStatus
+from backend.shared.utils import calculate_bedrock_cost, calculate_fargate_cost, calculate_s3_cost
 
 
 @pytest.fixture

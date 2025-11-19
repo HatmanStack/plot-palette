@@ -8,15 +8,9 @@ and Bedrock API call formatting.
 import pytest
 import json
 from unittest.mock import MagicMock, patch, Mock
-import sys
-import os
 
-# Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend/ecs_tasks/worker'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend/shared'))
-
-from template_engine import TemplateEngine
-from template_filters import (
+from backend.ecs_tasks.worker.template_engine import TemplateEngine
+from backend.shared.template_filters import (
     random_sentence,
     random_word,
     writing_style,
