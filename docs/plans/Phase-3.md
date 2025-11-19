@@ -1667,6 +1667,47 @@ Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
 ---
 
+## Review Feedback (Iteration 1)
+
+### Critical: API Gateway Integration Missing
+
+> **Consider:** Looking at `infrastructure/cloudformation/api-stack.yaml`, how many API Gateway routes are currently defined? Run `grep "RouteKey:" infrastructure/cloudformation/api-stack.yaml` to check.
+>
+> **Think about:** The Phase 3 plan requires 12 API endpoints (4 for jobs, 5 for templates, 2 for seed data, 1 for dashboard). Each task explicitly states "Update API Gateway stack: Add [route]". Have these routes been added to the CloudFormation template?
+>
+> **Reflect:** Run `grep -c "AWS::Lambda::Function" infrastructure/cloudformation/api-stack.yaml` - how many Lambda functions are defined? Compare this to the 16 Lambda function files created in `backend/lambdas/`. Are all Lambda functions wired up to API Gateway routes?
+>
+> **Consider:** In Task 1 at line 157, it says "Update API Gateway stack: Add POST /jobs route, Attach JWT authorizer, Create Lambda integration". Was this step completed in the CloudFormation template?
+>
+> **Think about:** Without API Gateway routes and Lambda integrations in CloudFormation, how will API requests reach your Lambda functions? The Lambda code exists, but is it accessible via HTTP?
+
+### Task Completion Verification
+
+> **Consider:** Each task (1-6) includes a section "Update API Gateway:" specifying which routes to add. Review the api-stack.yaml file - are these routes present?
+>
+> **Reflect:** The packaging scripts (`package-lambdas.sh`, `deploy-lambdas.sh`) upload Lambda code to S3. But does the CloudFormation template reference these S3-stored Lambda functions? Check for `S3Bucket` and `S3Key` properties in Lambda function definitions.
+>
+> **Think about:** Task 8 at line 1598 says "Update CloudFormation templates to reference S3-stored code". Was this completed for all 16 Lambda functions?
+
+### Testing Without Infrastructure
+
+> **Consider:** Run `PYTHONPATH=/root/plot-palette pytest tests/unit/ -v` to check if all unit tests pass. Are there any import errors or test failures?
+>
+> **Reflect:** The integration tests in `tests/integration/` require deployed infrastructure (API_ENDPOINT, USER_POOL_ID, CLIENT_ID environment variables). Can these tests run against the current CloudFormation deployment?
+>
+> **Think about:** Without API Gateway routes defined, will the integration tests be able to test the endpoints? What would happen if you tried to call `POST /jobs` right now?
+
+### CloudFormation Completeness
+
+> **Consider:** Compare the current `api-stack.yaml` (314 lines) to what's needed:
+> - For each Lambda function: Function resource, Integration resource, Route resource, Permission resource
+> - That's 4 resources × 16 Lambda functions = 64 resources
+> - Plus JWT authorizer configuration for protected routes
+>
+> **Reflect:** Looking at Tasks 1-6, each Lambda handler is implemented. But are the corresponding CloudFormation resources present to deploy and expose them?
+
+---
+
 ## Phase 3 Verification
 
 ### Success Criteria
