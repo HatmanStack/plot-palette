@@ -1,73 +1,117 @@
-# React + TypeScript + Vite
+# Plot Palette Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern React web application for managing synthetic data generation jobs using AWS Bedrock.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 🔐 **Authentication** - AWS Cognito integration with email verification
+- 📊 **Dashboard** - Real-time job monitoring with auto-refresh
+- ⚙️ **Job Management** - Multi-step wizard for creating generation jobs
+- 📝 **Template Editor** - YAML-based prompt template creation
+- 💰 **Cost Tracking** - Real-time budget monitoring and warnings
+- 📥 **Export Management** - Download generated datasets in multiple formats
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Framework:** React 19 + TypeScript
+- **Build Tool:** Vite 7
+- **Styling:** Tailwind CSS v4
+- **Routing:** React Router v7
+- **Data Fetching:** TanStack Query (React Query)
+- **HTTP Client:** Axios
+- **Authentication:** Amazon Cognito Identity JS
+- **Hosting:** AWS Amplify
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Prerequisites
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Node.js 20+
+- npm or yarn
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Setup
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# Install dependencies
+npm install
+
+# Create environment file
+cp .env.example .env.local
+
+# Update environment variables
+VITE_API_ENDPOINT=https://your-api.execute-api.us-east-1.amazonaws.com
+VITE_COGNITO_USER_POOL_ID=us-east-1_XXXXXXXXX
+VITE_COGNITO_CLIENT_ID=XXXXXXXXXXXXXXXXXX
+VITE_REGION=us-east-1
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Run Development Server
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+### Build for Production
+
+```bash
+npm run build
+```
+
+### Preview Production Build
+
+```bash
+npm run preview
+```
+
+## Deployment
+
+### AWS Amplify Deployment
+
+The application is configured for deployment to AWS Amplify using CloudFormation.
+
+#### Prerequisites
+
+- AWS CLI configured with appropriate credentials
+- API Gateway endpoint from backend deployment
+- Cognito User Pool ID and Client ID
+
+#### Deploy
+
+```bash
+# Set environment variables
+export API_ENDPOINT="https://your-api.execute-api.us-east-1.amazonaws.com"
+export USER_POOL_ID="us-east-1_XXXXXXXXX"
+export USER_POOL_CLIENT_ID="XXXXXXXXXXXXXXXXXX"
+
+# Deploy using CloudFormation
+cd ..
+./infrastructure/scripts/deploy-frontend.sh plot-palette-frontend us-east-1
+```
+
+## Project Structure
+
+```
+frontend/
+├── src/
+│   ├── components/       # Reusable UI components
+│   ├── routes/          # Page components
+│   ├── contexts/        # React contexts
+│   ├── services/        # API clients
+│   ├── hooks/           # Custom hooks
+│   ├── App.tsx          # Root component
+│   └── main.tsx         # Entry point
+├── public/              # Static assets
+├── amplify.yml          # Amplify build configuration
+└── package.json
+```
+
+## Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| VITE_API_ENDPOINT | API Gateway base URL | `https://abc.execute-api.us-east-1.amazonaws.com` |
+| VITE_COGNITO_USER_POOL_ID | Cognito User Pool ID | `us-east-1_XXXXXXXXX` |
+| VITE_COGNITO_CLIENT_ID | Cognito App Client ID | `XXXXXXXXXXXXXXXXXX` |
+| VITE_REGION | AWS Region | `us-east-1` |
