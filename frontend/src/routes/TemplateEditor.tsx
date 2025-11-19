@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import Editor from '@monaco-editor/react'
 
 const SAMPLE_TEMPLATE = `template:
   id: creative-writing-v1
@@ -134,13 +135,24 @@ export default function TemplateEditor() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Template YAML
                 </label>
-                <textarea
-                  value={templateYaml}
-                  onChange={(e) => setTemplateYaml(e.target.value)}
-                  rows={20}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                  spellCheck={false}
-                />
+                <div className="border border-gray-300 rounded-md overflow-hidden">
+                  <Editor
+                    height="500px"
+                    defaultLanguage="yaml"
+                    value={templateYaml}
+                    onChange={(value) => setTemplateYaml(value || '')}
+                    theme="vs-light"
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 13,
+                      lineNumbers: 'on',
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      tabSize: 2,
+                      wordWrap: 'on',
+                    }}
+                  />
+                </div>
                 <p className="text-sm text-gray-500 mt-1">
                   Write your template using YAML syntax with Jinja2 variables
                 </p>
