@@ -119,7 +119,22 @@ Users interact with a modern React web application to configure generation jobs,
    cd plot-palette
    ```
 
-2. **Deploy Infrastructure**
+2. **Install Backend Dependencies (Optional - for local development)**
+   ```bash
+   # Install Python dependencies for local testing
+   cd backend
+   pip install -r requirements.txt
+
+   # Verify installation
+   python3 -c "from backend.shared import JobConfig; print('✓ Dependencies installed')"
+
+   # Run unit tests
+   cd ..
+   pip install pytest pytest-cov
+   pytest tests/unit/test_shared.py -v
+   ```
+
+3. **Deploy Infrastructure**
    ```bash
    # Deploy all infrastructure stacks to AWS
    ./infrastructure/scripts/deploy.sh --region us-east-1 --environment production
@@ -132,7 +147,7 @@ Users interact with a modern React web application to configure generation jobs,
    - Configure IAM roles and policies
    - Generate `outputs.json` with all resource details
 
-3. **Access the Application**
+4. **Access the Application**
 
    After deployment completes, the Amplify frontend URL will be available in Phase 6. For Phase 1, infrastructure is deployed but application code will be added in subsequent phases.
 
