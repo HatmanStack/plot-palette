@@ -100,7 +100,7 @@ check_prerequisites() {
     fi
 
     # Check CloudFormation templates exist
-    local templates=("network-stack.yaml" "storage-stack.yaml" "database-stack.yaml" "iam-stack.yaml")
+    local templates=("network-stack.yaml" "storage-stack.yaml" "database-stack.yaml" "iam-stack.yaml" "auth-stack.yaml" "api-stack.yaml")
     for template in "${templates[@]}"; do
         if [[ ! -f "${CFN_DIR}/${template}" ]]; then
             log_error "Template not found: ${CFN_DIR}/${template}"
@@ -244,6 +244,41 @@ deploy_all_stacks() {
         "CostTrackingTableArn=${costtracking_table_arn}" \
         || exit 1
 
+    # Get IAM stack outputs for API stack
+    local lambda_execution_role_arn=$(get_stack_output "${iam_stack}" "LambdaExecutionRoleArn")
+    log "Retrieved Lambda execution role ARN"
+
+    # Deploy Auth Stack (Cognito User Pool)
+    local auth_stack="plot-palette-auth-${ENVIRONMENT}"
+    deploy_stack "${auth_stack}" "${CFN_DIR}/auth-stack.yaml" || exit 1
+
+    # Get auth stack outputs for API stack
+    local user_pool_id=$(get_stack_output "${auth_stack}" "UserPoolId")
+    local user_pool_client_id=$(get_stack_output "${auth_stack}" "UserPoolClientId")
+    log "Retrieved Cognito User Pool ID and Client ID"
+
+    # Deploy API Stack (HTTP API Gateway with Lambda functions)
+    local api_stack="plot-palette-api-${ENVIRONMENT}"
+    deploy_stack "${api_stack}" "${CFN_DIR}/api-stack.yaml" \
+        "UserPoolId=${user_pool_id}" \
+        "UserPoolClientId=${user_pool_client_id}" \
+        "LambdaExecutionRoleArn=${lambda_execution_role_arn}" \
+        || exit 1
+
+    # Get API endpoint for validation
+    local api_endpoint=$(get_stack_output "${api_stack}" "ApiEndpoint")
+    log "API Gateway endpoint: ${api_endpoint}"
+
+    # Test health endpoint
+    log "Testing health endpoint..."
+    if command -v curl &> /dev/null; then
+        if curl -s -f "${api_endpoint}/health" > /dev/null 2>&1; then
+            log_success "Health check endpoint is responding!"
+        else
+            log_warning "Health check endpoint not responding (may need a moment to initialize)"
+        fi
+    fi
+
     # Consolidate all outputs
     log "Consolidating stack outputs..."
     {
@@ -251,10 +286,13 @@ deploy_all_stacks() {
         echo "  \"Region\": \"${REGION}\","
         echo "  \"Environment\": \"${ENVIRONMENT}\","
         echo "  \"Timestamp\": \"$(date -Iseconds)\","
+        echo "  \"ApiEndpoint\": \"${api_endpoint}\","
+        echo "  \"UserPoolId\": \"${user_pool_id}\","
+        echo "  \"UserPoolClientId\": \"${user_pool_client_id}\","
         echo "  \"Stacks\": {"
 
         local first=true
-        for stack in "${network_stack}" "${storage_stack}" "${database_stack}" "${iam_stack}"; do
+        for stack in "${network_stack}" "${storage_stack}" "${database_stack}" "${iam_stack}" "${auth_stack}" "${api_stack}"; do
             if [[ "${first}" == false ]]; then
                 echo ","
             fi
@@ -273,18 +311,36 @@ deploy_all_stacks() {
     rm -f "${OUTPUTS_FILE}.tmp."*
 
     log_success "All stacks deployed successfully!"
+    log ""
+    log "=== Quick Start ==="
+    log "API Endpoint: ${api_endpoint}"
+    log "User Pool ID: ${user_pool_id}"
+    log "User Pool Client ID: ${user_pool_client_id}"
+    log ""
+    log "Next steps:"
+    log "  1. Create a test user:"
+    log "     aws cognito-idp sign-up --client-id ${user_pool_client_id} --username test@example.com --password TestPassword123!"
+    log "  2. Confirm the user:"
+    log "     aws cognito-idp admin-confirm-sign-up --user-pool-id ${user_pool_id} --username test@example.com"
+    log "  3. Get an auth token:"
+    log "     aws cognito-idp initiate-auth --client-id ${user_pool_client_id} --auth-flow USER_PASSWORD_AUTH --auth-parameters USERNAME=test@example.com,PASSWORD=TestPassword123!"
+    log ""
     log "Outputs saved to: ${OUTPUTS_FILE}"
 }
 
 delete_all_stacks() {
     log "Starting deletion of all stacks (environment: ${ENVIRONMENT})..."
 
-    # Delete in reverse order
+    # Delete in reverse order of deployment
+    local api_stack="plot-palette-api-${ENVIRONMENT}"
+    local auth_stack="plot-palette-auth-${ENVIRONMENT}"
     local iam_stack="plot-palette-iam-${ENVIRONMENT}"
     local database_stack="plot-palette-database-${ENVIRONMENT}"
     local storage_stack="plot-palette-storage-${ENVIRONMENT}"
     local network_stack="plot-palette-network-${ENVIRONMENT}"
 
+    delete_stack "${api_stack}"
+    delete_stack "${auth_stack}"
     delete_stack "${iam_stack}"
     delete_stack "${database_stack}"
     delete_stack "${storage_stack}"
