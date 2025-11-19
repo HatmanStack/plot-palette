@@ -6,6 +6,7 @@ import Login from './routes/Login'
 import Signup from './routes/Signup'
 import Dashboard from './routes/Dashboard'
 import Jobs from './routes/Jobs'
+import CreateJob from './routes/CreateJob'
 import JobDetail from './routes/JobDetail'
 import Templates from './routes/Templates'
 import TemplateEditor from './routes/TemplateEditor'
@@ -27,6 +28,7 @@ function App() {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/jobs" element={<Jobs />} />
+              <Route path="/jobs/new" element={<CreateJob />} />
               <Route path="/jobs/:jobId" element={<JobDetail />} />
               <Route path="/templates" element={<Templates />} />
               <Route path="/templates/new" element={<TemplateEditor />} />
