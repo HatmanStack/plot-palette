@@ -506,23 +506,137 @@ Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
 ---
 
-(Due to length, I'll create a more concise version of the remaining tasks for Phase 6, then complete Phases 7-9)
-
 ## Task 3: Dashboard - Job List
 
 ### Goal
 
 Create dashboard showing user's jobs with status, progress, and quick actions.
 
-**Key Components:**
-- Job list table/cards
-- Status badges (QUEUED, RUNNING, COMPLETED, etc.)
-- Progress bars
-- Cost summary
-- Filter by status
-- Create new job button
+### Files to Create
 
-**Estimated Tokens:** ~15,000
+- `src/routes/Dashboard.tsx` - Dashboard page
+- `src/components/JobCard.tsx` - Individual job card component
+- `src/components/StatusBadge.tsx` - Job status badge
+- `src/hooks/useJobs.ts` - Custom hook for fetching jobs
+- `src/services/api.ts` - API client functions
+
+### Prerequisites
+
+- Tasks 1-2 completed (routing and auth)
+- Phase 3 API endpoints deployed
+
+### Implementation Steps
+
+1. **Create API client** (`src/services/api.ts`):
+   ```typescript
+   import axios from 'axios'
+
+   const apiClient = axios.create({
+     baseURL: import.meta.env.VITE_API_ENDPOINT,
+   })
+
+   // Add auth token to all requests
+   apiClient.interceptors.request.use((config) => {
+     const token = localStorage.getItem('idToken')
+     if (token) {
+       config.headers.Authorization = `Bearer ${token}`
+     }
+     return config
+   })
+
+   export async function fetchJobs() {
+     const { data } = await apiClient.get('/jobs')
+     return data
+   }
+
+   export async function createJob(jobData: any) {
+     const { data } = await apiClient.post('/jobs', jobData)
+     return data
+   }
+
+   export async function deleteJob(jobId: string) {
+     await apiClient.delete(`/jobs/${jobId}`)
+   }
+   ```
+
+2. **Create useJobs hook** (`src/hooks/useJobs.ts`):
+   ```typescript
+   import { useQuery } from '@tanstack/react-query'
+   import { fetchJobs } from '../services/api'
+
+   export function useJobs() {
+     return useQuery({
+       queryKey: ['jobs'],
+       queryFn: fetchJobs,
+       refetchInterval: 10000, // Refetch every 10 seconds for live updates
+     })
+   }
+   ```
+
+3. **Create StatusBadge component** - Color-coded badges for job states:
+   - QUEUED: gray
+   - RUNNING: blue (animated pulse)
+   - COMPLETED: green
+   - FAILED: red
+   - CANCELLED: yellow
+   - BUDGET_EXCEEDED: orange
+
+4. **Create JobCard component** - Display:
+   - Job name and ID
+   - Status badge
+   - Progress bar (records_completed / total_records)
+   - Cost ($X.XX / $Y.YY budget)
+   - Created/updated timestamps
+   - Actions: View details, Cancel, Delete
+
+5. **Create Dashboard page** - Features:
+   - Grid/list view of job cards
+   - Filter dropdown (All, Running, Completed, Failed)
+   - Sort by (Created date, Status, Cost)
+   - "Create New Job" button
+   - Empty state when no jobs
+   - Loading skeleton
+
+### Verification Checklist
+
+- [ ] Dashboard fetches and displays user's jobs
+- [ ] Status badges show correct colors
+- [ ] Progress bars update in real-time
+- [ ] Cost tracking displays correctly
+- [ ] Filter and sort work
+- [ ] Create job button navigates to wizard
+- [ ] Delete job works with confirmation
+
+### Testing Instructions
+
+```bash
+# Run dev server
+npm run dev
+
+# Create test jobs via API
+curl -X POST $API_ENDPOINT/jobs -H "Authorization: Bearer $TOKEN" -d '...'
+
+# Verify dashboard shows jobs
+# Test filtering and sorting
+# Test delete with confirmation modal
+```
+
+### Commit Message Template
+
+```
+feat(frontend): add job dashboard with real-time updates
+
+- Create dashboard page with job list
+- Add StatusBadge component with color coding
+- Implement JobCard component with progress and cost
+- Add useJobs hook with auto-refresh
+- Create API client with auth interceptor
+- Add filter and sort functionality
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+```
+
+**Estimated Tokens:** ~12,000
 
 ---
 
@@ -532,13 +646,106 @@ Create dashboard showing user's jobs with status, progress, and quick actions.
 
 Multi-step wizard for creating jobs with template selection, seed data upload, and configuration.
 
-**Steps:**
-1. Select template (from library or user's templates)
-2. Upload/select seed data
-3. Configure job (budget, records, format)
-4. Review and create
+### Files to Create
 
-**Estimated Tokens:** ~18,000
+- `src/routes/CreateJob.tsx` - Multi-step wizard
+- `src/components/wizard/StepIndicator.tsx` - Step progress indicator
+- `src/components/wizard/TemplateSelector.tsx` - Template selection step
+- `src/components/wizard/SeedDataUpload.tsx` - File upload step
+- `src/components/wizard/JobConfiguration.tsx` - Configuration step
+- `src/components/wizard/ReviewAndCreate.tsx` - Final review step
+
+### Prerequisites
+
+- Task 3 completed (API client)
+- Phase 3 template and job APIs available
+- File upload functionality
+
+### Implementation Steps
+
+1. **Create wizard state management:**
+   ```typescript
+   const [currentStep, setCurrentStep] = useState(1)
+   const [wizardData, setWizardData] = useState({
+     template_id: '',
+     seed_data_file: null,
+     budget_limit: 10,
+     num_records: 100,
+     output_format: 'JSONL'
+   })
+   ```
+
+2. **Step 1: Template Selection**
+   - Fetch templates from API (system + user templates)
+   - Display as cards with name, description, preview
+   - Search and filter functionality
+   - "Create New Template" option
+
+3. **Step 2: Seed Data Upload**
+   - Drag-and-drop file upload
+   - Support CSV, JSONL formats
+   - File validation (check headers match template variables)
+   - Preview first 5 rows
+   - Upload to S3 via presigned URL (from API)
+
+4. **Step 3: Job Configuration**
+   - Budget limit input (with slider, $1-$1000)
+   - Number of records (with validation against seed data)
+   - Output format dropdown (JSONL, CSV, Parquet)
+   - Model preferences (optional)
+
+5. **Step 4: Review and Create**
+   - Display all selections
+   - Cost estimate (call API endpoint)
+   - Edit buttons for each section
+   - "Create Job" button (POST to /jobs)
+   - Loading state while creating
+   - Redirect to job detail page on success
+
+6. **Navigation:**
+   - Next/Previous buttons
+   - Step validation before advancing
+   - Progress indicator showing 1/4, 2/4, etc.
+
+### Verification Checklist
+
+- [ ] All four steps functional
+- [ ] Template selection works
+- [ ] File upload accepts CSV/JSONL
+- [ ] File validation checks format
+- [ ] Budget and records inputs validated
+- [ ] Review step shows all data
+- [ ] Job creation successful
+- [ ] Redirects to job detail after creation
+
+### Testing Instructions
+
+```bash
+# Test wizard flow
+# 1. Navigate to /jobs/new
+# 2. Select template
+# 3. Upload sample CSV
+# 4. Set budget to $5, 50 records
+# 5. Review and create
+# 6. Verify redirect to /jobs/{id}
+```
+
+### Commit Message Template
+
+```
+feat(frontend): add multi-step job creation wizard
+
+- Create 4-step wizard for job creation
+- Implement template selection with search
+- Add drag-and-drop seed data upload
+- Build job configuration form with validation
+- Create review step with cost estimation
+- Add step navigation and progress indicator
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+```
+
+**Estimated Tokens:** ~14,000
 
 ---
 
@@ -546,16 +753,108 @@ Multi-step wizard for creating jobs with template selection, seed data upload, a
 
 ### Goal
 
-Job detail page with real-time updates using polling or websockets.
+Job detail page with real-time updates and progress visualization.
 
-**Features:**
-- Progress chart
-- Cost breakdown visualization
-- Live updates (every 5 seconds)
-- Download exports
-- Cancel/delete job
+### Files to Create
 
-**Estimated Tokens:** ~16,000
+- `src/routes/JobDetail.tsx` - Job detail page
+- `src/components/ProgressChart.tsx` - Progress visualization
+- `src/components/CostBreakdown.tsx` - Cost breakdown chart
+- `src/hooks/useJobPolling.ts` - Polling hook for live updates
+
+### Prerequisites
+
+- Task 3 completed (API client)
+- Phase 3 dashboard API endpoint
+
+### Implementation Steps
+
+1. **Create useJobPolling hook:**
+   ```typescript
+   export function useJobPolling(jobId: string) {
+     return useQuery({
+       queryKey: ['job', jobId],
+       queryFn: () => fetchJobDetails(jobId),
+       refetchInterval: (data) => {
+         // Poll every 5 seconds if job is RUNNING or QUEUED
+         if (data?.status === 'RUNNING' || data?.status === 'QUEUED') {
+           return 5000
+         }
+         return false // Don't poll if job is complete
+       },
+     })
+   }
+   ```
+
+2. **Job Detail Page** - Display:
+   - Job ID and name
+   - Status badge (with animation for RUNNING)
+   - Progress bar with percentage
+   - Records completed vs total
+   - Current cost vs budget
+   - Estimated time remaining
+   - Created/started/completed timestamps
+
+3. **Progress Chart** - Visualization:
+   - Line chart showing records over time
+   - Use Recharts or Chart.js
+   - X-axis: time, Y-axis: records completed
+   - Show checkpoint markers
+
+4. **Cost Breakdown** - Display:
+   - Total cost so far
+   - Cost per model (if using multiple)
+   - Budget remaining
+   - Pie chart or bar chart
+
+5. **Actions Section:**
+   - Download export button (enabled when COMPLETED)
+   - Cancel job button (enabled when RUNNING/QUEUED)
+   - Delete job button (with confirmation)
+   - View logs button (link to CloudWatch)
+
+6. **Export Downloads:**
+   - Fetch presigned S3 URLs from API
+   - Download links for JSONL, CSV, Parquet
+   - File size indicators
+
+### Verification Checklist
+
+- [ ] Job details fetched and displayed
+- [ ] Real-time updates work (5-second polling)
+- [ ] Progress chart shows data
+- [ ] Cost breakdown accurate
+- [ ] Cancel job works
+- [ ] Download exports work
+- [ ] Polling stops when job complete
+
+### Testing Instructions
+
+```bash
+# Create and monitor a job
+# Navigate to /jobs/{id}
+# Verify real-time updates
+# Wait for completion
+# Download exports
+# Verify file contents
+```
+
+### Commit Message Template
+
+```
+feat(frontend): add job detail page with real-time monitoring
+
+- Create job detail page with polling
+- Implement progress chart with Recharts
+- Add cost breakdown visualization
+- Build export download functionality
+- Add cancel and delete actions
+- Implement 5-second polling for live updates
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+```
+
+**Estimated Tokens:** ~13,000
 
 ---
 
@@ -565,14 +864,98 @@ Job detail page with real-time updates using polling or websockets.
 
 Template editor with syntax highlighting, validation, and testing.
 
-**Features:**
-- Monaco editor or CodeMirror for YAML
-- Syntax highlighting
-- Real-time validation
-- Test template with sample data
-- Save/update template
+### Files to Create
 
-**Estimated Tokens:** ~17,000
+- `src/routes/TemplateEditor.tsx` - Template editor page
+- `src/components/CodeEditor.tsx` - Monaco/CodeMirror wrapper
+- `src/components/TemplatePreview.tsx` - Live preview component
+- `src/hooks/useTemplateValidation.ts` - Validation hook
+
+### Prerequisites
+
+- Task 3 completed
+- Phase 5 template engine deployed
+- Monaco Editor or CodeMirror library
+
+### Implementation Steps
+
+1. **Install editor library:**
+   ```bash
+   npm install @monaco-editor/react
+   # OR
+   npm install @uiw/react-codemirror @codemirror/lang-yaml
+   ```
+
+2. **Create CodeEditor component:**
+   - Configure for YAML syntax
+   - Enable syntax highlighting
+   - Add auto-completion (template variables, custom filters)
+   - Error highlighting for invalid YAML
+
+3. **Template Editor Page Layout:**
+   - Split view: Editor on left, Preview on right
+   - Template name input
+   - Description textarea
+   - Save/Update button
+   - Test template button
+
+4. **Template Validation:**
+   - Validate YAML syntax client-side
+   - Validate template structure (required fields: steps, model)
+   - Check variable references
+   - Warn about undefined variables
+
+5. **Template Testing:**
+   - "Test Template" button
+   - Modal with sample seed data input
+   - Call POST /templates/{id}/test API
+   - Display rendered prompt
+   - Show any errors
+
+6. **Save/Update Flow:**
+   - POST /templates for new templates
+   - PUT /templates/{id} for updates
+   - Success message with redirect
+   - Error handling
+
+### Verification Checklist
+
+- [ ] Editor loads with syntax highlighting
+- [ ] YAML validation works
+- [ ] Auto-completion functional
+- [ ] Template testing works
+- [ ] Save creates new template
+- [ ] Update modifies existing template
+- [ ] Error messages clear
+
+### Testing Instructions
+
+```bash
+# Create new template
+# Navigate to /templates/new
+# Write YAML template
+# Test with sample data
+# Save template
+# Edit existing template
+# Verify changes saved
+```
+
+### Commit Message Template
+
+```
+feat(frontend): add template editor with Monaco
+
+- Integrate Monaco editor for YAML editing
+- Add syntax highlighting and validation
+- Implement template testing with preview
+- Build save/update functionality
+- Add auto-completion for template variables
+- Create split-view editor layout
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+```
+
+**Estimated Tokens:** ~13,000
 
 ---
 
@@ -580,33 +963,145 @@ Template editor with syntax highlighting, validation, and testing.
 
 ### Goal
 
-Deploy frontend to Amplify with CI/CD.
+Deploy React frontend to AWS Amplify with CI/CD integration.
 
-**Steps:**
-- Create Amplify app via CloudFormation
-- Configure build settings
-- Connect to Git (optional)
-- Set environment variables
-- Deploy
+### Files to Create
 
-**Estimated Tokens:** ~11,000
+- `infrastructure/cloudformation/amplify-stack.yaml` - Amplify app
+- `amplify.yml` - Build configuration
+- `infrastructure/scripts/deploy-frontend.sh` - Deployment script
+
+### Prerequisites
+
+- Tasks 1-6 completed (frontend working locally)
+- AWS Amplify service access
+- GitHub repository (optional for CI/CD)
+
+### Implementation Steps
+
+1. **Create Amplify CloudFormation stack:**
+   ```yaml
+   Resources:
+     AmplifyApp:
+       Type: AWS::Amplify::App
+       Properties:
+         Name: plot-palette
+         Repository: https://github.com/user/repo  # Optional
+         BuildSpec: |
+           version: 1
+           frontend:
+             phases:
+               preBuild:
+                 commands:
+                   - cd frontend
+                   - npm install
+               build:
+                 commands:
+                   - npm run build
+             artifacts:
+               baseDirectory: frontend/dist
+               files:
+                 - '**/*'
+             cache:
+               paths:
+                 - node_modules/**/*
+         EnvironmentVariables:
+           - Name: VITE_API_ENDPOINT
+             Value: !Ref ApiEndpoint
+           - Name: VITE_COGNITO_USER_POOL_ID
+             Value: !Ref UserPoolId
+           - Name: VITE_COGNITO_CLIENT_ID
+             Value: !Ref UserPoolClientId
+   ```
+
+2. **Create amplify.yml** (build configuration):
+   - Define build phases
+   - Specify artifact directory (dist)
+   - Set environment variables
+
+3. **Manual deployment option:**
+   - Build locally: `npm run build`
+   - Deploy via AWS CLI:
+     ```bash
+     aws amplify create-deployment --app-id $APP_ID --branch-name main
+     ```
+   - Upload build artifacts to S3
+   - Trigger deployment
+
+4. **Configure custom domain** (optional):
+   - Add domain in Amplify console
+   - Update DNS records
+   - Enable HTTPS
+
+5. **Environment variables:**
+   - Set API endpoint from CloudFormation outputs
+   - Set Cognito pool ID and client ID
+   - Configure per environment (dev, staging, prod)
+
+### Verification Checklist
+
+- [ ] Amplify app created
+- [ ] Build succeeds
+- [ ] Environment variables set
+- [ ] App deployed and accessible
+- [ ] Custom domain configured (if applicable)
+- [ ] CI/CD triggers on git push (if configured)
+
+### Testing Instructions
+
+```bash
+# Deploy frontend
+./infrastructure/scripts/deploy-frontend.sh production
+
+# Access app
+open https://main.xxxxx.amplifyapp.com
+
+# Test authentication
+# Test job creation
+# Verify API connectivity
+```
+
+### Commit Message Template
+
+```
+feat(infrastructure): deploy frontend to AWS Amplify
+
+- Create Amplify CloudFormation stack
+- Configure build specification
+- Set environment variables from stack outputs
+- Add deployment script
+- Enable HTTPS and custom domain
+- Configure CI/CD from GitHub
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+```
+
+**Estimated Tokens:** ~10,000
 
 ---
 
 ## Phase 6 Verification
 
 **Success Criteria:**
-- [ ] Authentication works end-to-end
-- [ ] Dashboard displays jobs
-- [ ] Job creation wizard functional
-- [ ] Real-time monitoring updates
-- [ ] Template editor saves/updates
-- [ ] Deployed to Amplify
-- [ ] Responsive on mobile
 
-**Estimated Total Cost:**
+- [ ] React app bootstrapped with Vite and TypeScript
+- [ ] Authentication UI works (login, signup, logout)
+- [ ] Dashboard displays all user jobs
+- [ ] Status badges and progress bars update in real-time
+- [ ] Job creation wizard functional (4 steps)
+- [ ] Template editor saves and updates templates
+- [ ] Job detail page shows real-time progress
+- [ ] Export downloads work for all formats
+- [ ] Frontend deployed to AWS Amplify
+- [ ] Environment variables configured correctly
+- [ ] Responsive design on mobile
+
+**Estimated Total Tokens:** ~95,000
+
+**Estimated Monthly Cost:**
 - Amplify hosting: ~$1-2/month
 - CloudFront: included in Amplify
+- Total: ~$2/month
 
 ---
 
