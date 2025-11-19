@@ -11,9 +11,11 @@ import logging
 import json
 import os
 import time
+import random
 import boto3
 from datetime import datetime
 from botocore.exceptions import ClientError
+from template_engine import TemplateEngine
 
 # Setup logging
 logging.basicConfig(
@@ -43,9 +45,13 @@ class BudgetExceededError(Exception):
 class Worker:
     """ECS Fargate worker for data generation."""
 
+    # Checkpoint every N records
+    CHECKPOINT_INTERVAL = int(os.environ.get('CHECKPOINT_INTERVAL', '50'))
+
     def __init__(self):
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_shutdown)
+        self.template_engine = TemplateEngine()
         logger.info("Worker initialized")
 
     def handle_shutdown(self, signum, frame):
@@ -177,9 +183,181 @@ class Worker:
             self.mark_job_failed(job_id, str(e))
 
     def generate_data(self, job):
-        """Main data generation loop - implementation in Task 4."""
-        logger.info(f"generate_data called for job {job['job_id']} (stub)")
-        # This will be fully implemented in Tasks 4-7
+        """Main data generation loop."""
+        job_id = job['job_id']
+        config = job['config']
+        budget_limit = job.get('budget_limit', 100.0)
+
+        # Load template from DynamoDB
+        template = self.load_template(config['template_id'])
+
+        # Load seed data from S3
+        seed_data_list = self.load_seed_data(config['seed_data_path'])
+
+        # Load or create checkpoint
+        checkpoint = self.load_checkpoint(job_id)
+        start_index = checkpoint.get('records_generated', 0)
+
+        target_records = config['num_records']
+
+        logger.info(f"Generating {target_records} records for job {job_id}, starting at {start_index}")
+
+        batch_records = []
+        batch_number = checkpoint.get('current_batch', 1)
+
+        for i in range(start_index, target_records):
+            if self.shutdown_requested:
+                logger.info("Shutdown requested, checkpointing and exiting")
+                self.save_checkpoint(job_id, checkpoint)
+                self.save_batch(job_id, batch_number, batch_records)
+                break
+
+            # Check budget before each generation (stub for now, implemented in Task 6)
+            current_cost = self.calculate_current_cost(job_id)
+            if current_cost >= budget_limit:
+                logger.warning(f"Budget limit reached: ${current_cost:.2f} >= ${budget_limit:.2f}")
+                raise BudgetExceededError(f"Exceeded budget limit of ${budget_limit}")
+
+            # Select random seed data
+            seed_data = random.choice(seed_data_list)
+
+            # Generate record using template
+            try:
+                result = self.template_engine.execute_template(
+                    template['template_definition'],
+                    seed_data,
+                    bedrock_client
+                )
+
+                record = {
+                    'id': f"{job_id}-{i}",
+                    'job_id': job_id,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'seed_data_id': seed_data.get('_id', 'unknown'),
+                    'generation_result': result
+                }
+
+                batch_records.append(record)
+
+                # Update checkpoint counters
+                checkpoint['records_generated'] = i + 1
+                checkpoint['tokens_used'] = checkpoint.get('tokens_used', 0) + self.estimate_tokens(result)
+
+                # Checkpoint every N records
+                if (i + 1) % self.CHECKPOINT_INTERVAL == 0:
+                    self.save_batch(job_id, batch_number, batch_records)
+                    self.save_checkpoint(job_id, checkpoint)
+                    self.update_cost_tracking(job_id, checkpoint)
+                    self.update_job_progress(job_id, checkpoint)
+
+                    batch_records = []
+                    batch_number += 1
+                    checkpoint['current_batch'] = batch_number
+
+            except Exception as e:
+                logger.error(f"Error generating record {i}: {str(e)}")
+                # Continue with next record (don't fail entire job for one bad record)
+                continue
+
+        # Save final batch
+        if batch_records:
+            self.save_batch(job_id, batch_number, batch_records)
+
+        # Final checkpoint
+        checkpoint['completed'] = True
+        self.save_checkpoint(job_id, checkpoint)
+        self.update_cost_tracking(job_id, checkpoint)
+        self.update_job_progress(job_id, checkpoint)
+
+        # Export data
+        self.export_data(job_id, config)
+
+        logger.info(f"Job {job_id} completed: {checkpoint['records_generated']} records generated")
+
+    def load_template(self, template_id):
+        """Load template from DynamoDB."""
+        try:
+            response = templates_table.get_item(
+                Key={'template_id': template_id, 'version': 1}
+            )
+            if 'Item' not in response:
+                raise ValueError(f"Template {template_id} not found")
+
+            logger.info(f"Loaded template {template_id}")
+            return response['Item']
+
+        except Exception as e:
+            logger.error(f"Error loading template {template_id}: {str(e)}", exc_info=True)
+            raise
+
+    def load_seed_data(self, s3_path):
+        """Load seed data from S3."""
+        try:
+            bucket = os.environ.get('BUCKET_NAME', '')
+            # s3_path format: "seed-data/user-123/data.json"
+
+            response = s3_client.get_object(Bucket=bucket, Key=s3_path)
+            data = json.loads(response['Body'].read())
+
+            # Support both single dict and list of dicts
+            if isinstance(data, list):
+                seed_list = data
+            else:
+                seed_list = [data]
+
+            logger.info(f"Loaded {len(seed_list)} seed data items from {s3_path}")
+            return seed_list
+
+        except Exception as e:
+            logger.error(f"Error loading seed data from {s3_path}: {str(e)}", exc_info=True)
+            raise
+
+    def estimate_tokens(self, result):
+        """Estimate tokens used in generation (rough approximation)."""
+        text = json.dumps(result)
+        # Rough estimate: 1 token ≈ 4 characters
+        return len(text) // 4
+
+    def load_checkpoint(self, job_id):
+        """Load checkpoint - stub for Task 5."""
+        logger.info(f"load_checkpoint called for {job_id} (stub)")
+        return {
+            'job_id': job_id,
+            'records_generated': 0,
+            'current_batch': 1,
+            'tokens_used': 0,
+            'cost_accumulated': 0.0,
+            'last_updated': datetime.utcnow().isoformat(),
+            '_version': 0
+        }
+
+    def save_checkpoint(self, job_id, checkpoint_data):
+        """Save checkpoint - stub for Task 5."""
+        logger.info(f"save_checkpoint called for {job_id} (stub)")
+        pass
+
+    def save_batch(self, job_id, batch_number, records):
+        """Save batch - stub for Task 5."""
+        logger.info(f"save_batch called for {job_id} batch {batch_number} with {len(records)} records (stub)")
+        pass
+
+    def calculate_current_cost(self, job_id):
+        """Calculate current cost - stub for Task 6."""
+        return 0.0
+
+    def update_cost_tracking(self, job_id, checkpoint):
+        """Update cost tracking - stub for Task 6."""
+        logger.info(f"update_cost_tracking called for {job_id} (stub)")
+        pass
+
+    def update_job_progress(self, job_id, checkpoint):
+        """Update job progress - stub for Task 6."""
+        logger.info(f"update_job_progress called for {job_id} (stub)")
+        pass
+
+    def export_data(self, job_id, config):
+        """Export data - stub for Task 7."""
+        logger.info(f"export_data called for {job_id} (stub)")
         pass
 
     def mark_job_complete(self, job_id):
