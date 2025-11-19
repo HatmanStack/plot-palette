@@ -1,0 +1,39 @@
+{
+  "description": "Test user data for integration tests",
+  "users": [
+    {
+      "email": "test+admin@example.com",
+      "password": "AdminPassword123!@#",
+      "role": "admin",
+      "name": "Test Admin User"
+    },
+    {
+      "email": "test+user@example.com",
+      "password": "UserPassword123!@#",
+      "role": "user",
+      "name": "Test Regular User"
+    }
+  ],
+  "invalid_passwords": [
+    {
+      "password": "short",
+      "reason": "Too short (< 12 characters)"
+    },
+    {
+      "password": "nouppercase123!",
+      "reason": "Missing uppercase letter"
+    },
+    {
+      "password": "NOLOWERCASE123!",
+      "reason": "Missing lowercase letter"
+    },
+    {
+      "password": "NoNumbers!!",
+      "reason": "Missing number"
+    },
+    {
+      "password": "NoSymbols123",
+      "reason": "Missing special character"
+    }
+  ]
+}
