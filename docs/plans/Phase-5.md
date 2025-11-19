@@ -141,6 +141,28 @@ Implement custom Jinja2 filters tailored for LLM prompt generation including tex
        import json
        return json.dumps(obj, ensure_ascii=False)
 
+   def validate_template_syntax(template_def: dict) -> tuple[bool, str]:
+       """Validate Jinja2 syntax in template"""
+       import jinja2
+       try:
+           env = jinja2.Environment(
+               autoescape=False,
+               trim_blocks=True,
+               lstrip_blocks=True
+           )
+           env.filters.update(CUSTOM_FILTERS)
+
+           for step in template_def.get('steps', []):
+               prompt = step.get('prompt', '')
+               # Try to parse template
+               env.from_string(prompt)
+
+           return True, "Valid template syntax"
+       except jinja2.TemplateSyntaxError as e:
+           return False, f"Template syntax error: {str(e)}"
+       except Exception as e:
+           return False, f"Template validation error: {str(e)}"
+
    # Register all filters
    CUSTOM_FILTERS = {
        'random_sentence': random_sentence,
@@ -340,25 +362,9 @@ Enhance template engine to support Jinja2 conditional statements and loops for d
            {% endif %}
    ```
 
-4. **Update template validation to check for syntax errors:**
-   ```python
-   def validate_template_syntax(template_def: dict) -> tuple[bool, str]:
-       """Validate Jinja2 syntax in template"""
-       try:
-           engine = TemplateEngine()
+4. **Template validation function:**
 
-           for step in template_def.get('steps', []):
-               prompt = step.get('prompt', '')
-               # Try to parse template
-               engine.env.from_string(prompt)
-
-           return True, "Valid template syntax"
-
-       except jinja2.TemplateSyntaxError as e:
-           return False, f"Template syntax error: {str(e)}"
-       except Exception as e:
-           return False, f"Template validation error: {str(e)}"
-   ```
+   Note: The `validate_template_syntax` function is already defined in `backend/shared/template_filters.py` (see Task 1, step 1). This function validates Jinja2 syntax in templates and is available for import.
 
 5. **Add validation to create_template Lambda (Phase 3):**
    ```python
@@ -621,7 +627,7 @@ curl -X POST $API_ENDPOINT/templates \
       "steps": [{
         "id": "story",
         "model": "claude-sonnet",
-        "prompt": "Write a story.\n{% include \"style-fragment\" %}"
+        "prompt": "Write a story.\n{% include \"style-instructions\" %}"
       }]
     }
   }'

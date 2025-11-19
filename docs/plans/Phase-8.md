@@ -342,7 +342,7 @@ pytest tests/integration/test_worker.py -v --slow
 pytest tests/integration/test_budget_enforcement.py -v -k test_budget_exceeded
 
 # View worker logs
-aws logs tail /ecs/plot-palette-worker --follow
+aws logs tail /aws/ecs/plot-palette-worker --follow
 ```
 
 ### Commit Message Template

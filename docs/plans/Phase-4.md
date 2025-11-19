@@ -61,7 +61,7 @@ Create ECS cluster, configure Fargate Spot capacity provider, and set up ECR rep
 
 3. **Create ECR Repository:**
    - Repository name: `plot-palette-worker`
-   - Image tag immutability: Enabled (prevent overwriting tags)
+   - Image tag immutability: Mutable (allow tag overwrites during development)
    - Image scanning on push: Enabled (security)
    - Lifecycle policy: Keep last 10 images, delete older
 
@@ -396,6 +396,8 @@ Implement queue processing logic to pull jobs from DynamoDB, transition from QUE
 1. **Implement get_next_job method:**
    ```python
    import boto3
+   import time
+   import os
    from datetime import datetime
 
    dynamodb = boto3.resource('dynamodb')
@@ -458,13 +460,15 @@ Implement queue processing logic to pull jobs from DynamoDB, transition from QUE
                    'started_at': datetime.utcnow().isoformat()
                })
 
-               # Update job status
+               # Update job status (conditional to prevent race)
                jobs_table.update_item(
                    Key={'job_id': job_id},
                    UpdateExpression='SET #status = :running, started_at = :now, task_arn = :task',
+                   ConditionExpression='#status = :queued',  # Only if still QUEUED
                    ExpressionAttributeNames={'#status': 'status'},
                    ExpressionAttributeValues={
                        ':running': 'RUNNING',
+                       ':queued': 'QUEUED',
                        ':now': datetime.utcnow().isoformat(),
                        ':task': os.environ.get('ECS_TASK_ARN', 'local')
                    }
@@ -683,8 +687,12 @@ Implement the core data generation logic using AWS Bedrock, template engine inte
                    'model': model_id
                }
 
-               # Add to context for next steps
-               context[f'steps.{step_id}.output'] = response
+               # Add to context for next steps (nested dict for Jinja)
+               if 'steps' not in context:
+                   context['steps'] = {}
+               if step_id not in context['steps']:
+                   context['steps'][step_id] = {}
+               context['steps'][step_id]['output'] = response
 
            return results
 
@@ -915,11 +923,11 @@ Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
 ---
 
-## Task 5: Checkpoint System with S3 ETags
+## Task 5: Checkpoint System with DynamoDB Optimistic Locking
 
 ### Goal
 
-Implement robust checkpoint system using S3 with ETag-based concurrency control for graceful shutdown and job resumption.
+Implement robust checkpoint system using DynamoDB optimistic locking for concurrency control and S3 for checkpoint blob storage, enabling graceful shutdown and job resumption.
 
 ### Files to Modify
 
@@ -928,24 +936,32 @@ Implement robust checkpoint system using S3 with ETag-based concurrency control 
 ### Prerequisites
 
 - Task 4 completed (data generation)
-- Understanding of S3 ETags and conditional writes
+- Understanding of DynamoDB conditional writes for optimistic locking
 
 ### Implementation Steps
 
 1. **Implement load_checkpoint:**
    ```python
    def load_checkpoint(self, job_id):
-       """Load checkpoint from S3, return empty dict if not exists"""
+       """Load checkpoint from S3 and version from DynamoDB"""
        bucket = os.environ['BUCKET_NAME']
        key = f"jobs/{job_id}/checkpoint.json"
 
        try:
+           # Load checkpoint blob from S3
            response = s3_client.get_object(Bucket=bucket, Key=key)
-           etag = response['ETag'].strip('"')  # Remove quotes
            checkpoint_data = json.loads(response['Body'].read())
-           checkpoint_data['_etag'] = etag  # Store for conditional writes
 
-           logger.info(f"Loaded checkpoint for job {job_id}: {checkpoint_data['records_generated']} records")
+           # Load version from DynamoDB
+           metadata_response = checkpoint_metadata_table.get_item(
+               Key={'job_id': job_id}
+           )
+           if 'Item' in metadata_response:
+               checkpoint_data['_version'] = metadata_response['Item'].get('version', 0)
+           else:
+               checkpoint_data['_version'] = 0
+
+           logger.info(f"Loaded checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {checkpoint_data['_version']})")
            return checkpoint_data
 
        except s3_client.exceptions.NoSuchKey:
@@ -956,59 +972,68 @@ Implement robust checkpoint system using S3 with ETag-based concurrency control 
                'current_batch': 1,
                'tokens_used': 0,
                'cost_accumulated': 0.0,
-               'last_updated': datetime.utcnow().isoformat()
+               'last_updated': datetime.utcnow().isoformat(),
+               '_version': 0
            }
        except Exception as e:
            logger.error(f"Error loading checkpoint: {str(e)}")
            # Return empty checkpoint on error
-           return {'job_id': job_id, 'records_generated': 0}
+           return {'job_id': job_id, 'records_generated': 0, '_version': 0}
    ```
 
-2. **Implement save_checkpoint with ETag:**
+2. **Implement save_checkpoint with DynamoDB optimistic locking:**
    ```python
    def save_checkpoint(self, job_id, checkpoint_data):
-       """Save checkpoint to S3 with ETag-based concurrency control"""
+       """Save checkpoint using DynamoDB for concurrency control and S3 for blob storage"""
        bucket = os.environ['BUCKET_NAME']
-       key = f"jobs/{job_id}/checkpoint.json"
+       s3_key = f"jobs/{job_id}/checkpoint.json"
 
        checkpoint_data['last_updated'] = datetime.utcnow().isoformat()
 
-       # Extract ETag if exists
-       etag = checkpoint_data.pop('_etag', None)
+       # Get current version from checkpoint_data (or 0 for first write)
+       current_version = checkpoint_data.pop('_version', 0)
+       new_version = current_version + 1
 
        checkpoint_json = json.dumps(checkpoint_data, indent=2)
 
+       # First, try to claim write permission via DynamoDB conditional update
        try:
-           if etag:
-               # Conditional write - only if ETag matches
-               s3_client.put_object(
-                   Bucket=bucket,
-                   Key=key,
-                   Body=checkpoint_json,
-                   ContentType='application/json',
-                   IfMatch=etag  # Fail if ETag changed
-               )
-           else:
-               # First write - use If-None-Match to prevent overwrite
-               s3_client.put_object(
-                   Bucket=bucket,
-                   Key=key,
-                   Body=checkpoint_json,
-                   ContentType='application/json',
-                   IfNoneMatch='*'  # Fail if file already exists
-               )
+           checkpoint_metadata_table.update_item(
+               Key={'job_id': job_id},
+               UpdateExpression='SET #version = :new_version, records_generated = :records, last_updated = :now',
+               ConditionExpression='attribute_not_exists(#version) OR #version = :current_version',
+               ExpressionAttributeNames={'#version': 'version'},
+               ExpressionAttributeValues={
+                   ':new_version': new_version,
+                   ':current_version': current_version,
+                   ':records': checkpoint_data['records_generated'],
+                   ':now': datetime.utcnow().isoformat()
+               }
+           )
 
-           logger.info(f"Saved checkpoint for job {job_id}: {checkpoint_data['records_generated']} records")
+           # Successfully claimed write permission - now write to S3
+           s3_client.put_object(
+               Bucket=bucket,
+               Key=s3_key,
+               Body=checkpoint_json.encode('utf-8'),
+               ContentType='application/json'
+           )
 
-       except s3_client.exceptions.PreconditionFailed:
-           logger.warning(f"Checkpoint ETag mismatch for job {job_id}, reloading and merging")
+           # Store the new version for next write
+           checkpoint_data['_version'] = new_version
+
+           logger.info(f"Saved checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {new_version})")
+
+       except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+           logger.warning(f"Checkpoint version conflict for job {job_id}, reloading and merging")
+
            # Another task updated checkpoint - reload and merge
            current_checkpoint = self.load_checkpoint(job_id)
 
            # Merge strategy: take maximum records_generated
            if checkpoint_data['records_generated'] > current_checkpoint['records_generated']:
-               # Retry save with new ETag
-               checkpoint_data['_etag'] = current_checkpoint['_etag']
+               # Retry save with new version
+               checkpoint_data['_version'] = current_checkpoint['_version']
                self.save_checkpoint(job_id, checkpoint_data)
            else:
                logger.info("Current checkpoint is already ahead, skipping save")
@@ -1070,14 +1095,14 @@ Implement robust checkpoint system using S3 with ETag-based concurrency control 
 
 ### Verification Checklist
 
-- [ ] Checkpoint loads from S3 with ETag
-- [ ] Checkpoint saves with conditional writes
-- [ ] ETag mismatch handled gracefully (reload and merge)
+- [ ] Checkpoint loads from S3 with version from DynamoDB
+- [ ] Checkpoint saves with DynamoDB conditional writes (optimistic locking)
+- [ ] Version conflict handled gracefully (reload and merge)
 - [ ] Batches saved as JSONL files
 - [ ] SIGTERM handler triggers shutdown
 - [ ] Worker has 120 seconds to shutdown cleanly
 - [ ] Resume from checkpoint works correctly
-- [ ] Concurrent workers don't corrupt checkpoints
+- [ ] Concurrent workers don't corrupt checkpoints (DynamoDB ensures atomicity)
 
 ### Testing Instructions
 
@@ -1110,11 +1135,12 @@ def test_checkpoint_concurrency():
 ### Commit Message Template
 
 ```
-feat(worker): implement checkpoint system with S3 ETag concurrency control
+feat(worker): implement checkpoint system with DynamoDB optimistic locking
 
-- Add load_checkpoint to resume from S3
-- Implement save_checkpoint with ETag-based conditional writes
-- Handle ETag mismatches with reload and merge strategy
+- Add load_checkpoint to resume from S3 with version from DynamoDB
+- Implement save_checkpoint with DynamoDB conditional writes for concurrency
+- Use version counter for optimistic locking instead of S3 ETags
+- Handle version conflicts with reload and merge strategy
 - Add save_batch for incremental output storage
 - Implement graceful shutdown for Spot interruptions (120s window)
 - Prevent checkpoint corruption from concurrent workers
@@ -1146,6 +1172,8 @@ Implement real-time cost tracking to DynamoDB CostTracking table and budget enfo
 
 1. **Implement update_cost_tracking:**
    ```python
+   import datetime
+   from datetime import timedelta
    from backend.shared.constants import MODEL_PRICING, FARGATE_SPOT_PRICING, S3_PRICING
 
    def update_cost_tracking(self, job_id, checkpoint):
@@ -1159,7 +1187,7 @@ Implement real-time cost tracking to DynamoDB CostTracking table and budget enfo
 
        # Calculate Fargate cost
        elapsed_seconds = (
-           datetime.utcnow() - datetime.fromisoformat(checkpoint.get('started_at', datetime.utcnow().isoformat()))
+           datetime.datetime.utcnow() - datetime.datetime.fromisoformat(checkpoint.get('started_at', datetime.datetime.utcnow().isoformat()))
        ).total_seconds()
        fargate_hours = elapsed_seconds / 3600
        fargate_cost = fargate_hours * FARGATE_SPOT_PRICING['vcpu'] * 0.5  # Assuming 0.5 vCPU
@@ -1173,7 +1201,7 @@ Implement real-time cost tracking to DynamoDB CostTracking table and budget enfo
        # Write to DynamoDB
        cost_tracking_table.put_item(Item={
            'job_id': job_id,
-           'timestamp': datetime.utcnow().isoformat(),
+           'timestamp': datetime.datetime.utcnow().isoformat(),
            'bedrock_tokens': tokens_used,
            'fargate_hours': fargate_hours,
            's3_operations': s3_puts,
@@ -1184,7 +1212,7 @@ Implement real-time cost tracking to DynamoDB CostTracking table and budget enfo
                'total': round(total_cost, 4)
            },
            'records_generated': records_generated,
-           'ttl': int((datetime.utcnow() + timedelta(days=90)).timestamp())  # 90-day retention
+           'ttl': int((datetime.datetime.utcnow() + timedelta(days=90)).timestamp())  # 90-day retention
        })
 
        logger.info(f"Updated cost tracking for job {job_id}: ${total_cost:.4f}")
@@ -1393,14 +1421,22 @@ Implement export functionality to convert batch files into final dataset formats
 
        bucket = os.environ['BUCKET_NAME']
 
+       # Normalize output_format to set for consistent checking
+       if isinstance(output_format, str):
+           formats = {output_format}
+       elif isinstance(output_format, list):
+           formats = set(output_format)
+       else:
+           formats = set()
+
        # Export based on format
-       if output_format == 'JSONL' or 'JSONL' in output_format:
+       if 'JSONL' in formats:
            self.export_jsonl(job_id, records, partition_strategy, bucket)
 
-       if output_format == 'PARQUET' or 'PARQUET' in output_format:
+       if 'PARQUET' in formats:
            self.export_parquet(job_id, records, partition_strategy, bucket)
 
-       if output_format == 'CSV' or 'CSV' in output_format:
+       if 'CSV' in formats:
            self.export_csv(job_id, records, partition_strategy, bucket)
 
        logger.info(f"Export complete for job {job_id}")
@@ -1626,8 +1662,8 @@ Create ECS Task Definition for the worker container and configure ECS Service to
            - FARGATE
          Cpu: 512  # 0.5 vCPU (configurable)
          Memory: 1024  # 1 GB (configurable)
-         TaskRoleArn: !Ref ECSTaskRoleArn
-         ExecutionRoleArn: !Ref ECSTaskRoleArn  # For pulling image from ECR
+         TaskRoleArn: !Ref ECSTaskRoleArn  # App permissions (DynamoDB, S3, Bedrock)
+         ExecutionRoleArn: !Ref ECSExecutionRoleArn  # Infrastructure permissions (ECR, CloudWatch Logs)
          ContainerDefinitions:
            - Name: worker
              Image: !Sub ${ECRRepositoryUri}:latest
@@ -1660,6 +1696,10 @@ Create ECS Task Definition for the worker container and configure ECS Service to
    Parameters:
      ECSTaskRoleArn:
        Type: String
+       Description: Task role ARN for app-level permissions (DynamoDB, S3, Bedrock)
+     ECSExecutionRoleArn:
+       Type: String
+       Description: Execution role ARN for infrastructure permissions (ECR, CloudWatch Logs)
      ECRRepositoryUri:
        Type: String
      JobsTableName:
@@ -1867,11 +1907,12 @@ After completing all tasks, verify the entire phase:
 
 - [ ] Worker container builds successfully
 - [ ] Worker pushed to ECR
-- [ ] ECS task definition registered
+- [ ] ECS task definition registered with separate task and execution roles
 - [ ] Task starts via run_task API
 - [ ] Worker pulls job from queue
 - [ ] Worker generates data using Bedrock
-- [ ] Checkpoints saved to S3 with ETags
+- [ ] Checkpoints saved to S3 with version in DynamoDB
+- [ ] DynamoDB optimistic locking prevents checkpoint corruption
 - [ ] Cost tracking written to DynamoDB
 - [ ] Budget enforcement stops job at limit
 - [ ] Exports created in all formats (JSONL, Parquet, CSV)
