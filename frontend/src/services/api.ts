@@ -64,3 +64,14 @@ export async function deleteJob(jobId: string): Promise<void> {
 export async function cancelJob(jobId: string): Promise<void> {
   await apiClient.delete(`/jobs/${jobId}`)
 }
+
+export async function generateUploadUrl(filename: string, contentType: string = 'application/json'): Promise<{
+  upload_url: string
+  s3_key: string
+}> {
+  const { data } = await apiClient.post('/seed-data/upload', {
+    filename,
+    content_type: contentType,
+  })
+  return data
+}

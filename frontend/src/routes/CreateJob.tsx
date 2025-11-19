@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createJob } from '../services/api'
+import { createJob, generateUploadUrl } from '../services/api'
+import axios from 'axios'
 
 interface WizardData {
   templateId: string
@@ -34,16 +35,23 @@ export default function CreateJob() {
     setError('')
 
     try {
-      // In a real implementation, we would:
-      // 1. Upload seed data to S3 via presigned URL
-      // 2. Get the S3 key
-      // 3. Create the job with that key
+      // Step 1: Get presigned upload URL from backend
+      const { upload_url, s3_key } = await generateUploadUrl(
+        data.seedDataFile.name,
+        data.seedDataFile.type || 'application/json'
+      )
 
-      const seedDataKey = `seed-data/user-id/${data.seedDataFile.name}`
+      // Step 2: Upload file to S3 using presigned URL
+      await axios.put(upload_url, data.seedDataFile, {
+        headers: {
+          'Content-Type': data.seedDataFile.type || 'application/json',
+        },
+      })
 
+      // Step 3: Create job with the S3 key (user-id is handled server-side)
       const job = await createJob({
         'template-id': data.templateId,
-        'seed-data-key': seedDataKey,
+        'seed-data-key': s3_key,
         'budget-limit': data.budgetLimit,
         'num-records': data.numRecords,
         'output-format': data.outputFormat,
