@@ -1,14 +1,19 @@
 import axios from 'axios'
+import { getIdToken } from './auth'
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_ENDPOINT,
 })
 
 // Add auth token to all requests
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('idToken')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+apiClient.interceptors.request.use(async (config) => {
+  try {
+    const token = await getIdToken()
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+  } catch (error) {
+    console.error('Failed to get auth token:', error)
   }
   return config
 })
