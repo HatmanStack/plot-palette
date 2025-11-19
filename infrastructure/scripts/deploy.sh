@@ -257,12 +257,36 @@ deploy_all_stacks() {
     local user_pool_client_id=$(get_stack_output "${auth_stack}" "UserPoolClientId")
     log "Retrieved Cognito User Pool ID and Client ID"
 
+    # Get table names from database stack
+    local jobs_table_name=$(get_stack_output "${database_stack}" "JobsTableName")
+    local queue_table_name=$(get_stack_output "${database_stack}" "QueueTableName")
+    local templates_table_name=$(get_stack_output "${database_stack}" "TemplatesTableName")
+    local costtracking_table_name=$(get_stack_output "${database_stack}" "CostTrackingTableName")
+
+    # Deploy Lambda code bucket (if needed for Phase 3)
+    local lambda_code_bucket=""
+    if [ -f "${CFN_DIR}/lambda-code-bucket.yaml" ]; then
+        local lambda_bucket_stack="plot-palette-lambda-code-${ENVIRONMENT}"
+        deploy_stack "${lambda_bucket_stack}" "${CFN_DIR}/lambda-code-bucket.yaml" || true
+        lambda_code_bucket=$(get_stack_output "${lambda_bucket_stack}" "BucketName" || echo "")
+        if [ -n "${lambda_code_bucket}" ]; then
+            log "Retrieved Lambda code bucket: ${lambda_code_bucket}"
+        fi
+    fi
+
     # Deploy API Stack (HTTP API Gateway with Lambda functions)
     local api_stack="plot-palette-api-${ENVIRONMENT}"
     deploy_stack "${api_stack}" "${CFN_DIR}/api-stack.yaml" \
+        "EnvironmentName=${ENVIRONMENT}" \
         "UserPoolId=${user_pool_id}" \
         "UserPoolClientId=${user_pool_client_id}" \
         "LambdaExecutionRoleArn=${lambda_execution_role_arn}" \
+        "LambdaCodeBucket=${lambda_code_bucket}" \
+        "BucketName=${bucket_name}" \
+        "JobsTableName=${jobs_table_name}" \
+        "QueueTableName=${queue_table_name}" \
+        "TemplatesTableName=${templates_table_name}" \
+        "CostTrackingTableName=${costtracking_table_name}" \
         || exit 1
 
     # Get API endpoint for validation
