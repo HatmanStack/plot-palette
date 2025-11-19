@@ -49,10 +49,10 @@ class JobConfig(BaseModel):
         for key, value in d.items():
             if isinstance(value, str):
                 result[key] = {"S": value}
+            elif isinstance(value, bool):  # Must check bool before int/float since bool is subclass of int
+                result[key] = {"BOOL": value}
             elif isinstance(value, (int, float)):
                 result[key] = {"N": str(value)}
-            elif isinstance(value, bool):
-                result[key] = {"BOOL": value}
             elif isinstance(value, dict):
                 result[key] = {"M": JobConfig._dict_to_dynamodb_map(value)}
             elif isinstance(value, list):

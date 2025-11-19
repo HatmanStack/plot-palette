@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 import boto3
 from botocore.exceptions import ClientError
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 
 from utils import setup_logger
 
@@ -64,7 +64,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Parse query parameters
         params = event.get('queryStringParameters') or {}
-        limit = int(params.get('limit', 20))
+
+        # Validate and parse limit parameter
+        try:
+            limit = int(params.get('limit', 20))
+            if limit < 1:
+                limit = 20
+            elif limit > 100:
+                limit = 100
+        except (ValueError, TypeError):
+            return error_response(400, "Invalid limit parameter - must be a number between 1 and 100")
+
         status_filter = params.get('status')
 
         # Build query parameters
@@ -75,9 +85,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'ScanIndexForward': False  # Descending order (newest first)
         }
 
-        # Add status filter if provided
+        # Add status filter if provided (use Attr for non-key attributes)
         if status_filter:
-            query_params['FilterExpression'] = Key('status').eq(status_filter)
+            query_params['FilterExpression'] = Attr('status').eq(status_filter)
 
         # Handle pagination
         if 'last_key' in params:

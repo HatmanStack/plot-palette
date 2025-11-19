@@ -126,7 +126,7 @@ class TemplateEngine:
 
             # Resolve model tier alias if needed
             if model_id.startswith('tier-') or model_id in ['cheap', 'balanced', 'premium']:
-                from backend.shared.constants import MODEL_TIERS
+                from constants import MODEL_TIERS
                 model_id = MODEL_TIERS.get(model_id, model_id)
 
             try:
@@ -168,17 +168,19 @@ class TemplateEngine:
         try:
             # Format request based on model family
             if 'claude' in model_id.lower():
-                # Claude models use Messages API format
+                # Claude models use Messages API format with content array
                 request_body = {
                     "anthropic_version": "bedrock-2023-05-31",
                     "max_tokens": 2000,
                     "messages": [
                         {
                             "role": "user",
-                            "content": prompt
+                            "content": [{"type": "text", "text": prompt}]
                         }
                     ],
-                    "temperature": 0.7
+                    "temperature": 0.7,
+                    "top_k": 250,
+                    "top_p": 0.999
                 }
             elif 'llama' in model_id.lower():
                 # Llama models use generation format

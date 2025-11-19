@@ -199,7 +199,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         missing_fields = []
 
         for field in schema_reqs:
-            if not get_nested_field(sample_data, field):
+            # Check explicitly for None to allow falsy values like 0, False, '', []
+            if get_nested_field(sample_data, field) is None:
                 missing_fields.append(field)
 
         if missing_fields:

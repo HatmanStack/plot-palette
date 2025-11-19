@@ -89,11 +89,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.error(f"YAML parsing error: {str(e)}")
             return error_response(400, f"Invalid YAML: {str(e)}")
 
-        # Validate structure
+        # Validate structure - ensure it's a dict
+        if not isinstance(template_data, dict):
+            return error_response(400, "Invalid template format: YAML must contain a mapping/object")
+
         if 'template' not in template_data:
             return error_response(400, "Invalid template format: missing 'template' key")
 
         template = template_data['template']
+
+        # Validate template is also a dict
+        if not isinstance(template, dict):
+            return error_response(400, "Invalid template format: 'template' must be a mapping/object")
 
         # Validate required fields
         if 'name' not in template:

@@ -9,16 +9,16 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements and install
-COPY requirements.txt .
+COPY backend/ecs_tasks/worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY worker.py .
-COPY template_engine.py .
-COPY entrypoint.sh .
+COPY backend/ecs_tasks/worker/worker.py .
+COPY backend/ecs_tasks/worker/template_engine.py .
+COPY backend/ecs_tasks/worker/entrypoint.sh .
 
-# Copy shared library
-COPY ../../shared /app/shared
+# Copy shared library (build context should be repo root)
+COPY backend/shared /app/shared
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
