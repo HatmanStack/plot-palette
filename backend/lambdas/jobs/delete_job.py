@@ -84,30 +84,43 @@ def delete_s3_job_data(bucket: str, job_id: str) -> None:
 
 def delete_cost_tracking_records(job_id: str) -> None:
     """
-    Delete all cost tracking records for a job.
+    Delete all cost tracking records for a job (paginated).
 
     Args:
         job_id: Job identifier
     """
     try:
-        # Query all cost tracking records for this job
-        response = cost_tracking_table.query(
-            KeyConditionExpression=Key('job_id').eq(job_id)
-        )
+        deleted_count = 0
+        last_evaluated_key = None
 
-        # Delete each record
-        for item in response.get('Items', []):
-            cost_tracking_table.delete_item(
-                Key={
-                    'job_id': job_id,
-                    'timestamp': item['timestamp']
-                }
-            )
+        # Paginate through all cost tracking records
+        while True:
+            query_kwargs = {
+                'KeyConditionExpression': Key('job_id').eq(job_id)
+            }
+            if last_evaluated_key:
+                query_kwargs['ExclusiveStartKey'] = last_evaluated_key
+
+            response = cost_tracking_table.query(**query_kwargs)
+
+            # Delete each record in this page
+            for item in response.get('Items', []):
+                cost_tracking_table.delete_item(
+                    Key={
+                        'job_id': job_id,
+                        'timestamp': item['timestamp']
+                    }
+                )
+                deleted_count += 1
+
+            last_evaluated_key = response.get('LastEvaluatedKey')
+            if not last_evaluated_key:
+                break
 
         logger.info(json.dumps({
             "event": "cost_tracking_deleted",
             "job_id": job_id,
-            "count": len(response.get('Items', []))
+            "count": deleted_count
         }))
 
     except ClientError as e:
@@ -231,7 +244,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }))
                     # Continue even if ECS stop fails
 
-            # Update status to CANCELLED
+            # Update status to CANCELLED in Jobs table
             try:
                 jobs_table.update_item(
                     Key={'job_id': job_id},
@@ -248,6 +261,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "error": str(e)
                 }))
                 return error_response(500, "Error cancelling job")
+
+            # Update Queue table - move from RUNNING to CANCELLED
+            try:
+                # First try to delete from RUNNING queue
+                queue_table.delete_item(
+                    Key={
+                        'status': 'RUNNING',
+                        'job_id_timestamp': f"{job_id}#{job.get('started_at', job['created_at'])}"
+                    }
+                )
+                # Add to CANCELLED queue for tracking
+                queue_table.put_item(Item={
+                    'status': 'CANCELLED',
+                    'job_id_timestamp': f"{job_id}#{datetime.utcnow().isoformat()}",
+                    'job_id': job_id,
+                    'cancelled_at': datetime.utcnow().isoformat()
+                })
+            except ClientError as e:
+                logger.error(json.dumps({
+                    "event": "queue_update_error",
+                    "error": str(e)
+                }))
+                # Don't fail the cancellation if queue update fails
 
             message = "Job cancellation requested - task will stop shortly"
 

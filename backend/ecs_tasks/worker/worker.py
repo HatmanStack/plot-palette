@@ -195,7 +195,14 @@ class Worker:
         """Main data generation loop."""
         job_id = job['job_id']
         config = job['config']
-        budget_limit = job.get('budget_limit', 100.0)
+
+        # Budget limit may be stored as string in DynamoDB, normalize to float
+        budget_limit_raw = config.get('budget_limit', job.get('budget_limit', 100.0))
+        try:
+            budget_limit = float(budget_limit_raw)
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid budget_limit value: {budget_limit_raw}, using default 100.0")
+            budget_limit = 100.0
 
         # Load template from DynamoDB
         template = self.load_template(config['template_id'])
@@ -259,8 +266,10 @@ class Worker:
                 # Checkpoint every N records
                 if (i + 1) % self.CHECKPOINT_INTERVAL == 0:
                     self.save_batch(job_id, batch_number, batch_records)
+                    # Calculate and store cost in checkpoint
+                    total_cost = self.update_cost_tracking(job_id, checkpoint)
+                    checkpoint['cost_accumulated'] = total_cost
                     self.save_checkpoint(job_id, checkpoint)
-                    self.update_cost_tracking(job_id, checkpoint)
                     self.update_job_progress(job_id, checkpoint)
 
                     batch_records = []
@@ -276,10 +285,11 @@ class Worker:
         if batch_records:
             self.save_batch(job_id, batch_number, batch_records)
 
-        # Final checkpoint
+        # Final checkpoint with cost update
         checkpoint['completed'] = True
+        total_cost = self.update_cost_tracking(job_id, checkpoint)
+        checkpoint['cost_accumulated'] = total_cost
         self.save_checkpoint(job_id, checkpoint)
-        self.update_cost_tracking(job_id, checkpoint)
         self.update_job_progress(job_id, checkpoint)
 
         # Export data
