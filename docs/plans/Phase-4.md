@@ -1235,14 +1235,48 @@ Implement real-time cost tracking to DynamoDB CostTracking table and budget enfo
        )
    ```
 
-4. **Integrate budget check into generation loop (in Task 4's generate_data):**
-   ```python
-   # Already implemented in Task 4:
-   current_cost = self.calculate_current_cost(job_id)
-   if current_cost >= budget_limit:
-       logger.warning(f"Budget limit reached: ${current_cost:.2f} >= ${budget_limit:.2f}")
-       raise BudgetExceededError(f"Exceeded budget limit of ${budget_limit}")
-   ```
+4. **Integrate cost tracking into worker's generation loop:**
+
+In `generate_data` method (from Task 4), add cost tracking after each batch and checkpoint:
+
+```python
+# In the generation loop, after generating each batch:
+for batch in self.generate_batches(seed_data, template, model):
+    # Generate data
+    generated_records = self.call_bedrock(batch)
+
+    # Save batch to S3
+    self.save_batch(job_id, batch_num, generated_records)
+
+    # Update checkpoint
+    checkpoint['records_generated'] += len(generated_records)
+    checkpoint['tokens_used'] += generated_records['total_tokens']
+    checkpoint['current_batch'] = batch_num
+
+    # **Write cost tracking record**
+    total_cost = self.update_cost_tracking(job_id, checkpoint)
+
+    # **Check budget before continuing**
+    if total_cost >= budget_limit:
+        logger.warning(f"Budget limit reached: ${total_cost:.2f} >= ${budget_limit:.2f}")
+        self.update_job_status(job_id, 'BUDGET_EXCEEDED')
+        raise BudgetExceededError(f"Exceeded budget limit of ${budget_limit}")
+
+    # Update job progress in Jobs table
+    self.update_job_progress(job_id, checkpoint)
+
+    # Save checkpoint
+    if batch_num % CHECKPOINT_INTERVAL == 0:
+        self.save_checkpoint(job_id, checkpoint)
+
+    batch_num += 1
+```
+
+**Key Integration Points:**
+- Cost tracking is written **after each batch** (not just at checkpoints)
+- Budget is checked **before continuing to next batch**
+- Job status updated to `BUDGET_EXCEEDED` if limit hit
+- Cost records written with 90-day TTL for cleanup
 
 5. **Add constants to shared library (if not already there):**
    ```python

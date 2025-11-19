@@ -1463,6 +1463,212 @@ After completing all tasks, verify the entire phase:
    pytest tests/integration/ -v --cov
    ```
 
+### Commit Message Template
+
+```
+test(api): add integration tests for all API endpoints
+
+- Test job CRUD endpoints
+- Test template CRUD with versioning
+- Test seed data upload and validation
+- Test dashboard stats aggregation
+- Verify authorization on all endpoints
+- Add test fixtures for DynamoDB and S3
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+```
+
+**Estimated Tokens:** ~15,000
+
+---
+
+## Task 8: Lambda Deployment Pipeline
+
+### Goal
+
+Create packaging and deployment pipeline for Lambda functions with dependencies.
+
+### Files to Create
+
+- `infrastructure/scripts/package-lambdas.sh` - Package all Lambda functions
+- `infrastructure/scripts/deploy-lambdas.sh` - Deploy to S3 and update CloudFormation
+- `backend/requirements.txt` - Lambda dependencies
+- `infrastructure/cloudformation/lambda-code-bucket.yaml` - S3 bucket for Lambda code
+
+### Prerequisites
+
+- Tasks 1-7 completed (all Lambda functions implemented)
+- AWS CLI configured
+- Python 3.13 installed
+
+### Implementation Steps
+
+1. **Create Lambda code S3 bucket:**
+   ```yaml
+   # infrastructure/cloudformation/lambda-code-bucket.yaml
+   Resources:
+     LambdaCodeBucket:
+       Type: AWS::S3::Bucket
+       Properties:
+         BucketName: !Sub plot-palette-lambda-code-${AWS::AccountId}
+         VersioningConfiguration:
+           Status: Enabled
+         PublicAccessBlockConfiguration:
+           BlockPublicAcls: true
+           BlockPublicPolicy: true
+           IgnorePublicAcls: true
+           RestrictPublicBuckets: true
+   ```
+
+2. **Create requirements.txt** with Lambda dependencies:
+   ```
+   boto3==1.34.0
+   pydantic==2.5.0
+   python-jose[cryptography]==3.3.0
+   ```
+
+3. **Create package-lambdas.sh script:**
+   ```bash
+   #!/bin/bash
+   set -e
+
+   LAMBDA_DIR="backend/lambda"
+   BUILD_DIR="build/lambda"
+
+   # Clean build directory
+   rm -rf $BUILD_DIR
+   mkdir -p $BUILD_DIR
+
+   # For each Lambda function
+   for lambda in create_job list_jobs get_job cancel_job \
+                 create_template list_templates update_template \
+                 presigned_url dashboard; do
+       echo "Packaging $lambda..."
+
+       # Create function directory
+       mkdir -p $BUILD_DIR/$lambda
+
+       # Copy function code
+       cp $LAMBDA_DIR/$lambda.py $BUILD_DIR/$lambda/
+
+       # Copy shared library
+       cp -r backend/shared $BUILD_DIR/$lambda/
+
+       # Install dependencies
+       pip install -r backend/requirements.txt -t $BUILD_DIR/$lambda/ --quiet
+
+       # Create ZIP
+       cd $BUILD_DIR/$lambda
+       zip -r9 ../$lambda.zip . -q
+       cd -
+
+       echo "  ✓ Created $BUILD_DIR/$lambda.zip"
+   done
+
+   echo "All Lambda functions packaged successfully"
+   ```
+
+4. **Create deploy-lambdas.sh script:**
+   ```bash
+   #!/bin/bash
+   set -e
+
+   REGION=${1:-us-east-1}
+   BUCKET=$(aws cloudformation describe-stacks \
+       --stack-name lambda-code-bucket \
+       --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' \
+       --output text \
+       --region $REGION)
+
+   # Upload all Lambda ZIPs to S3
+   for zip in build/lambda/*.zip; do
+       lambda_name=$(basename $zip .zip)
+       echo "Uploading $lambda_name to S3..."
+
+       aws s3 cp $zip s3://$BUCKET/lambdas/$lambda_name.zip \
+           --region $REGION
+
+       echo "  ✓ Uploaded to s3://$BUCKET/lambdas/$lambda_name.zip"
+   done
+
+   echo "All Lambda functions uploaded successfully"
+   ```
+
+5. **Update Lambda CloudFormation templates** to reference S3:
+   ```yaml
+   # Instead of inline code:
+   CreateJobFunction:
+     Type: AWS::Lambda::Function
+     Properties:
+       Code:
+         S3Bucket: !Ref LambdaCodeBucket
+         S3Key: lambdas/create_job.zip
+       # ... rest of properties
+   ```
+
+6. **Update deployment workflow:**
+   - Run `package-lambdas.sh` before deploying CloudFormation
+   - Deploy lambda-code-bucket stack first
+   - Run `deploy-lambdas.sh` to upload code
+   - Deploy/update API stack (references S3-stored code)
+
+### Verification Checklist
+
+- [ ] Lambda code bucket created
+- [ ] All Lambda functions package successfully
+- [ ] Dependencies included in ZIP files
+- [ ] ZIPs uploaded to S3
+- [ ] CloudFormation templates updated to reference S3
+- [ ] Lambda functions update when code changes
+- [ ] Package script is idempotent
+
+### Testing Instructions
+
+```bash
+# Package all Lambdas
+chmod +x infrastructure/scripts/package-lambdas.sh
+./infrastructure/scripts/package-lambdas.sh
+
+# Check ZIP contents
+unzip -l build/lambda/create_job.zip | head -20
+
+# Deploy code bucket
+aws cloudformation create-stack \
+    --stack-name lambda-code-bucket \
+    --template-body file://infrastructure/cloudformation/lambda-code-bucket.yaml
+
+# Upload Lambda code
+chmod +x infrastructure/scripts/deploy-lambdas.sh
+./infrastructure/scripts/deploy-lambdas.sh us-east-1
+
+# Verify S3 upload
+aws s3 ls s3://$BUCKET/lambdas/
+
+# Update CloudFormation stack with new code
+aws cloudformation update-stack --stack-name api-stack --template-body file://...
+```
+
+### Commit Message Template
+
+```
+feat(infrastructure): add Lambda packaging and deployment pipeline
+
+- Create S3 bucket for Lambda code artifacts
+- Add package-lambdas.sh script for building ZIPs
+- Add deploy-lambdas.sh script for S3 uploads
+- Update CloudFormation to reference S3-stored code
+- Include dependencies (boto3, pydantic) in packages
+- Enable versioning on Lambda code bucket
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+```
+
+**Estimated Tokens:** ~10,000
+
+---
+
+## Phase 3 Verification
+
 ### Success Criteria
 
 - [ ] All Lambda functions deployed successfully
