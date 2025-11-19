@@ -1,0 +1,35 @@
+# Example Template: Conditional Story Generation
+# Demonstrates if/elif/else conditional logic based on genre
+
+template:
+  id: conditional-story-v1
+  name: "Conditional Story Generator"
+  description: "Generates stories with style adapted to author genre"
+  category: example
+  version: 1
+
+  schema_requirements:
+    - author.genre
+    - theme
+    - max_words
+
+  steps:
+    - id: story
+      model: claude-sonnet-3-5-v2
+      prompt: |
+        {% if author.genre == "poetry" %}
+        Write a lyrical short story in poetic prose about {{ theme }}.
+        Use vivid imagery, metaphors, and flowing language.
+        {% elif author.genre == "science fiction" %}
+        Write a science fiction story about {{ theme }} set in the future.
+        Include technological elements and explore scientific concepts.
+        {% elif author.genre == "mystery" %}
+        Write a mystery story about {{ theme }}.
+        Build suspense and include clues for the reader.
+        {% else %}
+        Write a story about {{ theme }} in any style you prefer.
+        Focus on character development and engaging narrative.
+        {% endif %}
+
+        Keep it under {{ max_words }} words.
+        Make it engaging and memorable.

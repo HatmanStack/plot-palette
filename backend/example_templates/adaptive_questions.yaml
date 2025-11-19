@@ -1,0 +1,59 @@
+# Example Template: Adaptive Question Generation
+# Demonstrates nested conditionals and filters
+
+template:
+  id: adaptive-questions-v1
+  name: "Adaptive Question Generator"
+  description: "Generates questions with difficulty-based prompts and optional answers"
+  category: example
+  version: 1
+
+  schema_requirements:
+    - source_text
+    - difficulty
+    - include_answers
+
+  steps:
+    - id: questions
+      model: meta.llama3-1-8b-instruct-v1:0
+      prompt: |
+        Generate questions about the following text:
+
+        {{ source_text | truncate_tokens(500) }}
+
+        **Difficulty Level:** {{ difficulty }}
+
+        {% if difficulty == "easy" %}
+        Generate 5 simple comprehension questions suitable for beginners.
+        - Focus on main ideas and direct facts
+        - Use simple vocabulary
+        - Questions should test basic understanding
+        {% elif difficulty == "medium" %}
+        Generate 5 analytical questions that require understanding of concepts.
+        - Focus on relationships between ideas
+        - Require some inference
+        - Test conceptual understanding
+        {% else %}
+        Generate 5 complex critical thinking questions that require synthesis.
+        - Focus on implications and applications
+        - Require analysis and evaluation
+        - Test deep understanding and critical thinking
+        {% endif %}
+
+        {% if include_answers %}
+
+        **For each question, provide:**
+        1. The question
+        2. A detailed answer with explanation
+        3. Key concepts tested
+
+        {% else %}
+
+        **Provide only the questions**, numbered 1-5.
+
+        {% endif %}
+
+        Key topics to cover:
+        {% for keyword in source_text | extract_keywords(3) %}
+        - {{ keyword }}
+        {% endfor %}
