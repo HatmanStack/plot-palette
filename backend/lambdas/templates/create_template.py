@@ -118,6 +118,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Validate Jinja2 syntax and extract schema
         try:
+            # First validate template syntax (including filters, conditionals, loops)
+            from template_filters import validate_template_syntax
+            valid, error_msg = validate_template_syntax(template_def)
+            if not valid:
+                return error_response(400, error_msg)
+
             schema_reqs = extract_schema_requirements(template_def)
         except ValueError as e:
             return error_response(400, str(e))
