@@ -8,7 +8,14 @@ for multi-step synthetic data generation workflows.
 import jinja2
 import json
 import logging
+import os
+import sys
 from typing import Dict, Any
+
+# Add shared library to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
+
+from template_filters import CUSTOM_FILTERS
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +29,11 @@ class TemplateEngine:
             trim_blocks=True,
             lstrip_blocks=True
         )
-        logger.info("TemplateEngine initialized")
+
+        # Register custom filters
+        self.env.filters.update(CUSTOM_FILTERS)
+
+        logger.info("TemplateEngine initialized with custom filters")
 
     def render_step(self, step_def: Dict, context: Dict[str, Any]) -> str:
         """Render a single template step with context."""
