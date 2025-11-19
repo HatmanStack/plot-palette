@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "staging"
+  },
+  {
+    "ParameterKey": "AdminEmail",
+    "ParameterValue": "staging-admin@plotpalette.com"
+  },
+  {
+    "ParameterKey": "InitialBudgetLimit",
+    "ParameterValue": "50"
+  },
+  {
+    "ParameterKey": "LogRetentionDays",
+    "ParameterValue": "7"
+  },
+  {
+    "ParameterKey": "TemplatesBucketName",
+    "ParameterValue": ""
+  }
+]

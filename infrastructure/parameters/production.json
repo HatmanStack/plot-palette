@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "production"
+  },
+  {
+    "ParameterKey": "AdminEmail",
+    "ParameterValue": "admin@plotpalette.com"
+  },
+  {
+    "ParameterKey": "InitialBudgetLimit",
+    "ParameterValue": "100"
+  },
+  {
+    "ParameterKey": "LogRetentionDays",
+    "ParameterValue": "30"
+  },
+  {
+    "ParameterKey": "TemplatesBucketName",
+    "ParameterValue": ""
+  }
+]
