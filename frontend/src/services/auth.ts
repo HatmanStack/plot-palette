@@ -16,7 +16,7 @@ export async function signUp(email: string, password: string): Promise<void> {
       new CognitoUserAttribute({ Name: 'email', Value: email }),
     ]
 
-    userPool.signUp(email, password, attributeList, [], (err, _result) => {
+    userPool.signUp(email, password, attributeList, [], (err) => {
       if (err) reject(err)
       else resolve()
     })
