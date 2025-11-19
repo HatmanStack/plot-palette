@@ -1,0 +1,243 @@
+"""
+Plot Palette - Create Job Lambda Handler
+
+POST /jobs endpoint that creates new generation jobs with configuration
+validation, budget limits, and queue insertion.
+"""
+
+import json
+import os
+import sys
+from datetime import datetime
+from typing import Any, Dict
+
+# Add shared library to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
+
+import boto3
+from botocore.exceptions import ClientError
+
+from models import JobConfig
+from constants import JobStatus, ExportFormat
+from utils import generate_job_id, setup_logger
+
+# Initialize logger
+logger = setup_logger(__name__)
+
+# Initialize AWS clients
+dynamodb = boto3.resource('dynamodb')
+jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE_NAME', 'plot-palette-Jobs'))
+queue_table = dynamodb.Table(os.environ.get('QUEUE_TABLE_NAME', 'plot-palette-Queue'))
+templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
+
+
+def validate_job_config(config: Dict[str, Any]) -> tuple[bool, str]:
+    """
+    Validate job configuration parameters.
+
+    Args:
+        config: Job configuration dictionary
+
+    Returns:
+        tuple[bool, str]: (is_valid, error_message)
+    """
+    required_fields = ['template_id', 'seed_data_path', 'budget_limit', 'output_format', 'num_records']
+
+    for field in required_fields:
+        if field not in config:
+            return False, f"Missing required field: {field}"
+
+    # Validate budget_limit
+    budget_limit = config['budget_limit']
+    if not isinstance(budget_limit, (int, float)) or budget_limit <= 0 or budget_limit > 1000:
+        return False, "budget_limit must be between 0 and 1000 USD"
+
+    # Validate output_format
+    output_format = config['output_format']
+    if output_format not in [fmt.value for fmt in ExportFormat]:
+        return False, f"output_format must be one of: {', '.join([fmt.value for fmt in ExportFormat])}"
+
+    # Validate num_records
+    num_records = config['num_records']
+    if not isinstance(num_records, int) or num_records <= 0 or num_records > 1_000_000:
+        return False, "num_records must be between 1 and 1,000,000"
+
+    return True, ""
+
+
+def error_response(status_code: int, message: str) -> Dict[str, Any]:
+    """
+    Generate error response.
+
+    Args:
+        status_code: HTTP status code
+        message: Error message
+
+    Returns:
+        Dict: API Gateway response object
+    """
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+        },
+        "body": json.dumps({"error": message})
+    }
+
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Lambda handler for POST /jobs endpoint.
+
+    Creates a new generation job with validated configuration and inserts it
+    into the Jobs table and Queue table.
+
+    Args:
+        event: API Gateway event
+        context: Lambda context
+
+    Returns:
+        Dict: API Gateway response
+    """
+    try:
+        # Extract user ID from JWT claims
+        user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
+
+        logger.info(json.dumps({
+            "event": "create_job_request",
+            "user_id": user_id
+        }))
+
+        # Parse request body
+        try:
+            body = json.loads(event['body'])
+        except json.JSONDecodeError:
+            return error_response(400, "Invalid JSON in request body")
+
+        # Validate configuration
+        is_valid, error_msg = validate_job_config(body)
+        if not is_valid:
+            return error_response(400, error_msg)
+
+        # Validate template exists
+        template_id = body['template_id']
+        template_version = body.get('template_version', 1)
+
+        try:
+            template_response = templates_table.get_item(
+                Key={
+                    'template_id': template_id,
+                    'version': template_version
+                }
+            )
+
+            if 'Item' not in template_response:
+                return error_response(404, "Template not found")
+
+        except ClientError as e:
+            logger.error(json.dumps({
+                "event": "template_lookup_error",
+                "error": str(e)
+            }))
+            return error_response(500, "Error validating template")
+
+        # Generate job ID
+        job_id = generate_job_id()
+        now = datetime.utcnow().isoformat()
+
+        # Create job record
+        job = JobConfig(
+            job_id=job_id,
+            user_id=user_id,
+            status=JobStatus.QUEUED,
+            created_at=now,
+            updated_at=now,
+            config=body,
+            budget_limit=body['budget_limit'],
+            tokens_used=0,
+            records_generated=0,
+            cost_estimate=0.0
+        )
+
+        # Insert into Jobs table
+        try:
+            jobs_table.put_item(
+                Item={
+                    'job_id': job_id,
+                    'user_id': user_id,
+                    'status': JobStatus.QUEUED.value,
+                    'created_at': now,
+                    'updated_at': now,
+                    'config': body,
+                    'budget_limit': str(body['budget_limit']),
+                    'tokens_used': 0,
+                    'records_generated': 0,
+                    'cost_estimate': '0.0'
+                }
+            )
+        except ClientError as e:
+            logger.error(json.dumps({
+                "event": "job_insert_error",
+                "error": str(e)
+            }))
+            return error_response(500, "Error creating job")
+
+        # Insert into Queue table
+        try:
+            queue_table.put_item(
+                Item={
+                    'status': 'QUEUED',
+                    'job_id_timestamp': f"{job_id}#{now}",
+                    'job_id': job_id,
+                    'priority': body.get('priority', 5),
+                    'timestamp': now
+                }
+            )
+        except ClientError as e:
+            logger.error(json.dumps({
+                "event": "queue_insert_error",
+                "error": str(e)
+            }))
+            # Try to rollback job creation
+            try:
+                jobs_table.delete_item(Key={'job_id': job_id})
+            except:
+                pass
+            return error_response(500, "Error queuing job")
+
+        logger.info(json.dumps({
+            "event": "job_created",
+            "job_id": job_id,
+            "user_id": user_id,
+            "budget_limit": body['budget_limit'],
+            "num_records": body['num_records']
+        }))
+
+        return {
+            "statusCode": 201,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
+                "job_id": job_id,
+                "status": "QUEUED",
+                "created_at": now,
+                "message": "Job created successfully"
+            })
+        }
+
+    except KeyError as e:
+        logger.error(json.dumps({
+            "event": "missing_field_error",
+            "error": str(e)
+        }))
+        return error_response(400, f"Missing required field: {str(e)}")
+
+    except Exception as e:
+        logger.error(json.dumps({
+            "event": "unexpected_error",
+            "error": str(e)
+        }), exc_info=True)
+        return error_response(500, "Internal server error")
