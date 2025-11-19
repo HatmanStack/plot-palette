@@ -15,12 +15,8 @@ from unittest.mock import MagicMock, patch, Mock
 from datetime import datetime
 from moto import mock_s3, mock_dynamodb
 import boto3
-import sys
 
-# Add backend paths
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend/shared'))
-
-from models import CheckpointState
+from backend.shared.models import CheckpointState
 
 
 @pytest.fixture

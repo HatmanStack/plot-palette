@@ -15,13 +15,8 @@ from unittest.mock import MagicMock, patch, Mock
 from datetime import datetime
 from moto import mock_dynamodb, mock_s3
 import boto3
-import sys
 
-# Add backend paths
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend/ecs_tasks/worker'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend/shared'))
-
-from constants import JobStatus
+from backend.shared.constants import JobStatus
 
 
 @pytest.fixture
@@ -234,7 +229,7 @@ class TestWorkerJobProcessing:
         )
         assert len(queued_response['Items']) == 0
 
-    @patch('worker.bedrock_client')
+    @patch('backend.ecs_tasks.worker.worker.bedrock_client')
     def test_generate_single_record(self, mock_bedrock, dynamodb_tables, s3_bucket):
         """Test generating a single record with mocked Bedrock."""
         mock_bedrock.invoke_model.return_value = {
@@ -244,7 +239,7 @@ class TestWorkerJobProcessing:
         }
 
         # Simulate template rendering and Bedrock call
-        from template_engine import TemplateEngine
+        from backend.ecs_tasks.worker.template_engine import TemplateEngine
         engine = TemplateEngine()
 
         template_def = {
@@ -360,12 +355,12 @@ class TestWorkerDataGeneration:
 class TestWorkerErrorHandling:
     """Test worker error handling."""
 
-    @patch('worker.bedrock_client')
+    @patch('backend.ecs_tasks.worker.worker.bedrock_client')
     def test_bedrock_api_error(self, mock_bedrock):
         """Test handling Bedrock API errors."""
         mock_bedrock.invoke_model.side_effect = Exception("Bedrock API error")
 
-        from template_engine import TemplateEngine
+        from backend.ecs_tasks.worker.template_engine import TemplateEngine
         engine = TemplateEngine()
 
         template_def = {
@@ -384,7 +379,7 @@ class TestWorkerErrorHandling:
 
     def test_invalid_seed_data(self, dynamodb_tables):
         """Test handling invalid seed data."""
-        from utils import validate_seed_data
+        from backend.shared.utils import validate_seed_data
 
         data = {'author': {'name': 'Jane'}}
         is_valid, error = validate_seed_data(
