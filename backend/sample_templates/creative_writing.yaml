@@ -1,0 +1,48 @@
+template:
+  id: creative-writing-v1
+  name: "Creative Writing - Story Generator"
+  description: "Generate creative short stories based on theme, style, and length with structured outline and summary"
+  category: creative_writing
+  is_public: true
+
+  schema_requirements:
+    - theme
+    - author.name
+    - author.style_description
+    - word_count
+
+  steps:
+    - id: outline
+      model: meta.llama3-1-8b-instruct-v1:0
+      prompt: |
+        Create a brief story outline (3-5 plot points) for a {{ word_count }}-word story.
+
+        Theme: {{ theme }}
+        Author style: {{ author.style_description | writing_style }}
+
+        Output just the outline as numbered points, focusing on narrative structure.
+
+    - id: story
+      model: anthropic.claude-3-5-sonnet-20241022-v2:0
+      prompt: |
+        Write a complete short story based on this outline:
+
+        {{ steps.outline.output }}
+
+        Requirements:
+        - Approximately {{ word_count }} words
+        - {{ author.style_description | writing_style }} writing style
+        - Theme: {{ theme }}
+        - Include vivid descriptions and character development
+        - Show, don't tell - use sensory details
+        - Create an emotional connection with readers
+        - End with a satisfying resolution
+
+    - id: summary
+      model: meta.llama3-1-8b-instruct-v1:0
+      prompt: |
+        Summarize this story in 2-3 sentences:
+
+        {{ steps.story.output | truncate_tokens(500) }}
+
+        Capture the essence and emotional arc.
