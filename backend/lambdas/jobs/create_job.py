@@ -82,8 +82,21 @@ def start_worker_task(job_id: str) -> str:
     """
     cluster_name = os.environ.get('ECS_CLUSTER_NAME', '')
     task_definition = os.environ.get('TASK_DEFINITION_ARN', 'plot-palette-worker')
-    subnet_ids = os.environ.get('SUBNET_IDS', '').split(',')
+    subnet_ids_raw = os.environ.get('SUBNET_IDS', '')
     security_group_id = os.environ.get('SECURITY_GROUP_ID', '')
+
+    # Validate required ECS configuration
+    if not cluster_name:
+        raise ValueError("ECS_CLUSTER_NAME environment variable not set")
+    if not subnet_ids_raw:
+        raise ValueError("SUBNET_IDS environment variable not set")
+    if not security_group_id:
+        raise ValueError("SECURITY_GROUP_ID environment variable not set")
+
+    # Parse and filter subnet IDs (remove empty strings)
+    subnet_ids = [s.strip() for s in subnet_ids_raw.split(',') if s.strip()]
+    if not subnet_ids:
+        raise ValueError("SUBNET_IDS contains no valid subnet IDs")
 
     try:
         response = ecs_client.run_task(
