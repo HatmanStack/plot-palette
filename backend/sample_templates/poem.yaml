@@ -1,0 +1,51 @@
+template:
+  id: poem-v1
+  name: "Poetry Generator"
+  description: "Generate poems in various styles and forms with attention to structure"
+  category: poem
+  is_public: true
+
+  schema_requirements:
+    - theme
+    - poem_style
+    - poem_form
+
+  steps:
+    - id: poem
+      model: anthropic.claude-3-5-sonnet-20241022-v2:0
+      prompt: |
+        Write a {{ poem_form }} poem about **{{ theme }}**.
+
+        Style: {{ poem_style }}
+
+        {% if poem_form == "haiku" %}
+        Follow the traditional 5-7-5 syllable structure.
+        Capture a moment in nature or an insight.
+        Use seasonal reference (kigo) if appropriate.
+        {% elif poem_form == "sonnet" %}
+        Write 14 lines in iambic pentameter.
+        Follow traditional sonnet structure (Shakespearean or Petrarchan).
+        Include volta (turn) in the appropriate place.
+        Use clear rhyme scheme: ABAB CDCD EFEF GG or ABBA ABBA CDE CDE.
+        {% elif poem_form == "free verse" %}
+        Use free verse with:
+        - Vivid imagery and metaphors
+        - Strong sensory language
+        - Meaningful line breaks
+        - Natural rhythm and flow
+        {% elif poem_form == "limerick" %}
+        Write a limerick with:
+        - AABBA rhyme scheme
+        - Anapestic meter (da-da-DUM)
+        - Humorous or whimsical tone
+        - 5 lines with syllable pattern 8-8-5-5-8
+        {% else %}
+        Create a poem with:
+        - Clear structure and form
+        - Consistent voice and tone
+        - Powerful imagery
+        {% endif %}
+
+        Make it evocative, memorable, and emotionally resonant.
+        Use concrete images rather than abstract concepts.
+        Let the theme emerge naturally through the imagery.
