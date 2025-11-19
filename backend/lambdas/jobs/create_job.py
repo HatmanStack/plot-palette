@@ -26,6 +26,8 @@ logger = setup_logger(__name__)
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
+ecs_client = boto3.client('ecs')
+
 jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE_NAME', 'plot-palette-Jobs'))
 queue_table = dynamodb.Table(os.environ.get('QUEUE_TABLE_NAME', 'plot-palette-Queue'))
 templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
@@ -63,6 +65,68 @@ def validate_job_config(config: Dict[str, Any]) -> tuple[bool, str]:
         return False, "num_records must be between 1 and 1,000,000"
 
     return True, ""
+
+
+def start_worker_task(job_id: str) -> str:
+    """
+    Start ECS Fargate task for job processing.
+
+    Args:
+        job_id: Job ID to process
+
+    Returns:
+        str: Task ARN
+
+    Raises:
+        ClientError: If ECS task cannot be started
+    """
+    cluster_name = os.environ.get('ECS_CLUSTER_NAME', '')
+    task_definition = os.environ.get('TASK_DEFINITION_ARN', 'plot-palette-worker')
+    subnet_ids = os.environ.get('SUBNET_IDS', '').split(',')
+    security_group_id = os.environ.get('SECURITY_GROUP_ID', '')
+
+    try:
+        response = ecs_client.run_task(
+            cluster=cluster_name,
+            taskDefinition=task_definition,
+            launchType='FARGATE',
+            networkConfiguration={
+                'awsvpcConfiguration': {
+                    'subnets': subnet_ids,
+                    'securityGroups': [security_group_id],
+                    'assignPublicIp': 'ENABLED'
+                }
+            },
+            capacityProviderStrategy=[{
+                'capacityProvider': 'FARGATE_SPOT',
+                'weight': 1,
+                'base': 0
+            }],
+            enableExecuteCommand=True,  # For debugging
+            tags=[
+                {'key': 'job-id', 'value': job_id},
+                {'key': 'application', 'value': 'plot-palette'}
+            ]
+        )
+
+        if response['tasks']:
+            task_arn = response['tasks'][0]['taskArn']
+            logger.info(json.dumps({
+                "event": "ecs_task_started",
+                "job_id": job_id,
+                "task_arn": task_arn
+            }))
+            return task_arn
+        else:
+            raise Exception("No tasks returned from run_task")
+
+    except ClientError as e:
+        logger.error(json.dumps({
+            "event": "ecs_task_start_error",
+            "job_id": job_id,
+            "error": str(e)
+        }))
+        raise
 
 
 def error_response(status_code: int, message: str) -> Dict[str, Any]:
@@ -213,6 +277,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "budget_limit": body['budget_limit'],
             "num_records": body['num_records']
         }))
+
+        # Start ECS worker task to process the job
+        try:
+            task_arn = start_worker_task(job_id)
+        except Exception as e:
+            logger.error(json.dumps({
+                "event": "worker_task_start_failed",
+                "job_id": job_id,
+                "error": str(e)
+            }))
+            # Don't fail the job creation - worker can be started manually
+            # or another task will pick it up from the queue
+            task_arn = None
 
         return {
             "statusCode": 201,
