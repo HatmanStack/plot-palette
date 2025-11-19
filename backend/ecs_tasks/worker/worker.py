@@ -13,9 +13,14 @@ import os
 import time
 import random
 import boto3
-from datetime import datetime
+from datetime import datetime, timedelta
 from botocore.exceptions import ClientError
 from template_engine import TemplateEngine
+
+# Import from shared constants
+import sys
+sys.path.append('/app')
+from shared.constants import MODEL_PRICING, FARGATE_SPOT_PRICING, S3_PRICING
 
 # Setup logging
 logging.basicConfig(
@@ -197,6 +202,10 @@ class Worker:
         # Load or create checkpoint
         checkpoint = self.load_checkpoint(job_id)
         start_index = checkpoint.get('records_generated', 0)
+
+        # Store job start time in checkpoint if not already there
+        if 'started_at' not in checkpoint:
+            checkpoint['started_at'] = datetime.utcnow().isoformat()
 
         target_records = config['num_records']
 
@@ -447,18 +456,106 @@ class Worker:
         logger.info(f"Saved batch {batch_number} for job {job_id}: {len(records)} records")
 
     def calculate_current_cost(self, job_id):
-        """Calculate current cost - stub for Task 6."""
-        return 0.0
+        """Query cost tracking table and return latest total cost."""
+        try:
+            response = cost_tracking_table.query(
+                KeyConditionExpression='job_id = :jid',
+                ExpressionAttributeValues={':jid': job_id},
+                ScanIndexForward=False,  # Descending order (most recent first)
+                Limit=1
+            )
+
+            if response['Items']:
+                latest_cost = response['Items'][0]['estimated_cost']['total']
+                return latest_cost
+            else:
+                return 0.0
+
+        except Exception as e:
+            logger.error(f"Error calculating cost: {str(e)}", exc_info=True)
+            # Fail open to avoid blocking generation
+            return 0.0
 
     def update_cost_tracking(self, job_id, checkpoint):
-        """Update cost tracking - stub for Task 6."""
-        logger.info(f"update_cost_tracking called for {job_id} (stub)")
-        pass
+        """Write cost tracking record to DynamoDB with 90-day TTL."""
+        tokens_used = checkpoint.get('tokens_used', 0)
+        records_generated = checkpoint.get('records_generated', 0)
+
+        # Calculate Bedrock cost (simplified - assumes Claude Sonnet average)
+        # In real implementation, would track per-model usage
+        bedrock_cost = (tokens_used / 1_000_000) * MODEL_PRICING['anthropic.claude-3-5-sonnet-20241022-v2:0']['input']
+
+        # Calculate Fargate cost (elapsed time)
+        started_at_str = checkpoint.get('started_at')
+        if started_at_str:
+            try:
+                started_at = datetime.fromisoformat(started_at_str)
+            except:
+                started_at = datetime.utcnow()
+        else:
+            started_at = datetime.utcnow()
+
+        elapsed_seconds = (datetime.utcnow() - started_at).total_seconds()
+        fargate_hours = elapsed_seconds / 3600
+        # Assume 0.5 vCPU, 1 GB memory
+        fargate_cost = (fargate_hours * FARGATE_SPOT_PRICING['vcpu'] * 0.5) + \
+                       (fargate_hours * FARGATE_SPOT_PRICING['memory'] * 1.0)
+
+        # Calculate S3 cost (batch uploads + checkpoint saves)
+        batch_count = checkpoint.get('current_batch', 1)
+        s3_puts = batch_count + (checkpoint['records_generated'] // self.CHECKPOINT_INTERVAL)
+        s3_cost = (s3_puts / 1000) * S3_PRICING['PUT']
+
+        total_cost = bedrock_cost + fargate_cost + s3_cost
+
+        # Write to DynamoDB with TTL
+        ttl_timestamp = int((datetime.utcnow() + timedelta(days=90)).timestamp())
+
+        try:
+            cost_tracking_table.put_item(Item={
+                'job_id': job_id,
+                'timestamp': datetime.utcnow().isoformat(),
+                'bedrock_tokens': tokens_used,
+                'fargate_hours': round(fargate_hours, 4),
+                's3_operations': s3_puts,
+                'estimated_cost': {
+                    'bedrock': round(bedrock_cost, 4),
+                    'fargate': round(fargate_cost, 4),
+                    's3': round(s3_cost, 6),
+                    'total': round(total_cost, 4)
+                },
+                'records_generated': records_generated,
+                'ttl': ttl_timestamp
+            })
+
+            logger.info(f"Updated cost tracking for job {job_id}: ${total_cost:.4f}")
+
+        except Exception as e:
+            logger.error(f"Error writing cost tracking: {str(e)}", exc_info=True)
+
+        return total_cost
 
     def update_job_progress(self, job_id, checkpoint):
-        """Update job progress - stub for Task 6."""
-        logger.info(f"update_job_progress called for {job_id} (stub)")
-        pass
+        """Update job record with current progress."""
+        try:
+            jobs_table.update_item(
+                Key={'job_id': job_id},
+                UpdateExpression='''
+                    SET records_generated = :records,
+                        tokens_used = :tokens,
+                        cost_estimate = :cost,
+                        updated_at = :now
+                ''',
+                ExpressionAttributeValues={
+                    ':records': checkpoint['records_generated'],
+                    ':tokens': checkpoint.get('tokens_used', 0),
+                    ':cost': checkpoint.get('cost_accumulated', 0.0),
+                    ':now': datetime.utcnow().isoformat()
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Error updating job progress: {str(e)}", exc_info=True)
 
     def export_data(self, job_id, config):
         """Export data - stub for Task 7."""
