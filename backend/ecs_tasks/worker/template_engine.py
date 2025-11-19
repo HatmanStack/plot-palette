@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
@@ -23,8 +23,30 @@ logger = logging.getLogger(__name__)
 class TemplateEngine:
     """Template engine for rendering and executing multi-step templates."""
 
-    def __init__(self):
+    def __init__(self, dynamodb_client=None):
+        """
+        Initialize template engine with optional DynamoDB client.
+
+        Args:
+            dynamodb_client: Optional boto3 DynamoDB resource for template loading
+        """
+        self.dynamodb = dynamodb_client
+        self.templates_table = None
+
+        if self.dynamodb:
+            try:
+                import boto3
+                if not dynamodb_client:
+                    self.dynamodb = boto3.resource('dynamodb')
+                table_name = os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates')
+                self.templates_table = self.dynamodb.Table(table_name)
+                logger.info(f"DynamoDB template loader configured with table: {table_name}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
+
+        # Create Jinja2 environment with custom loader
         self.env = jinja2.Environment(
+            loader=jinja2.FunctionLoader(self.load_template_string),
             autoescape=False,
             trim_blocks=True,
             lstrip_blocks=True
@@ -33,7 +55,55 @@ class TemplateEngine:
         # Register custom filters
         self.env.filters.update(CUSTOM_FILTERS)
 
-        logger.info("TemplateEngine initialized with custom filters")
+        logger.info("TemplateEngine initialized with custom filters and template composition support")
+
+    def load_template_string(self, template_name: str) -> Optional[str]:
+        """
+        Load template string from DynamoDB for Jinja2 includes.
+
+        This method is called by Jinja2 when it encounters {% include 'template-name' %}
+
+        Args:
+            template_name: Template ID to load
+
+        Returns:
+            str: Template prompt content or None if not found
+        """
+        if not self.templates_table:
+            logger.error("DynamoDB template loader not configured")
+            return f"<!-- Template loader not configured: {template_name} -->"
+
+        try:
+            response = self.templates_table.get_item(
+                Key={'template_id': template_name, 'version': 1}
+            )
+
+            if 'Item' not in response:
+                logger.warning(f"Template not found for include: {template_name}")
+                return f"<!-- Template not found: {template_name} -->"
+
+            template_item = response['Item']
+            steps = template_item.get('template_definition', {}).get('steps', [])
+
+            if not steps:
+                logger.warning(f"Template {template_name} has no steps")
+                return ""
+
+            # For includes, concatenate all step prompts
+            # This allows reusable fragments to be composed
+            prompt_parts = []
+            for step in steps:
+                prompt = step.get('prompt', '')
+                if prompt:
+                    prompt_parts.append(prompt)
+
+            result = '\n\n'.join(prompt_parts)
+            logger.info(f"Loaded template for include: {template_name}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error loading template {template_name}: {str(e)}", exc_info=True)
+            return f"<!-- Error loading template {template_name}: {str(e)} -->"
 
     def render_step(self, step_def: Dict, context: Dict[str, Any]) -> str:
         """Render a single template step with context."""

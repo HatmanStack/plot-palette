@@ -1,0 +1,26 @@
+# Fragment Template: Writing Style Instructions
+# This is a reusable template fragment that can be included in other templates
+
+template:
+  id: style-instructions
+  name: "Writing Style Instructions Fragment"
+  description: "Reusable style guidelines for story generation"
+  category: fragment
+  version: 1
+  is_public: true
+
+  schema_requirements:
+    - tone
+    - audience
+
+  steps:
+    - id: style
+      model: none  # Fragment only, not executed standalone
+      prompt: |
+        **Style Guidelines:**
+        - Use clear, concise language
+        - Avoid unnecessary jargon unless contextually appropriate
+        - Write in {{ tone }} tone
+        - Target audience: {{ audience }}
+        - Focus on engaging storytelling
+        - Include vivid sensory details where appropriate

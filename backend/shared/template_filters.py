@@ -280,6 +280,49 @@ def validate_template_syntax(template_def: dict) -> Tuple[bool, str]:
         return False, f"Template validation error: {str(e)}"
 
 
+def validate_template_includes(template_def: dict, templates_table) -> Tuple[bool, str]:
+    """
+    Validate that all included templates exist in DynamoDB.
+
+    Args:
+        template_def: Template definition dictionary with steps
+        templates_table: boto3 DynamoDB Table resource
+
+    Returns:
+        Tuple[bool, str]: (is_valid, error_message)
+    """
+    try:
+        missing_includes = []
+
+        for step in template_def.get('steps', []):
+            prompt = step.get('prompt', '')
+
+            # Find all {% include 'template-name' %} references
+            includes = re.findall(r"{%\s*include\s+'([^']+)'\s*%}", prompt)
+            includes.extend(re.findall(r'{%\s*include\s+"([^"]+)"\s*%}', prompt))
+
+            for include_name in includes:
+                # Check if template exists
+                try:
+                    response = templates_table.get_item(
+                        Key={'template_id': include_name, 'version': 1}
+                    )
+                    if 'Item' not in response:
+                        missing_includes.append(include_name)
+                except Exception as e:
+                    logger.error(f"Error checking include {include_name}: {str(e)}")
+                    missing_includes.append(include_name)
+
+        if missing_includes:
+            return False, f"Missing included templates: {', '.join(missing_includes)}"
+
+        return True, "All includes valid"
+
+    except Exception as e:
+        logger.error(f"Include validation error: {str(e)}", exc_info=True)
+        return False, f"Include validation error: {str(e)}"
+
+
 # Register all custom filters
 CUSTOM_FILTERS = {
     'random_sentence': random_sentence,
