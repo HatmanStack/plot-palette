@@ -21,6 +21,7 @@ import jinja2.meta
 from boto3.dynamodb.conditions import Key
 
 from utils import setup_logger
+from template_filters import validate_template_syntax
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -113,10 +114,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         except json.JSONDecodeError:
             return error_response(400, "Invalid JSON in request body")
 
-        # Get current template to verify ownership
+        # Get current template to verify ownership (get latest version)
         try:
             current_response = templates_table.query(
                 KeyConditionExpression=Key('template_id').eq(template_id),
+                ScanIndexForward=False,  # Descending order to get latest version
                 Limit=1
             )
 
@@ -144,7 +146,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         name = body.get('name', current_template['name'])
         template_def = body.get('template_definition', current_template['template_definition'])
 
-        # Validate Jinja2 syntax and extract schema
+        # Validate Jinja2 syntax first
+        try:
+            valid, error_msg = validate_template_syntax(template_def)
+            if not valid:
+                return error_response(400, f"Template validation failed: {error_msg}")
+        except Exception as e:
+            return error_response(400, f"Template validation error: {str(e)}")
+
+        # Extract schema requirements
         try:
             schema_reqs = extract_schema_requirements(template_def)
         except ValueError as e:

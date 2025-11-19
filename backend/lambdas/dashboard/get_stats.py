@@ -8,7 +8,7 @@ cost breakdown, budget tracking, and performance metrics.
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 # Add shared library to Python path
@@ -110,7 +110,8 @@ def estimate_completion(
 
     try:
         start_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
-        elapsed = (datetime.utcnow() - start_time).total_seconds()
+        now = datetime.now(timezone.utc)
+        elapsed = (now - start_time).total_seconds()
 
         if elapsed <= 0:
             return None
@@ -120,8 +121,8 @@ def estimate_completion(
 
         if rate > 0 and remaining > 0:
             eta_seconds = remaining / rate
-            eta = datetime.utcnow() + timedelta(seconds=eta_seconds)
-            return eta.isoformat() + 'Z'
+            eta = now + timedelta(seconds=eta_seconds)
+            return eta.isoformat().replace('+00:00', 'Z')
 
     except (ValueError, TypeError) as e:
         logger.warning(json.dumps({

@@ -48,14 +48,25 @@ def template_in_use(template_id: str) -> tuple[bool, int]:
         tuple[bool, int]: (is_in_use, job_count)
     """
     try:
-        # Scan jobs table for this template_id
-        # Note: This could be slow for large tables; consider adding a GSI on template_id
-        response = jobs_table.scan(
-            FilterExpression=Attr('config.template_id').eq(template_id),
-            Limit=1  # Just need to know if any exist
-        )
+        # Scan jobs table for this template_id (paginate to get all matches)
+        # TODO: Consider adding a GSI on template_id for better performance
+        job_count = 0
+        last_evaluated_key = None
 
-        job_count = len(response.get('Items', []))
+        while True:
+            scan_kwargs = {
+                'FilterExpression': Attr('config.template_id').eq(template_id)
+            }
+            if last_evaluated_key:
+                scan_kwargs['ExclusiveStartKey'] = last_evaluated_key
+
+            response = jobs_table.scan(**scan_kwargs)
+            job_count += len(response.get('Items', []))
+
+            last_evaluated_key = response.get('LastEvaluatedKey')
+            if not last_evaluated_key:
+                break
+
         return job_count > 0, job_count
 
     except ClientError as e:
@@ -63,8 +74,8 @@ def template_in_use(template_id: str) -> tuple[bool, int]:
             "event": "check_template_usage_error",
             "error": str(e)
         }))
-        # Err on the side of caution
-        return True, 0
+        # Err on the side of caution - unknown status
+        return True, -1
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
