@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Plot Palette - HTTP API Gateway with JWT Authorization'
+Description: 'Plot Palette - HTTP API Gateway with Phase 3 Lambda Functions'
 
 Parameters:
   EnvironmentName:
@@ -19,23 +19,55 @@ Parameters:
     Type: String
     Description: ARN of the Lambda execution role from IAM stack
 
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment packages
+    Default: ''
+
+  BucketName:
+    Type: String
+    Description: S3 bucket for seed data and job outputs
+
+  JobsTableName:
+    Type: String
+    Description: DynamoDB Jobs table name
+    Default: plot-palette-Jobs
+
+  QueueTableName:
+    Type: String
+    Description: DynamoDB Queue table name
+    Default: plot-palette-Queue
+
+  TemplatesTableName:
+    Type: String
+    Description: DynamoDB Templates table name
+    Default: plot-palette-Templates
+
+  CostTrackingTableName:
+    Type: String
+    Description: DynamoDB CostTracking table name
+    Default: plot-palette-CostTracking
+
+Conditions:
+  UseLambdaCodeBucket: !Not [!Equals [!Ref LambdaCodeBucket, '']]
+
 Resources:
-  # CloudWatch Log Group for API Gateway access logs
+  # ========================================
+  # API Gateway Core Resources
+  # ========================================
+
   ApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/apigateway/plot-palette-api-${EnvironmentName}'
       RetentionInDays: 7
 
-  # HTTP API Gateway (v2)
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       Name: !Sub 'plot-palette-api-${EnvironmentName}'
       Description: 'Plot Palette API for synthetic data generation'
       ProtocolType: HTTP
-
-      # CORS configuration - allowing all origins for now (will restrict to Amplify domain in Phase 6)
       CorsConfiguration:
         AllowOrigins:
           - '*'
@@ -52,13 +84,10 @@ Resources:
           - X-Api-Key
           - X-Amz-Security-Token
         MaxAge: 300
-
       Tags:
         Name: !Sub 'plot-palette-api-${EnvironmentName}'
         Environment: !Ref EnvironmentName
-        ManagedBy: CloudFormation
 
-  # JWT Authorizer using Cognito User Pool
   JwtAuthorizer:
     Type: AWS::ApiGatewayV2::Authorizer
     Properties:
@@ -72,209 +101,612 @@ Resources:
           - !Ref UserPoolClientId
         Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}'
 
-  # Default Stage with auto-deployment
   ApiStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
       StageName: $default
       ApiId: !Ref HttpApi
       AutoDeploy: true
-      Description: 'Default stage with auto-deployment'
-
-      # Access logging configuration
       AccessLogSettings:
         DestinationArn: !GetAtt ApiLogGroup.Arn
-        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength","errorMessage":"$context.error.message"}'
-
-      # Stage variables (for future use)
-      StageVariables:
-        environment: !Ref EnvironmentName
-
-      # Default route settings - throttling
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status"}'
       DefaultRouteSettings:
-        ThrottlingBurstLimit: 1000
+        ThrottlingBurstLimit: 2000
         ThrottlingRateLimit: 1000
 
-      Tags:
-        Name: !Sub 'plot-palette-api-stage-${EnvironmentName}'
-        Environment: !Ref EnvironmentName
+  # ========================================
+  # Jobs API Lambda Functions
+  # ========================================
 
-  # Health Check Route (no authorization required)
-  HealthRoute:
+  CreateJobFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-create-job-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: create_job.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/jobs_create_job.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented - deploy Lambda code"}
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTableName
+          QUEUE_TABLE_NAME: !Ref QueueTableName
+          TEMPLATES_TABLE_NAME: !Ref TemplatesTableName
+          BUCKET_NAME: !Ref BucketName
+
+  ListJobsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-list-jobs-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: list_jobs.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/jobs_list_jobs.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTableName
+
+  GetJobFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-get-job-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: get_job.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/jobs_get_job.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTableName
+
+  DeleteJobFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-delete-job-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: delete_job.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 60
+      MemorySize: 512
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/jobs_delete_job.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTableName
+          QUEUE_TABLE_NAME: !Ref QueueTableName
+          COST_TRACKING_TABLE_NAME: !Ref CostTrackingTableName
+          BUCKET_NAME: !Ref BucketName
+          ECS_CLUSTER_NAME: plot-palette-cluster
+
+  # ========================================
+  # Templates API Lambda Functions
+  # ========================================
+
+  CreateTemplateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-create-template-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: create_template.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/templates_create_template.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          TEMPLATES_TABLE_NAME: !Ref TemplatesTableName
+
+  ListTemplatesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-list-templates-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: list_templates.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/templates_list_templates.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          TEMPLATES_TABLE_NAME: !Ref TemplatesTableName
+
+  GetTemplateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-get-template-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: get_template.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/templates_get_template.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          TEMPLATES_TABLE_NAME: !Ref TemplatesTableName
+
+  UpdateTemplateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-update-template-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: update_template.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/templates_update_template.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          TEMPLATES_TABLE_NAME: !Ref TemplatesTableName
+
+  DeleteTemplateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-delete-template-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: delete_template.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/templates_delete_template.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          TEMPLATES_TABLE_NAME: !Ref TemplatesTableName
+          JOBS_TABLE_NAME: !Ref JobsTableName
+
+  # ========================================
+  # Seed Data API Lambda Functions
+  # ========================================
+
+  GenerateUploadUrlFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-generate-upload-url-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: generate_upload_url.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/seed_data_generate_upload_url.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+
+  ValidateSeedDataFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-validate-seed-data-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: validate_seed_data.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 60
+      MemorySize: 512
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/seed_data_validate_seed_data.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+          TEMPLATES_TABLE_NAME: !Ref TemplatesTableName
+
+  # ========================================
+  # Dashboard API Lambda Functions
+  # ========================================
+
+  GetStatsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-get-stats-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: get_stats.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code: !If
+        - UseLambdaCodeBucket
+        - S3Bucket: !Ref LambdaCodeBucket
+          S3Key: lambdas/dashboard_get_stats.zip
+        - ZipFile: |
+            def lambda_handler(event, context):
+                return {"statusCode": 501, "body": "Not implemented"}
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTableName
+          COST_TRACKING_TABLE_NAME: !Ref CostTrackingTableName
+
+  # ========================================
+  # Lambda Permissions
+  # ========================================
+
+  CreateJobPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateJobFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  ListJobsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListJobsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  GetJobPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetJobFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  DeleteJobPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeleteJobFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  CreateTemplatePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateTemplateFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  ListTemplatesPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListTemplatesFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  GetTemplatePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetTemplateFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  UpdateTemplatePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateTemplateFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  DeleteTemplatePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeleteTemplateFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  GenerateUploadUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GenerateUploadUrlFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  ValidateSeedDataPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ValidateSeedDataFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  GetStatsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetStatsFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  # ========================================
+  # API Gateway Integrations
+  # ========================================
+
+  CreateJobIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt CreateJobFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  ListJobsIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ListJobsFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  GetJobIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt GetJobFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  DeleteJobIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt DeleteJobFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 60000
+
+  CreateTemplateIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt CreateTemplateFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  ListTemplatesIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ListTemplatesFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  GetTemplateIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt GetTemplateFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  UpdateTemplateIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt UpdateTemplateFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  DeleteTemplateIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt DeleteTemplateFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  GenerateUploadUrlIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt GenerateUploadUrlFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  ValidateSeedDataIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ValidateSeedDataFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 60000
+
+  GetStatsIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt GetStatsFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 30000
+
+  # ========================================
+  # API Gateway Routes
+  # ========================================
+
+  # Jobs Routes
+  CreateJobRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
-      RouteKey: 'GET /health'
-      Target: !Sub 'integrations/${HealthIntegration}'
-
-  # User Info Route (requires JWT authorization)
-  UserRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref HttpApi
-      RouteKey: 'GET /user'
+      RouteKey: 'POST /jobs'
       AuthorizationType: JWT
       AuthorizerId: !Ref JwtAuthorizer
-      Target: !Sub 'integrations/${UserIntegration}'
+      Target: !Sub 'integrations/${CreateJobIntegration}'
 
-  # Lambda function for health check
-  HealthCheckFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'plot-palette-health-${EnvironmentName}'
-      Runtime: python3.13
-      Handler: index.lambda_handler
-      Role: !Ref LambdaExecutionRoleArn
-      Timeout: 10
-      MemorySize: 128
-
-      # Inline code for simplicity (small function)
-      Code:
-        ZipFile: |
-          import json
-          import logging
-          from datetime import datetime
-
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
-
-          def lambda_handler(event, context):
-              """Health check endpoint - returns API status"""
-              logger.info(json.dumps({
-                  "event": "health_check",
-                  "request_id": context.request_id
-              }))
-
-              response = {
-                  "status": "healthy",
-                  "timestamp": datetime.utcnow().isoformat(),
-                  "version": "1.0.0",
-                  "service": "plot-palette-api"
-              }
-
-              return {
-                  "statusCode": 200,
-                  "headers": {
-                      "Content-Type": "application/json",
-                      "Access-Control-Allow-Origin": "*"
-                  },
-                  "body": json.dumps(response)
-              }
-
-      Tags:
-        - Key: Name
-          Value: !Sub 'plot-palette-health-${EnvironmentName}'
-        - Key: Environment
-          Value: !Ref EnvironmentName
-
-  # Lambda function for user info
-  UserInfoFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub 'plot-palette-user-${EnvironmentName}'
-      Runtime: python3.13
-      Handler: index.lambda_handler
-      Role: !Ref LambdaExecutionRoleArn
-      Timeout: 10
-      MemorySize: 128
-
-      # Inline code for simplicity
-      Code:
-        ZipFile: |
-          import json
-          import logging
-
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
-
-          def lambda_handler(event, context):
-              """Get current user information from JWT claims"""
-              logger.info(json.dumps({
-                  "event": "get_user_info",
-                  "request_id": context.request_id
-              }))
-
-              try:
-                  # Extract claims from JWT (set by API Gateway authorizer)
-                  claims = event.get('requestContext', {}).get('authorizer', {}).get('jwt', {}).get('claims', {})
-
-                  if not claims:
-                      return {
-                          "statusCode": 401,
-                          "headers": {"Content-Type": "application/json"},
-                          "body": json.dumps({"error": "Unauthorized"})
-                      }
-
-                  user_info = {
-                      "user_id": claims.get('sub'),
-                      "email": claims.get('email'),
-                      "email_verified": claims.get('email_verified'),
-                      "name": claims.get('name'),
-                      "role": claims.get('custom:user_role', 'user'),
-                      "token_issued_at": claims.get('iat'),
-                      "token_expires_at": claims.get('exp')
-                  }
-
-                  return {
-                      "statusCode": 200,
-                      "headers": {
-                          "Content-Type": "application/json",
-                          "Access-Control-Allow-Origin": "*"
-                      },
-                      "body": json.dumps(user_info)
-                  }
-
-              except Exception as e:
-                  logger.error(f"Error getting user info: {str(e)}", exc_info=True)
-                  return {
-                      "statusCode": 500,
-                      "headers": {"Content-Type": "application/json"},
-                      "body": json.dumps({"error": "Internal server error"})
-                  }
-
-      Tags:
-        - Key: Name
-          Value: !Sub 'plot-palette-user-${EnvironmentName}'
-        - Key: Environment
-          Value: !Ref EnvironmentName
-
-  # Lambda permission for API Gateway to invoke health check function
-  HealthCheckFunctionPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref HealthCheckFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
-
-  # Lambda permission for API Gateway to invoke user info function
-  UserInfoFunctionPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref UserInfoFunction
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
-
-  # Integration for health check Lambda
-  HealthIntegration:
-    Type: AWS::ApiGatewayV2::Integration
+  ListJobsRoute:
+    Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt HealthCheckFunction.Arn
-      PayloadFormatVersion: '2.0'
-      TimeoutInMillis: 10000
+      RouteKey: 'GET /jobs'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${ListJobsIntegration}'
 
-  # Integration for user info Lambda
-  UserIntegration:
-    Type: AWS::ApiGatewayV2::Integration
+  GetJobRoute:
+    Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt UserInfoFunction.Arn
-      PayloadFormatVersion: '2.0'
-      TimeoutInMillis: 10000
+      RouteKey: 'GET /jobs/{job_id}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${GetJobIntegration}'
+
+  DeleteJobRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'DELETE /jobs/{job_id}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${DeleteJobIntegration}'
+
+  # Templates Routes
+  CreateTemplateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /templates'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${CreateTemplateIntegration}'
+
+  ListTemplatesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /templates'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${ListTemplatesIntegration}'
+
+  GetTemplateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /templates/{template_id}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${GetTemplateIntegration}'
+
+  UpdateTemplateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'PUT /templates/{template_id}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${UpdateTemplateIntegration}'
+
+  DeleteTemplateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'DELETE /templates/{template_id}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${DeleteTemplateIntegration}'
+
+  # Seed Data Routes
+  GenerateUploadUrlRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /seed-data/upload'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${GenerateUploadUrlIntegration}'
+
+  ValidateSeedDataRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /seed-data/validate'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${ValidateSeedDataIntegration}'
+
+  # Dashboard Routes
+  GetStatsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /dashboard/{job_id}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${GetStatsIntegration}'
 
 Outputs:
   ApiId:
@@ -289,26 +721,8 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-ApiEndpoint'
 
-  ApiStageName:
-    Description: API Gateway stage name
-    Value: !Ref ApiStage
-    Export:
-      Name: !Sub '${AWS::StackName}-ApiStageName'
-
   JwtAuthorizerId:
     Description: JWT Authorizer ID
     Value: !Ref JwtAuthorizer
     Export:
       Name: !Sub '${AWS::StackName}-JwtAuthorizerId'
-
-  HealthCheckFunctionArn:
-    Description: Health Check Lambda Function ARN
-    Value: !GetAtt HealthCheckFunction.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-HealthCheckFunctionArn'
-
-  UserInfoFunctionArn:
-    Description: User Info Lambda Function ARN
-    Value: !GetAtt UserInfoFunction.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-UserInfoFunctionArn'
