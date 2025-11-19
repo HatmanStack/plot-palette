@@ -160,16 +160,13 @@ jobs:
           pip install black ruff mypy
 
       - name: Check code formatting with Black
-        run: black --check backend/ tests/ || true
-        continue-on-error: true
+        run: black --check backend/ tests/
 
       - name: Lint with Ruff
-        run: ruff check backend/ tests/ || true
-        continue-on-error: true
+        run: ruff check backend/ tests/
 
       - name: Type check with mypy
-        run: mypy backend/ || true
-        continue-on-error: true
+        run: mypy backend/
 
   security-scan:
     name: Security Scan

@@ -71,7 +71,7 @@ jobs:
         run: |
           ENV="${{ github.event.inputs.environment || 'staging' }}"
           STACK_NAME="plot-palette-${ENV}"
-          echo "stack-name=${STACK_NAME}" >> $GITHUB_OUTPUT
+          echo "stack-name=${STACK_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Package Lambda functions
         run: |
