@@ -55,7 +55,7 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${Math.min(progress, 100)}%` }}
             />
           </div>
         </div>
@@ -88,7 +88,14 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
           View Details
         </Link>
         {job.status === 'COMPLETED' && (
-          <button className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm">
+          <button
+            onClick={() => {
+              // TODO: Implement download functionality
+              // Should call API endpoint to download generated data for job['job-id']
+              console.warn('Download not yet implemented for job:', job['job-id'])
+            }}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
+          >
             Download
           </button>
         )}

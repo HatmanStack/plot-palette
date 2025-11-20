@@ -68,7 +68,7 @@ export default function TemplateEditor() {
 
   async function handleTest() {
     setError('')
-    setSuccess('Template validation passed! ✓')
+    setSuccess('Template test not implemented yet — this is a placeholder')
     setTimeout(() => setSuccess(''), 3000)
   }
 

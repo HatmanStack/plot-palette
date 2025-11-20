@@ -221,7 +221,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Generate job ID
         job_id = generate_job_id()
-        now = datetime.utcnow().isoformat()
+        now = datetime.utcnow()
 
         # Create job record
         job = JobConfig(
@@ -237,22 +237,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             cost_estimate=0.0
         )
 
-        # Insert into Jobs table
+        # Insert into Jobs table using typed serialization
         try:
-            jobs_table.put_item(
-                Item={
-                    'job_id': job_id,
-                    'user_id': user_id,
-                    'status': JobStatus.QUEUED.value,
-                    'created_at': now,
-                    'updated_at': now,
-                    'config': body,
-                    'budget_limit': str(body['budget_limit']),
-                    'tokens_used': 0,
-                    'records_generated': 0,
-                    'cost_estimate': '0.0'
-                }
-            )
+            jobs_table.put_item(Item=job.to_dynamodb())
         except ClientError as e:
             logger.error(json.dumps({
                 "event": "job_insert_error",
@@ -265,10 +252,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             queue_table.put_item(
                 Item={
                     'status': 'QUEUED',
-                    'job_id_timestamp': f"{job_id}#{now}",
+                    'job_id_timestamp': f"{job_id}#{now.isoformat()}",
                     'job_id': job_id,
                     'priority': body.get('priority', 5),
-                    'timestamp': now
+                    'timestamp': now.isoformat()
                 }
             )
         except ClientError as e:

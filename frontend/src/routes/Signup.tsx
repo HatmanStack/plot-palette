@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
@@ -11,6 +11,17 @@ export default function Signup() {
   const [loading, setLoading] = useState(false)
   const { signup } = useAuth()
   const navigate = useNavigate()
+
+  // Handle redirect after successful signup with cleanup
+  useEffect(() => {
+    if (success) {
+      const timeoutId = setTimeout(() => {
+        navigate('/login')
+      }, 3000)
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [success, navigate])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -26,14 +37,22 @@ export default function Signup() {
       return
     }
 
+    // Password complexity validation
+    const hasUppercase = /[A-Z]/.test(password)
+    const hasLowercase = /[a-z]/.test(password)
+    const hasDigit = /[0-9]/.test(password)
+    const hasSpecial = /[^A-Za-z0-9]/.test(password)
+
+    if (!hasUppercase || !hasLowercase || !hasDigit || !hasSpecial) {
+      setError('Password must include uppercase, lowercase, number, and special character')
+      return
+    }
+
     setLoading(true)
 
     try {
       await signup(email, password)
       setSuccess(true)
-      setTimeout(() => {
-        navigate('/login')
-      }, 3000)
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message || 'Failed to sign up')
