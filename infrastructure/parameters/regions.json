@@ -1,0 +1,41 @@
+{
+  "us-east-1": {
+    "displayName": "US East (N. Virginia)",
+    "bedrockModels": [
+      "anthropic.claude-v2",
+      "anthropic.claude-3-sonnet-20240229-v1:0",
+      "meta.llama3-1-8b-instruct-v1:0",
+      "meta.llama3-1-70b-instruct-v1:0",
+      "mistral.mistral-7b-instruct-v0:2"
+    ],
+    "recommended": true,
+    "notes": "Broadest Bedrock model availability"
+  },
+  "us-west-2": {
+    "displayName": "US West (Oregon)",
+    "bedrockModels": [
+      "anthropic.claude-v2",
+      "anthropic.claude-3-sonnet-20240229-v1:0",
+      "meta.llama3-1-8b-instruct-v1:0"
+    ],
+    "recommended": true,
+    "notes": "Good Bedrock availability, lower latency for West Coast"
+  },
+  "eu-west-1": {
+    "displayName": "EU (Ireland)",
+    "bedrockModels": [
+      "anthropic.claude-v2",
+      "meta.llama3-1-8b-instruct-v1:0"
+    ],
+    "recommended": false,
+    "notes": "European data residency, limited Bedrock models"
+  },
+  "ap-southeast-1": {
+    "displayName": "Asia Pacific (Singapore)",
+    "bedrockModels": [
+      "anthropic.claude-v2"
+    ],
+    "recommended": false,
+    "notes": "APAC region, very limited Bedrock availability"
+  }
+}

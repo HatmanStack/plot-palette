@@ -5,111 +5,287 @@
 <div style="display: flex; justify-content: center; align-items: center;">
   <h4 style="margin: 0; display: flex;">
     <a href="https://www.apache.org/licenses/LICENSE-2.0.html">
-      <img src="https://img.shields.io/badge/license-Apache2.0-blue" alt="float is under the Apache 2.0 liscense" />
+      <img src="https://img.shields.io/badge/license-Apache2.0-blue" alt="float is under the Apache 2.0 license" />
     </a>
-    <a href="https://www.man7.org/linux/man-pages/man1/systemctl.1.html">
-      <img src="https://img.shields.io/badge/Linux%20Systemctl-green" alt="Linux" />
+    <a href="https://aws.amazon.com/bedrock/">
+      <img src="https://img.shields.io/badge/AWS%20Bedrock-orange" alt="AWS Bedrock" />
     </a>
     <a href="https://www.python.org/downloads/">
-    <img src="https://img.shields.io/badge/python->=3.10-blue">
+    <img src="https://img.shields.io/badge/python-3.13-blue">
     </a>
   </h4>
 </div>
 
-  <p><b>Empowering Writers with a Universe of Ideas <br> <a href="https://huggingface.co/datasets/Hatman/plot-palette-100k"> Plot Palette DataSet HuggingFace » </a> </b> </p>
+  <p><b>Production-Ready Serverless Synthetic Data Generator <br> <a href="https://huggingface.co/datasets/Hatman/plot-palette-100k"> Plot Palette Dataset HuggingFace » </a> </b> </p>
 </div>
 
-**Plot Palette** was created to fine-tune large language models for creative writing, generating diverse outputs through iterative loops and seed data. It is designed to be run on a Linux system with `systemctl` for managing services.  Included is the service structure, specific category prompts and ~100k data entries. 
+**Plot Palette** is a production-ready, serverless AWS application that generates synthetic training data using AWS Bedrock foundation models. The system leverages ECS Fargate Spot instances to opportunistically consume spare compute capacity at up to **70% cost savings**, with robust checkpoint-based recovery for spot interruptions.
 
-## Load DataSet
+Users interact with a modern React web application to configure generation jobs, upload seed data, customize prompt templates, and monitor real-time progress with cost tracking. The architecture is fully serverless (except for generation workers), with automatic scaling, multi-region support, and one-click CloudFormation deployment. 
 
-```script
+## Architecture
+
+```
+┌─────────────┐
+│   Users     │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    AWS Amplify (React UI)                   │
+│  • Job Creation  • Template Management  • Real-time Tracking│
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              API Gateway (HTTP API) + Cognito               │
+│         • JWT Authentication  • REST Endpoints              │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+      ┌──────────┐   ┌──────────┐   ┌──────────┐
+      │ Lambda   │   │ Lambda   │   │ Lambda   │
+      │ Create   │   │ Monitor  │   │ Export   │
+      │ Job      │   │ Jobs     │   │ Data     │
+      └────┬─────┘   └────┬─────┘   └────┬─────┘
+           │              │              │
+           ▼              ▼              ▼
+      ┌────────────────────────────────────┐
+      │         DynamoDB Tables            │
+      │  Jobs | Queue | Templates | Costs  │
+      └────────────────┬───────────────────┘
+                       │
+                       ▼
+              ┌────────────────┐
+              │  ECS Fargate   │
+              │  Spot Workers  │
+              │  • Checkpoint  │
+              │  • Recovery    │
+              └───┬────────┬───┘
+                  │        │
+         ┌────────┘        └────────┐
+         ▼                          ▼
+    ┌─────────┐              ┌──────────┐
+    │   S3    │              │  Bedrock │
+    │ Storage │              │   LLMs   │
+    └─────────┘              └──────────┘
+```
+
+## Key Features
+
+- **Web-Based UI**: Modern React interface for job management and monitoring
+- **Real-Time Progress Tracking**: Live updates on generation progress and cost accumulation
+- **Custom Prompt Templates**: Multi-step generation flows with conditional logic and variable substitution
+- **Multiple Export Formats**: JSONL, Parquet, and CSV with configurable partitioning
+- **Automatic Glacier Archival**: Cost optimization with automatic archival after 3 days
+- **Budget Limits**: Hard budget caps to prevent runaway costs
+- **Smart Model Routing**: Use cost-efficient models for simple tasks, premium models for complex reasoning
+- **Checkpoint Recovery**: Automatic recovery from Fargate Spot interruptions with minimal data loss
+- **Multi-Region Support**: Deploy in any AWS region with Bedrock availability
+
+## AWS Services Used
+
+- **AWS Bedrock**: LLM inference (Claude, Llama, Mistral models)
+- **ECS Fargate Spot**: Cost-optimized compute for generation workers
+- **S3**: Object storage for seed data, checkpoints, and outputs
+- **DynamoDB**: State management, job queue, and cost tracking
+- **API Gateway**: HTTP API with JWT authorization
+- **Cognito**: User authentication and management
+- **Amplify**: Frontend hosting and deployment
+- **CloudWatch Logs**: Centralized logging and monitoring
+- **CloudFormation**: Infrastructure as Code deployment
+
+## Quick Start
+
+### Prerequisites
+
+**AWS Account Setup:**
+- AWS Account with administrator or PowerUser permissions
+- AWS CLI v2+ installed and configured (`aws configure`)
+- AWS Bedrock access enabled in target region (request model access via AWS Console)
+
+**Local Development Tools:**
+- Python 3.13+ installed
+- Node.js 20+ and npm for frontend development
+- Git for version control
+- `jq` for JSON parsing (used by deployment script)
+
+### Deployment
+
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/HatmanStack/plot-palette.git
+   cd plot-palette
+   ```
+
+2. **Install Backend Dependencies (Optional - for local development)**
+   ```bash
+   # Install Python dependencies for local testing
+   cd backend
+   pip install -r requirements.txt
+
+   # Verify installation
+   python3 -c "from backend.shared import JobConfig; print('✓ Dependencies installed')"
+
+   # Run unit tests
+   cd ..
+   pip install pytest pytest-cov
+   pytest tests/unit/test_shared.py -v
+   ```
+
+3. **Deploy Infrastructure**
+   ```bash
+   # Deploy all infrastructure stacks to AWS
+   ./infrastructure/scripts/deploy.sh --region us-east-1 --environment production
+   ```
+
+   The deployment script will:
+   - Create VPC and networking infrastructure
+   - Set up S3 bucket with lifecycle policies
+   - Create DynamoDB tables
+   - Configure IAM roles and policies
+   - Generate `outputs.json` with all resource details
+
+4. **Access the Application**
+
+   After deployment completes, the Amplify frontend URL will be available in Phase 6. For Phase 1, infrastructure is deployed but application code will be added in subsequent phases.
+
+### Deployment Options
+
+```bash
+# Deploy to a specific region
+./infrastructure/scripts/deploy.sh --region us-west-2 --environment production
+
+# Deploy development environment
+./infrastructure/scripts/deploy.sh --region us-east-1 --environment development
+
+# Delete all infrastructure (cleanup)
+./infrastructure/scripts/deploy.sh --delete --environment test
+```
+
+### Estimated Costs
+
+**Idle Infrastructure (Phase 1 only):**
+- VPC, Subnets, Internet Gateway: **$0/month** (free)
+- S3 bucket (empty): **$0/month**
+- DynamoDB (on-demand, no traffic): **$0/month**
+- IAM roles: **$0/month**
+
+**Expected Monthly Costs (with active usage):**
+- ECS Fargate Spot: $5-20 (70% cheaper than on-demand)
+- AWS Bedrock: $10-100 (depends on token usage)
+- S3 Storage: $1-5
+- DynamoDB: $1-3
+- API Gateway: $0-1 (first 1M requests free)
+- Total: **~$20-140/month** depending on generation volume
+
+### Recommended Regions
+
+- **us-east-1** (Virginia): Broadest Bedrock model availability
+- **us-west-2** (Oregon): Good Bedrock support, lower costs
+- **eu-west-1** (Ireland): European data residency  
+
+## AWS Bedrock Models Available
+
+The system uses AWS Bedrock for LLM inference with smart model routing:
+
+**Tier 1 (Cost-Efficient):**
+- `meta.llama3-1-8b-instruct-v1:0` - Llama 3.1 8B ($0.30 input / $0.60 output per 1M tokens)
+- `mistral.mistral-7b-instruct-v0:2` - Mistral 7B ($0.15 input / $0.20 output per 1M tokens)
+
+**Tier 2 (Balanced):**
+- `meta.llama3-1-70b-instruct-v1:0` - Llama 3.1 70B ($0.99 input / $0.99 output per 1M tokens)
+
+**Tier 3 (Premium):**
+- `anthropic.claude-3-5-sonnet-20241022-v2:0` - Claude 3.5 Sonnet ($3.00 input / $15.00 output per 1M tokens)
+
+Smart routing allows you to use cheap models for simple transformations and premium models for complex reasoning, optimizing cost vs. quality.
+
+## Example Dataset
+
+The original [Plot Palette 100k dataset](https://huggingface.co/datasets/Hatman/plot-palette-100k) was generated using an earlier version of this system. The new AWS-based architecture provides:
+- Better cost efficiency (70% savings with Fargate Spot)
+- Web-based management interface
+- Custom prompt templates
+- Automatic checkpointing and recovery
+- Multiple export formats
+
+```python
+# Load the example dataset
 from datasets import load_dataset
 ds = load_dataset("Hatman/plot-palette-100k")
 ```
 
-## Data Fields
+## Migration from v1 (systemd-based)
 
-For each entry all fields exsist.  If the **category** is 'question_answer' then all **_1** fields will be populated, otherwise they'll be an empty string. 
+**Breaking Changes:**
 
-- **id**: A unique identifier for each prompt-response pair.
-- **category**: A category that the entry belongs to (creative_writing, poem, open_question, brainstorm, question_answer).
-- **summary**: A summary of the question and answer responses 
-- **question**: A question created from random Data 
-- **answer**: An answer to the **question** based on the **category** field
-- **question_1**: A follow-up question to the **question**, **answer** pair
-- **answer_1**: An answer to **question_1**
-- **question_modelId**
-- **answer_modelId**
-- **question_modelId_1**
-- **answer_modelId_1**
+The system has been completely rewritten from a systemd-based Python script to a serverless AWS application. The v1 systemd service files and local Python scripts are **no longer used**.
 
-### Category
+**Migration Steps:**
 
-These are the possible categories that the entry can belong to.
+1. **Export your v1 seed data** from local storage
+2. **Deploy the new AWS infrastructure** using the deployment script
+3. **Upload seed data to S3** via the web UI (available in Phase 6) or AWS CLI:
+   ```bash
+   aws s3 cp main_dictionary.json s3://plot-palette-{account-id}-{region}-production/seed-data/
+   ```
+4. **Create prompt templates** in the web UI matching your v1 generation logic
+5. **Run generation jobs** through the web interface
 
-- **creative_writing**: A story generated from random data 
-- **poem**: A poem whose style and subject are generated from random data
-- **open_question**:  A **question** generated from random data and **answer** generated from model general knowledge 
-- **brainstorm**: A brainstorm session generated from random data 
-- **question_answer**: Two pairs of question/answer that are a response to an **open_question**
+**What's Different:**
 
-# Installation
+| v1 (systemd) | v2 (AWS Serverless) |
+|--------------|---------------------|
+| Local Python scripts | ECS Fargate workers |
+| systemctl service | Web UI + API Gateway |
+| Local file storage | S3 with Glacier archival |
+| No cost tracking | Real-time cost monitoring |
+| Manual recovery | Automatic checkpoint recovery |
+| Single model | Multi-model with smart routing |
 
-### Prerequisites
+**Support:**
 
-- Python 3.10 or higher
-- `pip` for installing Python packages
-- Linux system with `systemctl` for managing services **AWS Cloud9**
-- Data for generating random questions
-- API for making LLM Calls
+If you need help migrating, please open a GitHub issue with details about your v1 setup.
 
-### Step-by-Step Installation Guide
+## Project Structure
 
-1. **Clone the Repository**
-    ```sh
-    git clone https://github.com/hatmanstack/plot-palette.git
-    cd plot-palette
-    pip install -r requirements.txt
-    ```
+```
+plot-palette/
+├── infrastructure/
+│   ├── cloudformation/          # CloudFormation templates
+│   │   ├── network-stack.yaml
+│   │   ├── storage-stack.yaml
+│   │   ├── database-stack.yaml
+│   │   └── iam-stack.yaml
+│   └── scripts/
+│       └── deploy.sh            # Deployment automation
+├── backend/
+│   ├── shared/                  # Shared Python library
+│   ├── lambdas/                 # API Lambda functions (Phase 3)
+│   └── ecs_tasks/               # Fargate generation workers (Phase 4)
+├── frontend/                    # React web application (Phase 6)
+├── tests/                       # Unit, integration, e2e tests
+└── docs/plans/                  # Implementation plan documentation
+```
 
-2. **Edit Service File Paths**
-    Change the path in `inference.service` to point to `bash_script.sh` for your local environment.
+## Development
 
-3. **Copy and Enable the Service**
-    ```sh
-    sudo cp inference.service /etc/systemd/system/
-    sudo systemctl enable inference.service
-    sudo systemctl start inference.service
-    sudo systemctl status inference.service
-    ```
-
-4. **Configure Local Paths**
-    Update `start.py` and `current_inference.py` with your local environment paths and provide a write directory and seed data.
-
-5. **Set Up Your API**
-    Create a `.env` file with your token:
-    ```plaintext
-    TOKEN=api_token
-    ```
-
-## Configuration
-
-Make sure to adapt the paths in the scripts and the service file to fit your local environment. Choose an API that makes sense for **you**, usage limits and licensing should be top of mind.  **main_dictionary.json** is an index of a personal dataset and is responsible for generating the intial question, if it's something you'd like access to feel free to contact me.  
-
-## Models Used
-
-- **mistralai/Mistral-7B-Instruct-v0.3**
-- **mistralai/Mixtral-8x7B-Instruct-v0.3**
-- **mistralai/Mixtral-8x7B-Instruct-v0.1**
-- **CohereForAI/c4ai-command-r-plus**
-- **google/gemma-1.1-7b-it**
-- **meta-llama/Meta-Llama-3.1-8B-Instruct**
-- **meta-llama/Meta-Llama-3.1-70B-Instruct**
+See `docs/plans/README.md` for detailed implementation phases and development workflow.
 
 ## License
 
-This project is licensed under the Apache 2.0 License. The Liscenses' for individual model outputs apply to that specific model's output. **CohereForAI/c4ai-command-r-plus** is the only model whose outputs should not be used for training other models intended for **Commercial** uses. 
+This project is licensed under the Apache 2.0 License. See LICENSE file for details.
+
+**Model Output Licenses:**
+
+When using AWS Bedrock models, refer to each model provider's terms:
+- **Anthropic Claude**: [Anthropic Terms of Service](https://www.anthropic.com/legal/commercial-terms)
+- **Meta Llama**: [Llama 3.1 Community License](https://llama.meta.com/llama3/license/)
+- **Mistral AI**: [Mistral AI Terms](https://mistral.ai/terms/)
+
+Generated datasets may have restrictions based on the models used. Always review model provider terms before using outputs for commercial purposes or training other models. 
 
 <p align="center">
     This application is using HuggingFace Tokenizers provided by <a href="https://huggingface.co">HuggingFace</a> </br>

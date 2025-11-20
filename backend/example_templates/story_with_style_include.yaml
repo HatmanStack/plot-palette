@@ -1,0 +1,37 @@
+# Template: Story with Style Include
+# Demonstrates template composition using {% include %}
+
+template:
+  id: story-with-style-v1
+  name: "Story Generator with Style Guidelines"
+  description: "Generates stories with included style guidelines from fragment"
+  category: example
+  version: 1
+
+  schema_requirements:
+    - topic
+    - word_count
+    - tone
+    - audience
+    - setting
+
+  steps:
+    - id: story
+      model: anthropic.claude-3-5-sonnet-20241022-v2:0
+      prompt: |
+        Write a compelling short story about **{{ topic }}**.
+
+        **Setting:** {{ setting }}
+
+        {% include 'style-instructions' %}
+
+        **Length:** {{ word_count }} words
+
+        **Story Structure:**
+        1. Opening hook that grabs attention
+        2. Character introduction with clear motivation
+        3. Rising action with conflict
+        4. Climax with tension
+        5. Resolution that feels earned
+
+        Begin the story now:

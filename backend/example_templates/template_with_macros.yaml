@@ -1,0 +1,78 @@
+# Template: Questions with Macros
+# Demonstrates Jinja2 macros for reusable prompt components
+
+template:
+  id: questions-with-macros-v1
+  name: "Question Generator with Reusable Macros"
+  description: "Uses macros to define reusable difficulty instructions"
+  category: example
+  version: 1
+
+  schema_requirements:
+    - topic
+    - difficulty
+    - count
+    - format
+
+  steps:
+    - id: questions
+      model: meta.llama3-1-8b-instruct-v1:0
+      prompt: |
+        {# Define reusable macro for difficulty instructions #}
+        {% macro difficulty_instruction(level) %}
+        {% if level == "easy" %}
+        **Difficulty: Easy**
+        - Use simple vocabulary and straightforward questions
+        - Focus on main ideas and direct facts
+        - Suitable for beginners or quick review
+        {% elif level == "medium" %}
+        **Difficulty: Medium**
+        - Use moderate complexity with analytical thinking required
+        - Focus on relationships between concepts
+        - Require some inference and interpretation
+        {% else %}
+        **Difficulty: Hard**
+        - Use advanced concepts and critical analysis
+        - Require synthesis and evaluation
+        - Test deep understanding and application
+        {% endif %}
+        {% endmacro %}
+
+        {# Define macro for question format #}
+        {% macro format_instruction(format_type) %}
+        {% if format_type == "multiple_choice" %}
+        Format each question as:
+        Q: [Question]
+        A) [Option A]
+        B) [Option B]
+        C) [Option C]
+        D) [Option D]
+        Correct: [Letter]
+        {% elif format_type == "true_false" %}
+        Format each question as:
+        Statement: [Statement]
+        Answer: [True/False]
+        Explanation: [Why]
+        {% elif format_type == "short_answer" %}
+        Format each question as:
+        Question: [Question]
+        Expected answer: [1-2 sentence answer]
+        {% else %}
+        Format each question as:
+        [Number]. [Question text]
+        {% endif %}
+        {% endmacro %}
+
+        Generate {{ count }} questions about: **{{ topic }}**
+
+        {{ difficulty_instruction(difficulty) }}
+
+        {{ format_instruction(format) }}
+
+        **Additional Guidelines:**
+        - Each question should test a distinct aspect
+        - Avoid overlapping or redundant questions
+        - Ensure questions are clear and unambiguous
+        - Include variety in question types where appropriate
+
+        Generate the questions now:

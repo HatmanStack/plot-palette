@@ -1,0 +1,39 @@
+template:
+  id: dialogue-v1
+  name: "Dialogue Generator"
+  description: "Create realistic dialogue between characters with distinct personalities"
+  category: dialogue
+  is_public: true
+
+  schema_requirements:
+    - character1.name
+    - character1.personality
+    - character2.name
+    - character2.personality
+    - scenario
+
+  steps:
+    - id: dialogue
+      model: anthropic.claude-3-5-sonnet-20241022-v2:0
+      prompt: |
+        Create a dialogue between two characters in this scenario:
+
+        **Scenario:** {{ scenario }}
+
+        **Characters:**
+        1. **{{ character1.name }}**: {{ character1.personality }}
+        2. **{{ character2.name }}**: {{ character2.personality }}
+
+        Write 8-12 exchanges that:
+        - Reveal each character's unique personality through their speech patterns
+        - Use natural, realistic dialogue (not overly formal or theatrical)
+        - Include subtext and implied meanings
+        - Show character dynamics and relationships
+        - Advance the scenario meaningfully
+        - Include appropriate reactions, pauses, and emotions
+        - Demonstrate how their different personalities create tension or harmony
+
+        Format as:
+        **CHARACTER NAME:** dialogue text
+
+        Show, don't tell - let the dialogue reveal character rather than describing it.

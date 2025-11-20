@@ -1,0 +1,314 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Plot Palette - HTTP API Gateway with JWT Authorization'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Environment name (e.g., dev, test, prod)
+    Default: dev
+
+  UserPoolId:
+    Type: String
+    Description: Cognito User Pool ID for JWT authorization
+
+  UserPoolClientId:
+    Type: String
+    Description: Cognito User Pool Client ID for JWT audience validation
+
+  LambdaExecutionRoleArn:
+    Type: String
+    Description: ARN of the Lambda execution role from IAM stack
+
+Resources:
+  # CloudWatch Log Group for API Gateway access logs
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/plot-palette-api-${EnvironmentName}'
+      RetentionInDays: 7
+
+  # HTTP API Gateway (v2)
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'plot-palette-api-${EnvironmentName}'
+      Description: 'Plot Palette API for synthetic data generation'
+      ProtocolType: HTTP
+
+      # CORS configuration - allowing all origins for now (will restrict to Amplify domain in Phase 6)
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Amz-Date
+          - X-Api-Key
+          - X-Amz-Security-Token
+        MaxAge: 300
+
+      Tags:
+        Name: !Sub 'plot-palette-api-${EnvironmentName}'
+        Environment: !Ref EnvironmentName
+        ManagedBy: CloudFormation
+
+  # JWT Authorizer using Cognito User Pool
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      Name: cognito-jwt-authorizer
+      ApiId: !Ref HttpApi
+      AuthorizerType: JWT
+      IdentitySource:
+        - '$request.header.Authorization'
+      JwtConfiguration:
+        Audience:
+          - !Ref UserPoolClientId
+        Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}'
+
+  # Default Stage with auto-deployment
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: $default
+      ApiId: !Ref HttpApi
+      AutoDeploy: true
+      Description: 'Default stage with auto-deployment'
+
+      # Access logging configuration
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength","errorMessage":"$context.error.message"}'
+
+      # Stage variables (for future use)
+      StageVariables:
+        environment: !Ref EnvironmentName
+
+      # Default route settings - throttling
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 1000
+        ThrottlingRateLimit: 1000
+
+      Tags:
+        Name: !Sub 'plot-palette-api-stage-${EnvironmentName}'
+        Environment: !Ref EnvironmentName
+
+  # Health Check Route (no authorization required)
+  HealthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /health'
+      Target: !Sub 'integrations/${HealthIntegration}'
+
+  # User Info Route (requires JWT authorization)
+  UserRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /user'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${UserIntegration}'
+
+  # Lambda function for health check
+  HealthCheckFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-health-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 10
+      MemorySize: 128
+
+      # Inline code for simplicity (small function)
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          from datetime import datetime
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              """Health check endpoint - returns API status"""
+              logger.info(json.dumps({
+                  "event": "health_check",
+                  "request_id": context.request_id
+              }))
+
+              response = {
+                  "status": "healthy",
+                  "timestamp": datetime.utcnow().isoformat(),
+                  "version": "1.0.0",
+                  "service": "plot-palette-api"
+              }
+
+              return {
+                  "statusCode": 200,
+                  "headers": {
+                      "Content-Type": "application/json",
+                      "Access-Control-Allow-Origin": "*"
+                  },
+                  "body": json.dumps(response)
+              }
+
+      Tags:
+        - Key: Name
+          Value: !Sub 'plot-palette-health-${EnvironmentName}'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # Lambda function for user info
+  UserInfoFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'plot-palette-user-${EnvironmentName}'
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 10
+      MemorySize: 128
+
+      # Inline code for simplicity
+      Code:
+        ZipFile: |
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              """Get current user information from JWT claims"""
+              logger.info(json.dumps({
+                  "event": "get_user_info",
+                  "request_id": context.request_id
+              }))
+
+              try:
+                  # Extract claims from JWT (set by API Gateway authorizer)
+                  claims = event.get('requestContext', {}).get('authorizer', {}).get('jwt', {}).get('claims', {})
+
+                  if not claims:
+                      return {
+                          "statusCode": 401,
+                          "headers": {"Content-Type": "application/json"},
+                          "body": json.dumps({"error": "Unauthorized"})
+                      }
+
+                  user_info = {
+                      "user_id": claims.get('sub'),
+                      "email": claims.get('email'),
+                      "email_verified": claims.get('email_verified'),
+                      "name": claims.get('name'),
+                      "role": claims.get('custom:user_role', 'user'),
+                      "token_issued_at": claims.get('iat'),
+                      "token_expires_at": claims.get('exp')
+                  }
+
+                  return {
+                      "statusCode": 200,
+                      "headers": {
+                          "Content-Type": "application/json",
+                          "Access-Control-Allow-Origin": "*"
+                      },
+                      "body": json.dumps(user_info)
+                  }
+
+              except Exception as e:
+                  logger.error(f"Error getting user info: {str(e)}", exc_info=True)
+                  return {
+                      "statusCode": 500,
+                      "headers": {"Content-Type": "application/json"},
+                      "body": json.dumps({"error": "Internal server error"})
+                  }
+
+      Tags:
+        - Key: Name
+          Value: !Sub 'plot-palette-user-${EnvironmentName}'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # Lambda permission for API Gateway to invoke health check function
+  HealthCheckFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HealthCheckFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  # Lambda permission for API Gateway to invoke user info function
+  UserInfoFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UserInfoFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  # Integration for health check Lambda
+  HealthIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt HealthCheckFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 10000
+
+  # Integration for user info Lambda
+  UserIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt UserInfoFunction.Arn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 10000
+
+Outputs:
+  ApiId:
+    Description: HTTP API Gateway ID
+    Value: !Ref HttpApi
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiId'
+
+  ApiEndpoint:
+    Description: HTTP API Gateway endpoint URL
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  ApiStageName:
+    Description: API Gateway stage name
+    Value: !Ref ApiStage
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiStageName'
+
+  JwtAuthorizerId:
+    Description: JWT Authorizer ID
+    Value: !Ref JwtAuthorizer
+    Export:
+      Name: !Sub '${AWS::StackName}-JwtAuthorizerId'
+
+  HealthCheckFunctionArn:
+    Description: Health Check Lambda Function ARN
+    Value: !GetAtt HealthCheckFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-HealthCheckFunctionArn'
+
+  UserInfoFunctionArn:
+    Description: User Info Lambda Function ARN
+    Value: !GetAtt UserInfoFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-UserInfoFunctionArn'

@@ -1,0 +1,63 @@
+template:
+  id: question-answer-v1
+  name: "Question & Answer Generator"
+  description: "Generate questions from source material with detailed answers and follow-up questions"
+  category: question_answer
+  is_public: true
+
+  schema_requirements:
+    - source_text
+    - difficulty_level
+
+  steps:
+    - id: question
+      model: meta.llama3-1-8b-instruct-v1:0
+      prompt: |
+        Generate a {{ difficulty_level }} difficulty question based on this text:
+
+        {{ source_text | truncate_tokens(500) }}
+
+        The question should:
+        - Test understanding of key concepts
+        - Be clear and specific
+        - Have a definite answer based on the text
+        - Match the {{ difficulty_level }} difficulty level
+
+    - id: answer
+      model: anthropic.claude-3-5-sonnet-20241022-v2:0
+      prompt: |
+        Answer this question in detail:
+
+        Question: {{ steps.question.output }}
+
+        Source material:
+        {{ source_text | truncate_tokens(500) }}
+
+        Provide a comprehensive answer that:
+        - Directly addresses the question
+        - Cites relevant information from the source
+        - Includes examples if applicable
+        - Explains the reasoning
+
+    - id: follow_up
+      model: meta.llama3-1-8b-instruct-v1:0
+      prompt: |
+        Based on this Q&A, generate a relevant follow-up question that:
+        - Builds on the original question
+        - Explores a related concept
+        - Encourages deeper thinking
+
+        Original Question: {{ steps.question.output }}
+        Answer: {{ steps.answer.output | truncate_tokens(300) }}
+
+    - id: follow_up_answer
+      model: meta.llama3-1-70b-instruct-v1:0
+      prompt: |
+        Answer this follow-up question:
+
+        {{ steps.follow_up.output }}
+
+        Context from previous answer:
+        {{ steps.answer.output | truncate_tokens(300) }}
+
+        Provide a thoughtful answer that connects to the original topic.

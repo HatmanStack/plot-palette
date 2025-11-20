@@ -1,0 +1,33 @@
+template:
+  id: brainstorm-v1
+  name: "Brainstorming Session"
+  description: "Generate creative ideas and solutions for a given topic with context"
+  category: brainstorm
+  is_public: true
+
+  schema_requirements:
+    - topic
+    - context
+
+  steps:
+    - id: ideas
+      model: meta.llama3-1-70b-instruct-v1:0
+      prompt: |
+        Brainstorm 10 creative ideas related to: **{{ topic }}**
+
+        Context: {{ context }}
+
+        For each idea, provide:
+        1. A catchy, memorable title (3-6 words)
+        2. A brief description (2-3 sentences)
+        3. One key benefit or unique aspect
+
+        Focus on:
+        - Originality and innovation
+        - Practical feasibility
+        - Creative problem-solving
+        - Diverse perspectives and approaches
+
+        Think outside the box while remaining grounded in the context provided.
+
+        Present as a numbered list with clear formatting.

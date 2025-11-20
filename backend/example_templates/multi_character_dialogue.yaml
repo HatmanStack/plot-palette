@@ -1,0 +1,36 @@
+# Example Template: Multi-Character Dialogue
+# Demonstrates for loops to iterate over character lists
+
+template:
+  id: multi-character-dialogue-v1
+  name: "Multi-Character Dialogue Generator"
+  description: "Creates dialogue between multiple characters using loops"
+  category: example
+  version: 1
+
+  schema_requirements:
+    - characters
+    - topic
+    - num_exchanges
+
+  steps:
+    - id: dialogue
+      model: meta.llama3-1-70b-instruct-v1:0
+      prompt: |
+        Create a dialogue between the following characters:
+
+        {% for character in characters %}
+        - **{{ character.name }}**: {{ character.description }}
+          Personality: {{ character.personality }}
+        {% endfor %}
+
+        **Topic:** {{ topic }}
+
+        Write {{ num_exchanges }} exchanges that:
+        1. Show each character's unique personality
+        2. Advance the conversation meaningfully
+        3. Include natural reactions and responses
+        4. Demonstrate different perspectives on the topic
+
+        Format as:
+        CHARACTER NAME: dialogue text
