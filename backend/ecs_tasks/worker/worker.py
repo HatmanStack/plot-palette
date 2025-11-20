@@ -22,9 +22,9 @@ from botocore.exceptions import ClientError
 from template_engine import TemplateEngine
 
 # Import from shared constants
-import sys
 sys.path.append('/app')
 from shared.constants import MODEL_PRICING, FARGATE_SPOT_PRICING, S3_PRICING
+from shared.models import CostBreakdown, CostComponents
 
 # Setup logging
 logging.basicConfig(
@@ -38,12 +38,25 @@ dynamodb = boto3.resource('dynamodb')
 s3_client = boto3.client('s3')
 bedrock_client = boto3.client('bedrock-runtime')
 
+# Validate required environment variables
+required_env_vars = {
+    'JOBS_TABLE_NAME': 'Jobs table name',
+    'QUEUE_TABLE_NAME': 'Queue table name',
+    'TEMPLATES_TABLE_NAME': 'Templates table name',
+    'COST_TRACKING_TABLE_NAME': 'Cost tracking table name',
+    'CHECKPOINT_METADATA_TABLE_NAME': 'Checkpoint metadata table name',
+}
+
+for var_name, description in required_env_vars.items():
+    if not os.environ.get(var_name):
+        raise ValueError(f"Missing required environment variable: {var_name} ({description})")
+
 # DynamoDB tables
-jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE_NAME', ''))
-queue_table = dynamodb.Table(os.environ.get('QUEUE_TABLE_NAME', ''))
-templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', ''))
-cost_tracking_table = dynamodb.Table(os.environ.get('COST_TRACKING_TABLE_NAME', ''))
-checkpoint_metadata_table = dynamodb.Table(os.environ.get('CHECKPOINT_METADATA_TABLE_NAME', ''))
+jobs_table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
+queue_table = dynamodb.Table(os.environ['QUEUE_TABLE_NAME'])
+templates_table = dynamodb.Table(os.environ['TEMPLATES_TABLE_NAME'])
+cost_tracking_table = dynamodb.Table(os.environ['COST_TRACKING_TABLE_NAME'])
+checkpoint_metadata_table = dynamodb.Table(os.environ['CHECKPOINT_METADATA_TABLE_NAME'])
 
 
 class BudgetExceededError(Exception):
@@ -103,8 +116,7 @@ class Worker:
             )
 
             if not response['Items']:
-                logger.info("No jobs in queue, sleeping...")
-                time.sleep(30)
+                logger.info("No jobs in queue")
                 return None
 
             job_item = response['Items'][0]
@@ -387,8 +399,14 @@ class Worker:
                 '_version': 0
             }
 
-    def save_checkpoint(self, job_id, checkpoint_data):
+    def save_checkpoint(self, job_id, checkpoint_data, retry_count=0):
         """Save checkpoint using DynamoDB for concurrency control and S3 for blob storage."""
+        MAX_RETRIES = 3
+
+        if retry_count >= MAX_RETRIES:
+            logger.error(f"Max checkpoint retries ({MAX_RETRIES}) exceeded for job {job_id}")
+            raise Exception(f"Failed to save checkpoint after {MAX_RETRIES} retries due to persistent conflicts")
+
         bucket = os.environ.get('BUCKET_NAME', '')
         s3_key = f"jobs/{job_id}/checkpoint.json"
 
@@ -430,16 +448,20 @@ class Worker:
 
         except ClientError as e:
             if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                logger.warning(f"Checkpoint version conflict for job {job_id}, reloading and merging")
+                logger.warning(f"Checkpoint version conflict for job {job_id} (retry {retry_count + 1}/{MAX_RETRIES}), reloading and merging")
 
                 # Another task updated checkpoint - reload and merge
                 current_checkpoint = self.load_checkpoint(job_id)
 
                 # Merge strategy: take maximum records_generated
                 if checkpoint_data['records_generated'] > current_checkpoint['records_generated']:
+                    # Brief exponential backoff before retry
+                    backoff_ms = (2 ** retry_count) * 100  # 100ms, 200ms, 400ms
+                    time.sleep(backoff_ms / 1000.0)
+
                     # Retry save with new version
                     checkpoint_data['_version'] = current_checkpoint['_version']
-                    self.save_checkpoint(job_id, checkpoint_data)
+                    self.save_checkpoint(job_id, checkpoint_data, retry_count + 1)
                 else:
                     logger.info("Current checkpoint is already ahead, skipping save")
             else:
@@ -480,8 +502,15 @@ class Worker:
             )
 
             if response['Items']:
-                latest_cost = response['Items'][0]['estimated_cost']['total']
-                return latest_cost
+                # Access nested DynamoDB structure: estimated_cost.M.total.N
+                cost_map = response['Items'][0].get('estimated_cost', {})
+                if isinstance(cost_map, dict) and 'M' in cost_map:
+                    # New typed format
+                    total_value = cost_map['M'].get('total', {}).get('N', '0.0')
+                else:
+                    # Fallback for old flat format
+                    total_value = cost_map.get('N', '0.0')
+                return float(total_value)
             else:
                 return 0.0
 
@@ -504,7 +533,8 @@ class Worker:
         if started_at_str:
             try:
                 started_at = datetime.fromisoformat(started_at_str)
-            except:
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid started_at format: {started_at_str}, using current time")
                 started_at = datetime.utcnow()
         else:
             started_at = datetime.utcnow()
@@ -522,26 +552,23 @@ class Worker:
 
         total_cost = bedrock_cost + fargate_cost + s3_cost
 
-        # Write to DynamoDB with TTL
-        ttl_timestamp = int((datetime.utcnow() + timedelta(days=90)).timestamp())
+        # Create typed cost breakdown
+        cost_breakdown = CostBreakdown(
+            job_id=job_id,
+            timestamp=datetime.utcnow(),
+            bedrock_tokens=tokens_used,
+            fargate_hours=round(fargate_hours, 4),
+            s3_operations=s3_puts,
+            estimated_cost=CostComponents(
+                bedrock=round(bedrock_cost, 4),
+                fargate=round(fargate_cost, 4),
+                s3=round(s3_cost, 6),
+                total=round(total_cost, 4)
+            )
+        )
 
         try:
-            cost_tracking_table.put_item(Item={
-                'job_id': job_id,
-                'timestamp': datetime.utcnow().isoformat(),
-                'bedrock_tokens': tokens_used,
-                'fargate_hours': round(fargate_hours, 4),
-                's3_operations': s3_puts,
-                'estimated_cost': {
-                    'bedrock': round(bedrock_cost, 4),
-                    'fargate': round(fargate_cost, 4),
-                    's3': round(s3_cost, 6),
-                    'total': round(total_cost, 4)
-                },
-                'records_generated': records_generated,
-                'ttl': ttl_timestamp
-            })
-
+            cost_tracking_table.put_item(Item=cost_breakdown.to_dynamodb())
             logger.info(f"Updated cost tracking for job {job_id}: ${total_cost:.4f}")
 
         except Exception as e:
@@ -698,26 +725,31 @@ class Worker:
         table = pa.Table.from_pandas(df)
 
         # Write Parquet
-        if partition_strategy == 'none':
-            key = f"jobs/{job_id}/exports/dataset.parquet"
+        if partition_strategy != 'none':
+            logger.warning(f"Parquet export does not support partition_strategy='{partition_strategy}', falling back to single file")
 
-            # Write to buffer
-            buffer = io.BytesIO()
-            pq.write_table(table, buffer)
+        key = f"jobs/{job_id}/exports/dataset.parquet"
 
-            # Upload to S3
-            buffer.seek(0)
-            s3_client.put_object(
-                Bucket=bucket,
-                Key=key,
-                Body=buffer.read(),
-                ContentType='application/octet-stream'
-            )
+        # Write to buffer
+        buffer = io.BytesIO()
+        pq.write_table(table, buffer)
 
-            logger.info(f"Exported Parquet: {key} ({len(records)} records)")
+        # Upload to S3
+        buffer.seek(0)
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=buffer.read(),
+            ContentType='application/octet-stream'
+        )
+
+        logger.info(f"Exported Parquet: {key} ({len(records)} records)")
 
     def export_csv(self, job_id, records, partition_strategy, bucket):
         """Export as CSV format."""
+        if partition_strategy != 'none':
+            logger.warning(f"CSV export does not support partition_strategy='{partition_strategy}', falling back to single file")
+
         # Flatten records
         flattened_records = []
         for record in records:

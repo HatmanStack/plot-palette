@@ -12,11 +12,13 @@ from typing import Any, Dict
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../ecs_tasks/worker'))
 
 import boto3
 from botocore.exceptions import ClientError
 
 from utils import setup_logger, get_nested_field
+from template_engine import TemplateEngine
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -48,10 +50,6 @@ def execute_template_mock(template_def: Dict, seed_data: Dict) -> Dict:
     Returns:
         Dict: Results for each step with mocked outputs
     """
-    # Import TemplateEngine
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../ecs_tasks/worker'))
-    from template_engine import TemplateEngine
-
     engine = TemplateEngine()
     results = {}
     context = seed_data.copy()

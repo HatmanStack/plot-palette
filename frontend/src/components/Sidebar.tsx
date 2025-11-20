@@ -5,7 +5,7 @@ export default function Sidebar() {
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { path: '/jobs', label: 'Jobs', icon: '⚙️' },
+    { path: '/jobs', label: 'Jobs', icon: '📋' },
     { path: '/templates', label: 'Templates', icon: '📝' },
     { path: '/settings', label: 'Settings', icon: '⚙️' },
   ]

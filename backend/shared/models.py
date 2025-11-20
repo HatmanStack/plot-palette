@@ -138,6 +138,21 @@ class TemplateDefinition(BaseModel):
             "created_at": {"S": self.created_at.isoformat()},
         }
 
+    @classmethod
+    def from_dynamodb(cls, item: Dict[str, Any]) -> "TemplateDefinition":
+        """Create TemplateDefinition from DynamoDB item."""
+        # Parse the full template from the stored JSON
+        template_data = cls.model_validate_json(item["steps"]["S"])
+        # Override with DynamoDB-stored metadata
+        template_data.template_id = item["template_id"]["S"]
+        template_data.version = int(item["version"]["N"])
+        template_data.name = item["name"]["S"]
+        template_data.user_id = item["user_id"]["S"]
+        template_data.schema_requirements = [req["S"] for req in item.get("schema_requirements", {}).get("L", [])]
+        template_data.is_public = item.get("is_public", {}).get("BOOL", False)
+        template_data.created_at = datetime.fromisoformat(item["created_at"]["S"])
+        return template_data
+
 
 class CheckpointState(BaseModel):
     """Checkpoint state for job recovery after spot interruptions."""
@@ -166,6 +181,15 @@ class CheckpointState(BaseModel):
         return checkpoint
 
 
+class CostComponents(BaseModel):
+    """Breakdown of costs by service."""
+
+    bedrock: float = Field(default=0.0, ge=0, description="Bedrock API costs")
+    fargate: float = Field(default=0.0, ge=0, description="Fargate compute costs")
+    s3: float = Field(default=0.0, ge=0, description="S3 storage/operations costs")
+    total: float = Field(default=0.0, ge=0, description="Total combined cost")
+
+
 class CostBreakdown(BaseModel):
     """Cost breakdown for a specific time period."""
 
@@ -174,7 +198,9 @@ class CostBreakdown(BaseModel):
     bedrock_tokens: int = Field(default=0, ge=0, description="Tokens consumed by Bedrock")
     fargate_hours: float = Field(default=0.0, ge=0, description="Fargate compute hours")
     s3_operations: int = Field(default=0, ge=0, description="S3 API operation count")
-    estimated_cost: float = Field(default=0.0, ge=0, description="Estimated cost in USD")
+    estimated_cost: CostComponents = Field(
+        default_factory=CostComponents, description="Cost breakdown by service"
+    )
     model_id: Optional[str] = Field(None, description="Model used for this period")
 
     def to_dynamodb(self) -> Dict[str, Any]:
@@ -185,7 +211,14 @@ class CostBreakdown(BaseModel):
             "bedrock_tokens": {"N": str(self.bedrock_tokens)},
             "fargate_hours": {"N": str(self.fargate_hours)},
             "s3_operations": {"N": str(self.s3_operations)},
-            "estimated_cost": {"N": str(self.estimated_cost)},
+            "estimated_cost": {
+                "M": {
+                    "bedrock": {"N": str(self.estimated_cost.bedrock)},
+                    "fargate": {"N": str(self.estimated_cost.fargate)},
+                    "s3": {"N": str(self.estimated_cost.s3)},
+                    "total": {"N": str(self.estimated_cost.total)},
+                }
+            },
         }
         if self.model_id:
             item["model_id"] = {"S": self.model_id}
@@ -195,6 +228,25 @@ class CostBreakdown(BaseModel):
         item["ttl"] = {"N": str(ttl)}
 
         return item
+
+    @classmethod
+    def from_dynamodb(cls, item: Dict[str, Any]) -> "CostBreakdown":
+        """Create CostBreakdown from DynamoDB item."""
+        cost_map = item.get("estimated_cost", {}).get("M", {})
+        return cls(
+            job_id=item["job_id"]["S"],
+            timestamp=datetime.fromisoformat(item["timestamp"]["S"]),
+            bedrock_tokens=int(item["bedrock_tokens"]["N"]),
+            fargate_hours=float(item["fargate_hours"]["N"]),
+            s3_operations=int(item["s3_operations"]["N"]),
+            estimated_cost=CostComponents(
+                bedrock=float(cost_map.get("bedrock", {}).get("N", "0.0")),
+                fargate=float(cost_map.get("fargate", {}).get("N", "0.0")),
+                s3=float(cost_map.get("s3", {}).get("N", "0.0")),
+                total=float(cost_map.get("total", {}).get("N", "0.0")),
+            ),
+            model_id=item.get("model_id", {}).get("S"),
+        )
 
 
 class QueueItem(BaseModel):
@@ -222,3 +274,18 @@ class QueueItem(BaseModel):
         if self.task_arn:
             item["task_arn"] = {"S": self.task_arn}
         return item
+
+    @classmethod
+    def from_dynamodb(cls, item: Dict[str, Any]) -> "QueueItem":
+        """Create QueueItem from DynamoDB item."""
+        # Extract timestamp from composite key
+        job_id_timestamp = item["job_id_timestamp"]["S"]
+        _, timestamp_str = job_id_timestamp.split("#", 1)
+
+        return cls(
+            status=JobStatus(item["status"]["S"]),
+            job_id=item["job_id"]["S"],
+            timestamp=datetime.fromisoformat(timestamp_str),
+            priority=int(item.get("priority", {}).get("N", "0")),
+            task_arn=item.get("task_arn", {}).get("S"),
+        )

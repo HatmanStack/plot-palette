@@ -186,13 +186,13 @@ jobs:
           FRONTEND_URL: ${{ needs.deploy-infrastructure.outputs.frontend-url }}
         run: |
           # Simple health check
-          curl -f ${API_ENDPOINT}/health || exit 1
+          curl -f "${API_ENDPOINT}/health" || exit 1
 
           # Test API is responding
-          curl -f ${API_ENDPOINT}/templates || exit 1
+          curl -f "${API_ENDPOINT}/templates" || exit 1
 
           # Test frontend is accessible
-          curl -f ${FRONTEND_URL} || exit 1
+          curl -f "${FRONTEND_URL}" || exit 1
 
           echo "✅ Smoke tests passed"
 

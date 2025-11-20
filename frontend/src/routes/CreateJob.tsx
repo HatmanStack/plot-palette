@@ -169,7 +169,7 @@ export default function CreateJob() {
               <input
                 type="range"
                 min="1"
-                max="100"
+                max="1000"
                 value={data.budgetLimit}
                 onChange={(e) =>
                   setData({ ...data, budgetLimit: Number(e.target.value) })

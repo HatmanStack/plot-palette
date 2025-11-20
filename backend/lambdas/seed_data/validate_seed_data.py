@@ -78,7 +78,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return error_response(400, "Missing required field: template_id")
 
         # Get template to retrieve schema requirements
-        template_version = body.get('template_version', 1)
+        # Normalize template_version to int
+        template_version_raw = body.get('template_version', 1)
+        try:
+            template_version = int(template_version_raw)
+            if template_version < 1:
+                return error_response(400, "template_version must be a positive integer")
+        except (ValueError, TypeError):
+            return error_response(400, f"Invalid template_version: must be a positive integer, got {template_version_raw}")
 
         try:
             template_response = templates_table.get_item(
