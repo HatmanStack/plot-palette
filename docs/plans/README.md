@@ -39,6 +39,9 @@ npm run test:backend
 
 # Watch mode (frontend)
 cd frontend && npm run test:watch
+
+# Baseline coverage verification (backend)
+PYTHONPATH=. pytest tests/ --cov=backend --cov-report=term-missing
 ```
 
 ## Phase Summary

@@ -92,16 +92,16 @@ tests/
 
 ## Tasks
 
-### Task 1: Enhance Frontend Test Setup
+### Task 1: Extend Frontend Test Setup
 
-**Goal:** Extend the minimal test setup to include common utilities and mock factories.
+**Goal:** Extend the minimal test setup (currently 1 line: `import '@testing-library/jest-dom'`) to include common utilities and mock factories.
 
-**Files to Modify/Create:**
-- `frontend/src/test/setup.ts` - Enhance existing setup
+**Files to Create:**
+- `frontend/src/test/setup.ts` - Extend existing minimal setup (add global mocks)
 - `frontend/src/test/test-utils.tsx` - Create custom render with providers
-- `frontend/src/test/mocks/auth.ts` - Auth service mock factory
-- `frontend/src/test/mocks/api.ts` - API service mock factory
-- `frontend/src/test/mocks/react-query.tsx` - QueryClient wrapper
+- `frontend/src/test/mocks/auth.ts` - Create auth service mock factory
+- `frontend/src/test/mocks/api.ts` - Create API service mock factory
+- `frontend/src/test/mocks/react-query.tsx` - Create QueryClient wrapper
 
 **Prerequisites:**
 - None (first task)
@@ -166,14 +166,16 @@ test(frontend): add test utilities and mock factories
 
 **Goal:** Establish shared pytest fixtures for mocking AWS services consistently.
 
-**Files to Modify/Create:**
-- `tests/conftest.py` - Root-level shared fixtures
-- `tests/unit/conftest.py` - Unit test specific fixtures
-- `tests/fixtures/lambda_events.py` - API Gateway event factories
-- `tests/fixtures/dynamodb_items.py` - DynamoDB item factories
+**Files to Create:**
+- `tests/conftest.py` - Create root-level shared fixtures
+- `tests/unit/conftest.py` - Create unit test specific fixtures
+- `tests/fixtures/__init__.py` - Create package init
+- `tests/fixtures/lambda_events.py` - Create API Gateway event factories
+- `tests/fixtures/dynamodb_items.py` - Create DynamoDB item factories
 
 **Prerequisites:**
-- Task 1 (for consistency in approach)
+- Phase 0 Task 1 complete
+- Verify `backend/requirements-dev.txt` contains: `pytest`, `pytest-asyncio`, `pytest-cov`, `moto[all]`
 
 **Implementation Steps:**
 

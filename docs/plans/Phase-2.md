@@ -14,10 +14,13 @@ Expand backend unit test coverage for Lambda handlers and Worker/ECS failure sce
 
 ## Prerequisites
 
-- Phase 0 complete (fixtures and factories available)
-- Phase 1 complete (patterns established)
-- `tests/conftest.py` with shared AWS mocks
-- `tests/fixtures/` with event and item factories
+- Phase 0 complete (all 3 tasks)
+- Phase 1 complete (all 10 tasks)
+- Verify Phase 0 outputs exist before starting:
+  - `tests/conftest.py` - shared AWS mocks
+  - `tests/fixtures/lambda_events.py` - event factories
+  - `tests/fixtures/dynamodb_items.py` - item factories
+- Verify `backend/requirements-dev.txt` contains: `pytest`, `pytest-asyncio`, `pytest-cov`, `moto[all]`
 
 ---
 
@@ -36,7 +39,14 @@ Expand backend unit test coverage for Lambda handlers and Worker/ECS failure sce
 **Implementation Steps:**
 
 1. **Set up test module structure**
-   - Import Lambda handlers from `backend/lambdas/`
+   - Import Lambda handlers with explicit paths:
+     ```python
+     from backend.lambdas.jobs.create_job import lambda_handler as create_job_handler
+     from backend.lambdas.jobs.get_job import lambda_handler as get_job_handler
+     from backend.lambdas.jobs.delete_job import lambda_handler as delete_job_handler
+     from backend.lambdas.templates.create_template import lambda_handler as create_template_handler
+     from backend.lambdas.seed_data.validate_seed_data import lambda_handler as validate_seed_data_handler
+     ```
    - Import event factory from fixtures
    - Create test class `TestCreateJobValidation`
 

@@ -15,9 +15,12 @@ Add comprehensive unit tests for React hooks, contexts, and key UI components. T
 
 ## Prerequisites
 
-- Phase 0 complete (test utilities and mock factories available)
-- `frontend/src/test/test-utils.tsx` exists with custom render
-- `frontend/src/test/mocks/auth.ts` and `api.ts` exist
+- Phase 0 complete (all 3 tasks)
+- Verify Phase 0 outputs exist before starting:
+  - `frontend/src/test/test-utils.tsx` - custom render function
+  - `frontend/src/test/mocks/auth.ts` - auth mock factory
+  - `frontend/src/test/mocks/api.ts` - API mock factory
+  - `frontend/src/test/mocks/react-query.tsx` - QueryClient wrapper
 
 ---
 
