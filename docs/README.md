@@ -148,14 +148,15 @@ npm run lint:backend  # Backend ruff
 ## AWS Bedrock Models
 
 **Tier 1 (Cost-Efficient)**:
-- `meta.llama3-1-8b-instruct-v1:0`
-- `mistral.mistral-7b-instruct-v0:2`
+- Amazon Titan Text
+- Qwen3-32B (Dense)
 
 **Tier 2 (Balanced)**:
-- `meta.llama3-1-70b-instruct-v1:0`
+- Qwen3-235B-A22B-Instruct
+- Meta Llama 3.3 70B
 
 **Tier 3 (Premium)**:
-- `anthropic.claude-3-5-sonnet-20241022-v2:0`
+- Anthropic Claude 4.5 Haiku
 
 See [AWS Bedrock Pricing](https://aws.amazon.com/bedrock/pricing/) for current rates.
 
