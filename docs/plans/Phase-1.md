@@ -1,1168 +1,763 @@
-# Phase 1: Core Infrastructure Setup
+# Phase 1: Frontend Tests
 
 ## Phase Goal
 
-Establish the foundational AWS infrastructure including VPC networking, S3 storage buckets, DynamoDB tables, and IAM roles. By the end of this phase, you will have all stateless infrastructure resources deployed and ready to support authentication, APIs, and compute workloads in subsequent phases.
+Add comprehensive unit tests for React hooks, contexts, and key UI components. Tests will focus on user-facing behavior and serve as living documentation of expected functionality.
 
 **Success Criteria:**
-- Custom VPC with 3 public subnets across 3 availability zones
-- S3 bucket configured with lifecycle policies for Glacier archival
-- 4 DynamoDB tables (Jobs, Queue, Templates, CostTracking) with appropriate indexes
-- 3 IAM roles (ECSTask, Lambda, Amplify) with correct permissions
-- All resources tested and validated via AWS CLI
+- All hooks have unit tests covering happy path and error cases
+- AuthContext/AuthProvider tested for all auth states
+- Key UI components (JobCard, StatusBadge, PrivateRoute) fully tested
+- Form components tested for validation and submission flows
+- `npm test` passes with no failures
 
-**Estimated Tokens:** ~95,000
-
----
+**Estimated Tokens:** ~35,000
 
 ## Prerequisites
 
-- **Phase 0** reviewed completely
-- AWS CLI configured with credentials (`aws configure`)
-- Python 3.13 installed and virtualenv created
-- Git repository initialized
-- AWS account with permissions to create VPC, S3, DynamoDB, IAM resources
+- Phase 0 complete (test utilities and mock factories available)
+- `frontend/src/test/test-utils.tsx` exists with custom render
+- `frontend/src/test/mocks/auth.ts` and `api.ts` exist
 
 ---
 
-## Project Structure Setup
+## Tasks
 
-Before implementing tasks, create the base project structure:
+### Task 1: Test useAuth Hook
 
+**Goal:** Test the useAuth hook that provides authentication context access with proper error handling.
+
+**Files to Create:**
+- `frontend/src/hooks/useAuth.test.ts`
+
+**Prerequisites:**
+- Phase 0 Task 1 complete
+
+**Implementation Steps:**
+
+1. **Test hook throws outside provider**
+   - Render hook without AuthProvider wrapper
+   - Verify it throws "useAuth must be used within AuthProvider" error
+   - Use `renderHook` from `@testing-library/react`
+
+2. **Test hook returns context inside provider**
+   - Wrap hook in AuthProvider
+   - Verify all context properties are accessible:
+     - `isAuthenticated`
+     - `idToken`
+     - `login`
+     - `signup`
+     - `logout`
+     - `loading`
+
+3. **Test type safety**
+   - Verify return type matches `AuthContextType`
+
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/hooks/useAuth.test.ts`
+- [ ] Error case tested (hook outside provider)
+- [ ] Happy path tested (hook inside provider)
+- [ ] Tests pass: `npm test -- useAuth`
+
+**Testing Instructions:**
+```bash
+cd frontend && npm test -- useAuth
 ```
-plot-palette/
-├── infrastructure/
-│   ├── cloudformation/
-│   │   ├── master-stack.yaml         (Phase 7)
-│   │   ├── network-stack.yaml        (Task 1)
-│   │   ├── storage-stack.yaml        (Task 2)
-│   │   ├── database-stack.yaml       (Task 3)
-│   │   └── iam-stack.yaml            (Task 4)
-│   └── scripts/
-│       └── deploy.sh                 (Task 5)
-├── backend/
-│   ├── lambdas/                      (Phase 3)
-│   ├── ecs_tasks/                    (Phase 4)
-│   ├── shared/                       (Task 6)
-│   │   ├── __init__.py
-│   │   ├── models.py
-│   │   ├── constants.py
-│   │   └── utils.py
-│   └── requirements.txt              (Task 6)
-├── frontend/                         (Phase 6)
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── e2e/
-├── docs/
-│   └── plans/                        (Exists)
-└── README.md                         (Update in Task 7)
+
+**Commit Message Template:**
+```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
+
+test(frontend): add useAuth hook tests
+
+- Test error when used outside AuthProvider
+- Test context values accessible inside provider
 ```
 
 ---
 
-## Task 1: VPC and Networking Stack
+### Task 2: Test useJobs Hook
 
-### Goal
+**Goal:** Test the useJobs hook that fetches and caches job data using React Query.
 
-Create a custom VPC with public subnets across 3 availability zones, internet gateway, and security groups for Fargate tasks and VPC endpoints.
+**Files to Create:**
+- `frontend/src/hooks/useJobs.test.ts`
 
-### Files to Create
+**Prerequisites:**
+- Phase 0 Task 1 complete (QueryClient wrapper)
 
-- `infrastructure/cloudformation/network-stack.yaml` - VPC CloudFormation template
+**Implementation Steps:**
 
-### Prerequisites
+1. **Mock the API module**
+   - Mock `../services/api` module
+   - Configure `fetchJobs` to return test data
 
-- AWS account must have available VPC quota (default: 5 VPCs per region)
-- Confirm target region has at least 3 availability zones
+2. **Test successful data fetching**
+   - Render hook with QueryClient wrapper
+   - Wait for query to resolve
+   - Verify `data` contains expected jobs array
+   - Verify `isLoading` transitions from true to false
+   - Verify `isError` is false
 
-### Implementation Steps
+3. **Test error handling**
+   - Configure mock to reject with error
+   - Verify `isError` is true
+   - Verify `error` contains error information
 
-1. **Create the network CloudFormation template** with the following resources:
-   - VPC with CIDR `10.0.0.0/16` and DNS hostnames enabled
-   - Internet Gateway attached to VPC
-   - 3 public subnets in different AZs:
-     - Subnet A: `10.0.1.0/24` (us-east-1a, us-west-2a, etc.)
-     - Subnet B: `10.0.2.0/24` (us-east-1b, us-west-2b, etc.)
-     - Subnet C: `10.0.3.0/24` (us-east-1c, us-west-2c, etc.)
-   - Route table for public subnets with route to IGW (`0.0.0.0/0 → IGW`)
-   - Associate all 3 subnets with the public route table
+4. **Test refetch interval**
+   - Verify hook is configured with 10-second refetch interval
+   - This can be tested by checking the queryKey configuration
 
-2. **Create Security Groups:**
-   - **ECSTaskSecurityGroup**: For Fargate tasks
-     - Egress: Allow all outbound (0.0.0.0/0 on all ports) for Bedrock API, S3, DynamoDB
-     - Ingress: None required (tasks don't receive inbound traffic)
-   - **VPCEndpointSecurityGroup**: For future VPC endpoints (optional in Phase 1)
-     - Ingress: Allow HTTPS (443) from VPC CIDR
-     - Egress: Allow all outbound
+5. **Test empty state**
+   - Configure mock to return empty array
+   - Verify `data` is empty array, not undefined
 
-3. **Add CloudFormation Outputs:**
-   - VPC ID
-   - All 3 subnet IDs (export with names for cross-stack reference)
-   - Security Group IDs
-   - Availability Zones used
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/hooks/useJobs.test.ts`
+- [ ] Success case with data tested
+- [ ] Error case tested
+- [ ] Empty state tested
+- [ ] Tests pass: `npm test -- useJobs`
 
-4. **Use Intrinsic Functions:**
-   - `Fn::GetAZs` to dynamically get AZs in the region
-   - `Fn::Sub` for resource naming with stack name
-   - Avoid hardcoding region-specific values
-
-5. **Add Parameters:**
-   - `EnvironmentName` (default: "production") - for resource tagging
-   - Consider future expansion (no private subnets yet, but structure for adding them)
-
-### Verification Checklist
-
-- [ ] Template passes `aws cloudformation validate-template`
-- [ ] VPC created with correct CIDR
-- [ ] All 3 subnets created in different AZs
-- [ ] Internet Gateway attached and route table configured
-- [ ] Security groups created with correct rules
-- [ ] Can ping 8.8.8.8 from a test EC2 instance in public subnet (manual test)
-- [ ] All outputs exported correctly
-
-### Testing Instructions
-
-**Unit Test (Template Validation):**
+**Testing Instructions:**
 ```bash
-aws cloudformation validate-template \
-  --template-body file://infrastructure/cloudformation/network-stack.yaml
+cd frontend && npm test -- useJobs
 ```
 
-**Integration Test (Deploy to AWS):**
-```bash
-aws cloudformation create-stack \
-  --stack-name plot-palette-network-test \
-  --template-body file://infrastructure/cloudformation/network-stack.yaml \
-  --parameters ParameterKey=EnvironmentName,ParameterValue=test
-
-# Wait for completion
-aws cloudformation wait stack-create-complete \
-  --stack-name plot-palette-network-test
-
-# Verify outputs
-aws cloudformation describe-stacks \
-  --stack-name plot-palette-network-test \
-  --query 'Stacks[0].Outputs'
-
-# Cleanup
-aws cloudformation delete-stack --stack-name plot-palette-network-test
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-### Commit Message Template
+test(frontend): add useJobs hook tests
 
+- Test successful job fetching
+- Test error handling
+- Test empty state
 ```
-feat(infrastructure): add VPC and networking stack
-
-- Create custom VPC with 10.0.0.0/16 CIDR
-- Add 3 public subnets across availability zones
-- Configure internet gateway and routing
-- Create security groups for ECS tasks
-- Export outputs for cross-stack references
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~8,000
 
 ---
 
-## Task 2: S3 Storage Stack
+### Task 3: Test useJobPolling Hook
 
-### Goal
+**Goal:** Test the useJobPolling hook that polls job details with conditional refetch intervals.
 
-Create S3 bucket for all application data (seed data, job outputs, checkpoints) with lifecycle policies for Glacier archival and versioning enabled.
+**Files to Create:**
+- `frontend/src/hooks/useJobPolling.test.ts`
 
-### Files to Create
+**Prerequisites:**
+- Task 2 complete (similar patterns)
 
-- `infrastructure/cloudformation/storage-stack.yaml` - S3 bucket template
+**Implementation Steps:**
 
-### Prerequisites
+1. **Mock the API module**
+   - Mock `fetchJobDetails` to return configurable job data
 
-- Task 1 completed (VPC stack for potential VPC endpoint)
-- S3 bucket names are globally unique - use pattern: `plot-palette-{AWS::AccountId}-{AWS::Region}`
+2. **Test polling for RUNNING job**
+   - Return job with status `RUNNING`
+   - Verify refetch interval is active (5 seconds)
+   - Use `vi.useFakeTimers()` to control time
 
-### Implementation Steps
+3. **Test polling for QUEUED job**
+   - Return job with status `QUEUED`
+   - Verify refetch interval is active (5 seconds)
 
-1. **Create S3 bucket with naming pattern** that ensures global uniqueness:
-   - Use `Fn::Sub` to include account ID and region in bucket name
-   - Enable versioning for checkpoints (ADR-004)
-   - Enable server-side encryption (AES-256 or KMS)
+4. **Test polling stops for COMPLETED job**
+   - Return job with status `COMPLETED`
+   - Verify refetch interval is disabled (returns false)
 
-2. **Configure lifecycle policies:**
-   - **Rule 1 - Archive Job Outputs:**
-     - Prefix: `jobs/*/outputs/`
-     - Transition to GLACIER_INSTANT_RETRIEVAL after 3 days
-     - Transition noncurrent versions to GLACIER after 1 day
-   - **Rule 2 - Expire Incomplete Multipart Uploads:**
-     - Abort after 7 days (cleanup)
-   - **Rule 3 - Seed Data Retention:**
-     - Prefix: `seed-data/`
-     - No expiration (keep indefinitely)
-     - Transition to INTELLIGENT_TIERING after 30 days (cost optimization)
+5. **Test polling stops for FAILED job**
+   - Return job with status `FAILED`
+   - Verify refetch interval is disabled
 
-3. **Configure CORS for presigned URLs:**
-   - Allow origin: `*` (will be restricted to Amplify domain in Phase 6)
-   - Allow methods: GET, PUT, POST, DELETE
-   - Allow headers: `*`
-   - Max age: 3600 seconds
+6. **Test polling stops for CANCELLED job**
+   - Return job with status `CANCELLED`
+   - Verify refetch interval is disabled
 
-4. **Create folder structure with prefix placeholders:**
-   - Use S3 Object resource to create "folders":
-     - `seed-data/.keep`
-     - `sample-datasets/.keep`
-     - `jobs/.keep`
-   - Note: S3 doesn't have true folders, but this helps UI navigation
+7. **Test with correct jobId**
+   - Verify `fetchJobDetails` is called with provided jobId
+   - Verify queryKey includes jobId
 
-5. **Block Public Access:**
-   - Enable all block public access settings (buckets are private)
-   - Access only via presigned URLs and IAM roles
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/hooks/useJobPolling.test.ts`
+- [ ] Polling active for RUNNING/QUEUED tested
+- [ ] Polling disabled for terminal states tested
+- [ ] JobId passed correctly tested
+- [ ] Tests pass: `npm test -- useJobPolling`
 
-6. **Add CloudFormation Outputs:**
-   - Bucket name
-   - Bucket ARN
-   - Bucket regional domain name
-
-### Verification Checklist
-
-- [ ] Bucket created with unique name including account ID
-- [ ] Versioning enabled
-- [ ] Encryption enabled (SSE-S3 or SSE-KMS)
-- [ ] Lifecycle policies applied correctly
-- [ ] CORS configuration allows required methods
-- [ ] Public access blocked
-- [ ] Can upload file via AWS CLI using IAM credentials
-- [ ] Cannot access bucket without credentials
-
-### Testing Instructions
-
-**Unit Test:**
+**Testing Instructions:**
 ```bash
-aws cloudformation validate-template \
-  --template-body file://infrastructure/cloudformation/storage-stack.yaml
+cd frontend && npm test -- useJobPolling
 ```
 
-**Integration Test:**
-```bash
-# Deploy stack
-aws cloudformation create-stack \
-  --stack-name plot-palette-storage-test \
-  --template-body file://infrastructure/cloudformation/storage-stack.yaml
-
-aws cloudformation wait stack-create-complete \
-  --stack-name plot-palette-storage-test
-
-# Get bucket name from outputs
-BUCKET=$(aws cloudformation describe-stacks \
-  --stack-name plot-palette-storage-test \
-  --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' \
-  --output text)
-
-# Test upload
-echo "test" > /tmp/test.txt
-aws s3 cp /tmp/test.txt s3://$BUCKET/jobs/test-job/outputs/test.txt
-
-# Verify versioning
-aws s3api list-object-versions --bucket $BUCKET --prefix jobs/test-job/
-
-# Verify lifecycle policy
-aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET
-
-# Cleanup
-aws s3 rm s3://$BUCKET/jobs/test-job/outputs/test.txt
-aws cloudformation delete-stack --stack-name plot-palette-storage-test
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-### Commit Message Template
+test(frontend): add useJobPolling hook tests
 
+- Test conditional polling based on job status
+- Test polling stops for terminal states
+- Test jobId parameter handling
 ```
-feat(infrastructure): add S3 storage bucket with lifecycle policies
-
-- Create versioned S3 bucket with encryption
-- Configure Glacier archival after 3 days for job outputs
-- Add CORS configuration for presigned URLs
-- Block public access, enforce IAM authentication
-- Create logical folder structure
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~9,000
 
 ---
 
-## Task 3: DynamoDB Tables Stack
+### Task 4: Test AuthContext and AuthProvider
 
-### Goal
+**Goal:** Test the AuthProvider component and its authentication state management.
 
-Create 4 DynamoDB tables (Jobs, Queue, Templates, CostTracking) with on-demand billing, encryption, and appropriate indexes.
+**Files to Create:**
+- `frontend/src/contexts/AuthContext.test.tsx`
 
-### Files to Create
+**Prerequisites:**
+- Phase 0 Task 1 complete (auth mock factory)
 
-- `infrastructure/cloudformation/database-stack.yaml` - DynamoDB tables template
+**Implementation Steps:**
 
-### Prerequisites
+1. **Mock auth service**
+   - Mock `../services/auth` module entirely
+   - Configure `getIdToken`, `signIn`, `signUp`, `signOut`
 
-- Reviewed ADR-005 for table schemas
-- Understanding of DynamoDB partition keys, sort keys, and GSIs
+2. **Test initial loading state**
+   - Render AuthProvider
+   - Verify `loading` is initially true
+   - Verify `isAuthenticated` is false initially
 
-### Implementation Steps
+3. **Test auto-authentication check on mount**
+   - Configure `getIdToken` to return a token
+   - Render AuthProvider
+   - Wait for loading to complete
+   - Verify `isAuthenticated` becomes true
+   - Verify `idToken` is set
 
-1. **Create Jobs Table:**
-   - **Partition Key:** `job_id` (String) - UUID
-   - **Attributes:**
-     - `user_id` (String)
-     - `status` (String) - QUEUED, RUNNING, COMPLETED, FAILED, BUDGET_EXCEEDED, CANCELLED
-     - `created_at` (String) - ISO 8601 timestamp
-     - `updated_at` (String) - ISO 8601 timestamp
-     - `config` (Map) - job configuration JSON
-     - `budget_limit` (Number) - USD
-     - `tokens_used` (Number)
-     - `records_generated` (Number)
-     - `cost_estimate` (Number) - USD
-   - **GSI:** `user-id-index`
-     - Partition Key: `user_id`
-     - Sort Key: `created_at`
-     - Projection: ALL
-     - Purpose: Query all jobs for a user, sorted by creation date
-   - **Billing:** On-demand
-   - **Encryption:** AWS managed key
+4. **Test failed auto-authentication**
+   - Configure `getIdToken` to throw error
+   - Render AuthProvider
+   - Wait for loading to complete
+   - Verify `isAuthenticated` remains false
+   - Verify no error is thrown to UI
 
-2. **Create Queue Table:**
-   - **Partition Key:** `status` (String) - QUEUED, RUNNING, COMPLETED
-   - **Sort Key:** `job_id#timestamp` (String) - Composite: `{job_id}#{timestamp}`
-   - **Attributes:**
-     - `job_id` (String)
-     - `priority` (Number) - for future use
-     - `task_arn` (String) - ECS task ARN when running
-   - **Purpose:** FIFO queue within each status
-   - **Billing:** On-demand
-   - **Encryption:** AWS managed key
+5. **Test login function**
+   - Configure `signIn` to return token
+   - Call `login(email, password)` from context
+   - Verify `signIn` called with correct args
+   - Verify `isAuthenticated` becomes true
+   - Verify `idToken` is set
 
-3. **Create Templates Table:**
-   - **Partition Key:** `template_id` (String) - UUID
-   - **Sort Key:** `version` (Number) - version number (1, 2, 3, ...)
-   - **Attributes:**
-     - `name` (String)
-     - `user_id` (String)
-     - `template_definition` (Map) - YAML/JSON template
-     - `schema_requirements` (List) - ["author.biography", "poem.text"]
-     - `created_at` (String)
-     - `is_public` (Boolean) - if template is shareable
-   - **GSI:** `user-id-index`
-     - Partition Key: `user_id`
-     - Projection: ALL
-   - **Billing:** On-demand
-   - **Encryption:** AWS managed key
+6. **Test login failure**
+   - Configure `signIn` to reject
+   - Call `login(email, password)`
+   - Verify error is propagated (for UI handling)
 
-4. **Create CostTracking Table:**
-   - **Partition Key:** `job_id` (String)
-   - **Sort Key:** `timestamp` (String) - ISO 8601
-   - **Attributes:**
-     - `bedrock_tokens` (Number)
-     - `fargate_hours` (Number)
-     - `s3_operations` (Number)
-     - `estimated_cost` (Number) - USD
-     - `model_id` (String) - which model was used
-   - **TTL:** `ttl` attribute (90 days from timestamp)
-   - **Purpose:** Time-series cost data for dashboard charts
-   - **Billing:** On-demand
-   - **Encryption:** AWS managed key
+7. **Test signup function**
+   - Configure `signUp` to resolve
+   - Call `signup(email, password)`
+   - Verify `signUp` called with correct args
+   - Note: signup doesn't auto-login (requires email verification)
 
-5. **Enable Point-in-Time Recovery** on all tables (backup/restore capability)
+8. **Test logout function**
+   - Start in authenticated state
+   - Call `logout()`
+   - Verify `signOut` called
+   - Verify `isAuthenticated` becomes false
+   - Verify `idToken` becomes null
 
-6. **Add CloudFormation Outputs:**
-   - All table names
-   - All table ARNs
-   - GSI names
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/contexts/AuthContext.test.tsx`
+- [ ] Initial state tested
+- [ ] Auto-auth on mount tested (success and failure)
+- [ ] Login tested (success and failure)
+- [ ] Signup tested
+- [ ] Logout tested
+- [ ] Tests pass: `npm test -- AuthContext`
 
-### Verification Checklist
-
-- [ ] All 4 tables created with correct schemas
-- [ ] Partition and sort keys defined correctly
-- [ ] GSIs created on Jobs and Templates tables
-- [ ] TTL enabled on CostTracking table
-- [ ] Encryption enabled on all tables
-- [ ] Point-in-time recovery enabled
-- [ ] Can write and read items via AWS CLI
-- [ ] GSI queries return expected results
-
-### Testing Instructions
-
-**Unit Test:**
+**Testing Instructions:**
 ```bash
-aws cloudformation validate-template \
-  --template-body file://infrastructure/cloudformation/database-stack.yaml
+cd frontend && npm test -- AuthContext
 ```
 
-**Integration Test:**
-```bash
-# Deploy
-aws cloudformation create-stack \
-  --stack-name plot-palette-database-test \
-  --template-body file://infrastructure/cloudformation/database-stack.yaml
-
-aws cloudformation wait stack-create-complete \
-  --stack-name plot-palette-database-test
-
-# Test Jobs table
-aws dynamodb put-item \
-  --table-name plot-palette-Jobs \
-  --item '{
-    "job_id": {"S": "test-job-123"},
-    "user_id": {"S": "user-456"},
-    "status": {"S": "QUEUED"},
-    "created_at": {"S": "2025-11-19T10:00:00Z"}
-  }'
-
-# Test GSI query
-aws dynamodb query \
-  --table-name plot-palette-Jobs \
-  --index-name user-id-index \
-  --key-condition-expression "user_id = :uid" \
-  --expression-attribute-values '{":uid": {"S": "user-456"}}'
-
-# Verify TTL on CostTracking
-aws dynamodb describe-time-to-live \
-  --table-name plot-palette-CostTracking
-
-# Cleanup
-aws dynamodb delete-item \
-  --table-name plot-palette-Jobs \
-  --key '{"job_id": {"S": "test-job-123"}}'
-
-aws cloudformation delete-stack --stack-name plot-palette-database-test
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-### Commit Message Template
+test(frontend): add AuthContext and AuthProvider tests
 
+- Test initial loading and authentication states
+- Test login, signup, logout flows
+- Test auto-authentication on mount
+- Test error handling
 ```
-feat(infrastructure): add DynamoDB tables for jobs, queue, templates, costs
-
-- Create Jobs table with user-id GSI for querying
-- Create Queue table for FIFO job management
-- Create Templates table with versioning support
-- Create CostTracking table with TTL for 90-day retention
-- Enable encryption and point-in-time recovery
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~12,000
 
 ---
 
-## Task 4: IAM Roles Stack
+### Task 5: Test JobCard Component
 
-### Goal
+**Goal:** Test the JobCard component that displays job information with progress bars and action buttons.
 
-Create 3 consolidated IAM roles (ECSTaskRole, LambdaExecutionRole, AmplifyServiceRole) with appropriate permissions following least privilege for major components (ADR-020).
+**Files to Create:**
+- `frontend/src/components/JobCard.test.tsx`
 
-### Files to Create
+**Prerequisites:**
+- Phase 0 Task 1 complete (custom render with Router)
 
-- `infrastructure/cloudformation/iam-stack.yaml` - IAM roles template
+**Implementation Steps:**
 
-### Prerequisites
+1. **Create test job fixture**
+   - Factory function to create Job objects with configurable properties
+   - Include all required fields from Job interface
 
-- Task 2 completed (S3 bucket ARN needed)
-- Task 3 completed (DynamoDB table ARNs needed)
-- Understanding of IAM policy structure and AWS managed policies
+2. **Test basic rendering**
+   - Render JobCard with sample job
+   - Verify job ID is displayed (truncated to 8 chars)
+   - Verify created date is formatted correctly
+   - Verify status badge is rendered
 
-### Implementation Steps
+3. **Test progress bar calculation**
+   - Job with 50/100 records: verify 50% width
+   - Job with 0 records: verify 0% width
+   - Job with 100/100 records: verify 100% width
 
-1. **Create ECSTaskRole** (for Fargate tasks running generation workers):
-   - **Trusted Entity:** `ecs-tasks.amazonaws.com`
-   - **Policies:**
-     - **Bedrock Access:**
-       - Action: `bedrock:InvokeModel`
-       - Resource: `arn:aws:bedrock:*::foundation-model/*` (all models)
-     - **S3 Access:**
-       - Actions: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`
-       - Resource: `arn:aws:s3:::${BucketName}/jobs/*` (only jobs prefix)
-       - Actions: `s3:GetObject`
-       - Resource: `arn:aws:s3:::${BucketName}/seed-data/*`, `arn:aws:s3:::${BucketName}/sample-datasets/*`
-     - **DynamoDB Access:**
-       - Actions: `dynamodb:PutItem`, `dynamodb:UpdateItem`, `dynamodb:GetItem`
-       - Resources: Jobs table ARN, CostTracking table ARN
-     - **CloudWatch Logs:**
-       - Actions: `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
-       - Resource: `arn:aws:logs:*:*:log-group:/aws/ecs/plot-palette-*`
+4. **Test cost progress bar**
+   - Job at 50% of budget: verify green color, 50% width
+   - Job at 95% of budget: verify orange color (warning)
+   - Job with $0 budget: verify no division error
 
-2. **Create LambdaExecutionRole** (for API Lambda functions):
-   - **Trusted Entity:** `lambda.amazonaws.com`
-   - **Managed Policies:**
-     - `AWSLambdaBasicExecutionRole` (CloudWatch Logs)
-   - **Custom Policies:**
-     - **S3 Full Access to Bucket:**
-       - Actions: `s3:*`
-       - Resource: `arn:aws:s3:::${BucketName}/*` and `arn:aws:s3:::${BucketName}`
-     - **DynamoDB Full Access to Tables:**
-       - Actions: `dynamodb:*`
-       - Resources: All 4 table ARNs
-     - **Cognito Read Access:**
-       - Actions: `cognito-idp:ListUsers`, `cognito-idp:AdminGetUser`
-       - Resource: `*` (will be restricted to User Pool in Phase 2)
-     - **STS Assume Role:**
-       - Action: `sts:AssumeRole`
-       - Resource: `*` (for generating presigned URLs)
-     - **ECS Task Management:**
-       - Actions: `ecs:RunTask`, `ecs:DescribeTasks`, `ecs:StopTask`
-       - Resource: `*` (will be restricted to cluster in Phase 4)
+5. **Test View Details link**
+   - Verify link points to `/jobs/{job-id}`
+   - Use `@testing-library/react` to find link
 
-3. **Create AmplifyServiceRole** (for Amplify to deploy frontend):
-   - **Trusted Entity:** `amplify.amazonaws.com`
-   - **Policies:**
-     - **S3 Access:**
-       - Actions: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket`
-       - Resource: Frontend bucket ARN (will be created in Phase 6)
-     - **CloudFormation Read:**
-       - Actions: `cloudformation:DescribeStacks`, `cloudformation:DescribeStackResources`
-       - Resource: `*`
+6. **Test Download button (COMPLETED jobs)**
+   - Render with COMPLETED status
+   - Verify Download button is visible
+   - Verify button click handler (currently TODO in code)
 
-4. **Add Stack Parameters:**
-   - `S3BucketName` (from storage stack)
-   - `JobsTableArn`, `QueueTableArn`, `TemplatesTableArn`, `CostTrackingTableArn` (from database stack)
+7. **Test Cancel button (RUNNING/QUEUED jobs)**
+   - Render with RUNNING status
+   - Verify Cancel button is visible
+   - Click Cancel button
+   - Verify `onDelete` callback called with job ID
 
-5. **Add CloudFormation Outputs:**
-   - ECSTaskRole ARN
-   - LambdaExecutionRole ARN
-   - AmplifyServiceRole ARN
+8. **Test Delete button (terminal states)**
+   - Render with FAILED status
+   - Verify Delete button is visible
+   - Verify same for CANCELLED and COMPLETED
 
-### Verification Checklist
+9. **Test button visibility by status**
+   - QUEUED: Cancel visible, Download hidden
+   - RUNNING: Cancel visible, Download hidden
+   - COMPLETED: Download visible, Delete visible, Cancel hidden
+   - FAILED: Delete visible, Cancel hidden, Download hidden
+   - CANCELLED: Delete visible
 
-- [ ] All 3 roles created with correct trust policies
-- [ ] ECSTaskRole has Bedrock, S3, DynamoDB, CloudWatch permissions
-- [ ] LambdaExecutionRole has S3, DynamoDB, Cognito, STS, ECS permissions
-- [ ] AmplifyServiceRole has S3 and CloudFormation permissions
-- [ ] No overly broad permissions (avoid `*` actions on `*` resources)
-- [ ] Roles can be assumed by correct services
-- [ ] IAM policy simulator validates expected access
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/components/JobCard.test.tsx`
+- [ ] Basic rendering tested
+- [ ] Progress calculations tested
+- [ ] All button states tested by job status
+- [ ] Callback functions tested
+- [ ] Tests pass: `npm test -- JobCard`
 
-### Testing Instructions
-
-**Unit Test:**
+**Testing Instructions:**
 ```bash
-aws cloudformation validate-template \
-  --template-body file://infrastructure/cloudformation/iam-stack.yaml
+cd frontend && npm test -- JobCard
 ```
 
-**Integration Test:**
-```bash
-# First deploy dependencies (storage, database stacks)
-# Get their outputs for parameters
-
-BUCKET_NAME=$(aws cloudformation describe-stacks \
-  --stack-name plot-palette-storage-test \
-  --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' \
-  --output text)
-
-JOBS_TABLE_ARN=$(aws cloudformation describe-stacks \
-  --stack-name plot-palette-database-test \
-  --query 'Stacks[0].Outputs[?OutputKey==`JobsTableArn`].OutputValue' \
-  --output text)
-
-# Deploy IAM stack
-aws cloudformation create-stack \
-  --stack-name plot-palette-iam-test \
-  --template-body file://infrastructure/cloudformation/iam-stack.yaml \
-  --parameters \
-    ParameterKey=S3BucketName,ParameterValue=$BUCKET_NAME \
-    ParameterKey=JobsTableArn,ParameterValue=$JOBS_TABLE_ARN \
-    ParameterKey=QueueTableArn,ParameterValue=arn:aws:dynamodb:us-east-1:123456789012:table/Queue \
-    ParameterKey=TemplatesTableArn,ParameterValue=arn:aws:dynamodb:us-east-1:123456789012:table/Templates \
-    ParameterKey=CostTrackingTableArn,ParameterValue=arn:aws:dynamodb:us-east-1:123456789012:table/CostTracking \
-  --capabilities CAPABILITY_IAM
-
-aws cloudformation wait stack-create-complete \
-  --stack-name plot-palette-iam-test
-
-# Get role ARN
-TASK_ROLE_ARN=$(aws cloudformation describe-stacks \
-  --stack-name plot-palette-iam-test \
-  --query 'Stacks[0].Outputs[?OutputKey==`ECSTaskRoleArn`].OutputValue' \
-  --output text)
-
-# Test IAM policy simulator
-aws iam simulate-principal-policy \
-  --policy-source-arn $TASK_ROLE_ARN \
-  --action-names bedrock:InvokeModel s3:PutObject dynamodb:PutItem \
-  --resource-arns \
-    "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-v2" \
-    "arn:aws:s3:::$BUCKET_NAME/jobs/test/output.json" \
-    "$JOBS_TABLE_ARN"
-
-# Cleanup
-aws cloudformation delete-stack --stack-name plot-palette-iam-test
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-### Commit Message Template
+test(frontend): add JobCard component tests
 
+- Test rendering with various job states
+- Test progress bar calculations
+- Test button visibility by status
+- Test callback invocations
 ```
-feat(infrastructure): add IAM roles for ECS, Lambda, and Amplify
-
-- Create ECSTaskRole with Bedrock, S3, DynamoDB access
-- Create LambdaExecutionRole with full backend permissions
-- Create AmplifyServiceRole for frontend deployment
-- Follow least privilege for major components
-- Export role ARNs for other stacks
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~13,000
 
 ---
 
-## Task 5: Deployment Script
+### Task 6: Test StatusBadge Component
 
-### Goal
+**Goal:** Test the StatusBadge component that displays job status with appropriate styling.
 
-Create a bash script to deploy all Phase 1 CloudFormation stacks in the correct order with proper dependency handling and error checking.
+**Files to Create:**
+- `frontend/src/components/StatusBadge.test.tsx`
 
-### Files to Create
+**Prerequisites:**
+- Phase 0 Task 1 complete
 
-- `infrastructure/scripts/deploy.sh` - Deployment automation script
+**Implementation Steps:**
 
-### Prerequisites
+1. **Read StatusBadge implementation**
+   - Understand how status maps to colors/styles
+   - Note all possible status values
 
-- Tasks 1-4 completed (all CFN templates created)
-- AWS CLI configured
-- Bash shell available
-- jq installed (for JSON parsing)
+2. **Test each status renders correctly**
+   - QUEUED: verify text and styling class
+   - RUNNING: verify text and styling class
+   - COMPLETED: verify text and styling class
+   - FAILED: verify text and styling class
+   - CANCELLED: verify text and styling class
+   - BUDGET_EXCEEDED: verify text and styling class
 
-### Implementation Steps
+3. **Test accessibility**
+   - Verify status text is readable
+   - Verify sufficient color contrast (if applicable)
 
-1. **Create deployment script structure:**
-   - Accept command-line arguments: `--region`, `--profile`, `--environment`
-   - Set defaults: region from AWS config, profile default, environment production
-   - Validate prerequisites (AWS CLI, jq, templates exist)
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/components/StatusBadge.test.tsx`
+- [ ] All 6 status values tested
+- [ ] Styling classes verified
+- [ ] Tests pass: `npm test -- StatusBadge`
 
-2. **Implement stack deployment function:**
-   - Function: `deploy_stack(stack_name, template_file, parameters)`
-   - Check if stack exists (update vs create)
-   - Use `aws cloudformation deploy` for idempotent deployments
-   - Wait for stack completion
-   - Print outputs after deployment
-   - Handle errors and exit on failure
-
-3. **Deploy stacks in dependency order:**
-   - Network stack (no dependencies)
-   - Storage stack (no dependencies)
-   - Database stack (no dependencies)
-   - IAM stack (depends on storage and database outputs)
-
-4. **Retrieve and pass outputs between stacks:**
-   - Query stack outputs with `aws cloudformation describe-stacks`
-   - Pass as parameters to dependent stacks
-   - Store all outputs in `outputs.json` for reference
-
-5. **Add cleanup function:**
-   - `cleanup()` function to delete all stacks in reverse order
-   - Trigger on error or `--delete` flag
-
-6. **Add logging:**
-   - Timestamp each action
-   - Log to both console and `deployment.log`
-   - Color-coded output (green for success, red for errors)
-
-### Verification Checklist
-
-- [ ] Script accepts command-line arguments
-- [ ] Validates AWS CLI and jq are installed
-- [ ] Deploys stacks in correct order
-- [ ] Waits for each stack to complete before proceeding
-- [ ] Passes outputs between stacks correctly
-- [ ] Handles errors gracefully
-- [ ] Creates outputs.json with all stack outputs
-- [ ] Cleanup function deletes stacks in reverse order
-
-### Testing Instructions
-
-**Test deployment:**
+**Testing Instructions:**
 ```bash
-# Make script executable
-chmod +x infrastructure/scripts/deploy.sh
-
-# Test with dry-run (add --dry-run flag to script)
-./infrastructure/scripts/deploy.sh --region us-east-1 --environment dev
-
-# Full deployment
-./infrastructure/scripts/deploy.sh --region us-east-1 --environment test
-
-# Verify all stacks created
-aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE
-
-# Check outputs.json
-cat infrastructure/scripts/outputs.json
-
-# Test cleanup
-./infrastructure/scripts/deploy.sh --delete --environment test
+cd frontend && npm test -- StatusBadge
 ```
 
-**Script should produce output like:**
+**Commit Message Template:**
 ```
-[2025-11-19 10:00:00] Starting deployment to us-east-1...
-[2025-11-19 10:00:05] Deploying network stack...
-[2025-11-19 10:02:30] ✓ Network stack deployed
-[2025-11-19 10:02:35] Deploying storage stack...
-[2025-11-19 10:04:00] ✓ Storage stack deployed
-...
-[2025-11-19 10:15:00] ✓ All stacks deployed successfully
-[2025-11-19 10:15:01] Outputs saved to outputs.json
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
+
+test(frontend): add StatusBadge component tests
+
+- Test rendering for all job status values
+- Verify appropriate styling for each status
 ```
-
-### Commit Message Template
-
-```
-feat(infrastructure): add deployment script for CloudFormation stacks
-
-- Create bash script to deploy all infrastructure stacks
-- Handle dependencies and output passing between stacks
-- Add error handling and rollback capability
-- Generate outputs.json with all stack outputs
-- Support multiple environments (dev, test, production)
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~10,000
 
 ---
 
-## Task 6: Backend Shared Library
+### Task 7: Test PrivateRoute Component
 
-### Goal
+**Goal:** Test the PrivateRoute component that protects routes requiring authentication.
 
-Create shared Python modules for constants, data models, and utility functions that will be used across Lambda functions and ECS tasks.
+**Files to Create:**
+- `frontend/src/components/PrivateRoute.test.tsx`
 
-### Files to Create
+**Prerequisites:**
+- Task 4 complete (AuthContext tests establish patterns)
 
-- `backend/shared/__init__.py` - Package initialization
-- `backend/shared/models.py` - Pydantic models for type safety
-- `backend/shared/constants.py` - Application constants
-- `backend/shared/utils.py` - Utility functions
-- `backend/requirements.txt` - Python dependencies
+**Implementation Steps:**
 
-### Prerequisites
+1. **Mock useAuth hook**
+   - Control `isAuthenticated` and `loading` values
 
-- Python 3.13 installed
-- Understanding of Pydantic for data validation
-- Reviewed ADR-005 (DynamoDB schemas) and ADR-009 (Python runtime)
+2. **Test loading state**
+   - Set `loading: true`
+   - Render PrivateRoute with child content
+   - Verify loading indicator is shown (or nothing)
+   - Verify child content is NOT rendered
 
-### Implementation Steps
+3. **Test authenticated access**
+   - Set `isAuthenticated: true`, `loading: false`
+   - Render PrivateRoute with child content
+   - Verify child content IS rendered
 
-1. **Create `constants.py`** with application-wide constants:
-   - Job statuses: `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, `BUDGET_EXCEEDED`, `CANCELLED`
-   - Export formats: `JSONL`, `PARQUET`, `CSV`
-   - Model pricing (per 1M tokens):
-     - Claude Sonnet: input $3.00, output $15.00
-     - Llama 3.1 70B: input $0.99, output $0.99
-     - Llama 3.1 8B: input $0.30, output $0.60
-     - Mistral 7B: input $0.15, output $0.20
-   - Fargate pricing (Spot):
-     - vCPU: $0.01246 per hour
-     - Memory: $0.00127 per GB per hour
-   - S3 pricing:
-     - PUT: $0.005 per 1000 requests
-     - GET: $0.0004 per 1000 requests
-   - Checkpoint interval: 50 records
-   - Budget check interval: every Bedrock call
+4. **Test unauthenticated redirect**
+   - Set `isAuthenticated: false`, `loading: false`
+   - Render PrivateRoute
+   - Verify redirect to login page occurs
+   - Use `MemoryRouter` to verify navigation
 
-2. **Create `models.py`** with Pydantic models:
-   - `JobConfig` model matching DynamoDB Jobs table schema
-   - `TemplateDefinition` model for prompt templates
-   - `CheckpointState` model for checkpoint JSON
-   - `CostBreakdown` model for cost tracking
-   - Use Pydantic for validation, serialization to DynamoDB format
+5. **Test with Outlet (if used)**
+   - If PrivateRoute uses React Router's Outlet
+   - Verify nested routes render correctly
 
-   **Example structure:**
-   ```python
-   from pydantic import BaseModel, Field
-   from typing import Optional, Dict, List
-   from datetime import datetime
-   from enum import Enum
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/components/PrivateRoute.test.tsx`
+- [ ] Loading state tested
+- [ ] Authenticated access tested
+- [ ] Unauthenticated redirect tested
+- [ ] Tests pass: `npm test -- PrivateRoute`
 
-   class JobStatus(str, Enum):
-       QUEUED = "QUEUED"
-       RUNNING = "RUNNING"
-       COMPLETED = "COMPLETED"
-       FAILED = "FAILED"
-       BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
-       CANCELLED = "CANCELLED"
-
-   class JobConfig(BaseModel):
-       job_id: str
-       user_id: str
-       status: JobStatus
-       created_at: datetime
-       updated_at: datetime
-       config: Dict
-       budget_limit: float
-       tokens_used: int = 0
-       records_generated: int = 0
-       cost_estimate: float = 0.0
-
-       def to_dynamodb(self) -> dict:
-           # Convert to DynamoDB format
-           pass
-   ```
-
-3. **Create `utils.py`** with utility functions:
-   - `generate_job_id()` - Create UUID for jobs
-   - `calculate_cost(tokens, model_id)` - Calculate Bedrock cost
-   - `get_nested_field(data, field_path)` - Get nested dict value (e.g., "author.biography")
-   - `create_presigned_url(bucket, key, expiration)` - Generate S3 presigned URLs
-   - `parse_etag(etag)` - Clean ETag strings (remove quotes)
-   - `setup_logger(name)` - Configure structured JSON logging
-   - Include error handling and type hints
-
-4. **Create `requirements.txt`:**
-   ```
-   boto3>=1.34.0
-   pydantic>=2.5.0
-   requests>=2.31.0
-   python-dotenv>=1.0.0
-   jinja2>=3.1.2
-   pyarrow>=14.0.0
-   pandas>=2.1.0
-   jsonschema>=4.20.0
-   ```
-
-5. **Add `__init__.py`** to make it a package and expose main classes:
-   ```python
-   from .models import JobConfig, TemplateDefinition, CheckpointState
-   from .constants import JobStatus, ExportFormat, MODEL_PRICING
-   from .utils import generate_job_id, calculate_cost, setup_logger
-
-   __all__ = [
-       "JobConfig", "TemplateDefinition", "CheckpointState",
-       "JobStatus", "ExportFormat", "MODEL_PRICING",
-       "generate_job_id", "calculate_cost", "setup_logger"
-   ]
-   ```
-
-6. **Follow coding standards:**
-   - Type hints on all functions
-   - Docstrings (Google style)
-   - Black formatting (line length 100)
-   - No hardcoded values (use constants)
-
-### Verification Checklist
-
-- [ ] All files created with correct structure
-- [ ] Pydantic models match DynamoDB schemas
-- [ ] Constants include all pricing and configuration values
-- [ ] Utility functions have type hints and docstrings
-- [ ] requirements.txt includes all dependencies
-- [ ] Package imports work correctly (`from backend.shared import JobConfig`)
-- [ ] Black formatting applied
-- [ ] No syntax errors
-
-### Testing Instructions
-
-**Unit Tests (create `tests/unit/test_shared.py`):**
-```python
-import pytest
-from backend.shared.models import JobConfig, JobStatus
-from backend.shared.utils import generate_job_id, calculate_cost
-from backend.shared.constants import MODEL_PRICING
-
-def test_job_config_creation():
-    job = JobConfig(
-        job_id="test-123",
-        user_id="user-456",
-        status=JobStatus.QUEUED,
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        config={},
-        budget_limit=100.0
-    )
-    assert job.status == JobStatus.QUEUED
-    assert job.tokens_used == 0
-
-def test_generate_job_id():
-    job_id = generate_job_id()
-    assert len(job_id) == 36  # UUID format
-    assert "-" in job_id
-
-def test_calculate_cost():
-    cost = calculate_cost(tokens=1000000, model_id="claude-sonnet")
-    assert cost > 0
-    # Verify against MODEL_PRICING constants
-
-# Run tests
-# pytest tests/unit/test_shared.py -v
-```
-
-**Manual Test (Python REPL):**
+**Testing Instructions:**
 ```bash
-python3.13
->>> from backend.shared import JobConfig, JobStatus, generate_job_id
->>> job_id = generate_job_id()
->>> print(job_id)
->>> job = JobConfig(...)
->>> print(job.to_dynamodb())
+cd frontend && npm test -- PrivateRoute
 ```
 
-### Commit Message Template
-
+**Commit Message Template:**
 ```
-feat(backend): add shared library for models, constants, and utils
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-- Create Pydantic models for Jobs, Templates, Checkpoints
-- Add constants for pricing, statuses, and configuration
-- Implement utility functions for ID generation, cost calculation, logging
-- Define requirements.txt with all Python dependencies
-- Follow type hints and docstring standards
+test(frontend): add PrivateRoute component tests
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+- Test loading state handling
+- Test authenticated user access
+- Test redirect for unauthenticated users
 ```
-
-**Estimated Tokens:** ~15,000
 
 ---
 
-## Task 7: Update Repository README
+### Task 8: Test CreateJob Form Interactions
 
-### Goal
+**Goal:** Test key interactions in the CreateJob form component without testing every detail.
 
-Update the main README.md to reflect the new AWS-based architecture and provide setup instructions for the transformed system.
+**Files to Create:**
+- `frontend/src/routes/CreateJob.test.tsx`
 
-### Files to Modify
+**Prerequisites:**
+- Tasks 1-4 complete (auth and API mocking patterns)
 
-- `README.md` - Root repository README
+**Implementation Steps:**
 
-### Prerequisites
+1. **Read CreateJob implementation**
+   - Understand form fields and validation
+   - Note required fields and submission flow
 
-- All Phase 1 tasks completed
-- Understanding of new architecture (Phase 0)
+2. **Mock dependencies**
+   - Mock API functions (`createJob`, `generateUploadUrl`)
+   - Mock React Query mutations
+   - Mock navigation (useNavigate)
 
-### Implementation Steps
+3. **Test form renders required fields**
+   - Template selection field exists
+   - Seed data upload field exists
+   - Budget limit field exists
+   - Number of records field exists
+   - Submit button exists
 
-1. **Update project description** at the top:
-   - Explain transformation from systemd to AWS serverless
-   - Highlight key features: Fargate Spot, Bedrock, web UI, multi-format export
-   - Update badges if applicable
+4. **Test validation feedback**
+   - Submit without required fields
+   - Verify validation errors appear
+   - Note: Don't test every validation rule, just verify feedback mechanism works
 
-2. **Add architecture diagram** (ASCII or link to image):
-   - Show flow: User → Amplify UI → API Gateway → Lambda → ECS Fargate Spot → Bedrock
-   - Include S3 and DynamoDB in diagram
+5. **Test successful submission**
+   - Fill in valid form data
+   - Submit form
+   - Verify `createJob` called with correct payload
+   - Verify navigation to jobs list after success
 
-3. **Update installation section:**
-   - Prerequisites: AWS account, CLI, Python 3.13, Node.js 20+
-   - Quick start: Run deployment script
-   - Link to detailed setup guide (will be created in Phase 9)
+6. **Test submission error handling**
+   - Configure API to reject
+   - Submit form
+   - Verify error message displayed to user
 
-4. **Add deployment instructions:**
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/routes/CreateJob.test.tsx`
+- [ ] Form fields render tested
+- [ ] Basic validation feedback tested
+- [ ] Successful submission flow tested
+- [ ] Error handling tested
+- [ ] Tests pass: `npm test -- CreateJob`
+
+**Testing Instructions:**
+```bash
+cd frontend && npm test -- CreateJob
+```
+
+**Commit Message Template:**
+```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
+
+test(frontend): add CreateJob form tests
+
+- Test form field rendering
+- Test validation feedback
+- Test submission success and error flows
+```
+
+---
+
+### Task 9: Test API Service Layer
+
+**Goal:** Test the API service functions that communicate with the backend.
+
+**Files to Create:**
+- `frontend/src/services/api.test.ts`
+
+**Prerequisites:**
+- Phase 0 Task 1 complete
+
+**Implementation Steps:**
+
+1. **Mock axios**
+   - Mock the axios instance created in api.ts
+   - Control request/response behavior
+
+2. **Mock auth service**
+   - Mock `getIdToken` to return test token
+
+3. **Test fetchJobs**
+   - Call `fetchJobs()`
+   - Verify GET request to `/jobs`
+   - Verify Authorization header includes token
+   - Verify returns `data.jobs` array
+
+4. **Test fetchJobDetails**
+   - Call `fetchJobDetails('job-123')`
+   - Verify GET request to `/jobs/job-123`
+   - Verify returns job object
+
+5. **Test createJob**
+   - Call `createJob(jobData)`
+   - Verify POST request to `/jobs`
+   - Verify request body matches input
+   - Verify returns created job
+
+6. **Test deleteJob**
+   - Call `deleteJob('job-123')`
+   - Verify DELETE request to `/jobs/job-123`
+
+7. **Test cancelJob**
+   - Call `cancelJob('job-123')`
+   - Verify DELETE request to `/jobs/job-123`
+   - Note: Same endpoint as delete (verify this is intentional)
+
+8. **Test generateUploadUrl**
+   - Call `generateUploadUrl('file.json', 'application/json')`
+   - Verify POST request to `/seed-data/upload`
+   - Verify returns `{ upload_url, s3_key }`
+
+9. **Test auth interceptor**
+   - Verify interceptor adds Authorization header
+   - Test when `getIdToken` returns null (no header)
+   - Test when `getIdToken` throws (logs error, continues)
+
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/services/api.test.ts`
+- [ ] All exported functions tested
+- [ ] Auth interceptor tested
+- [ ] Error cases tested
+- [ ] Tests pass: `npm test -- api.test`
+
+**Testing Instructions:**
+```bash
+cd frontend && npm test -- api.test
+```
+
+**Commit Message Template:**
+```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
+
+test(frontend): add API service tests
+
+- Test all API functions (fetchJobs, createJob, etc.)
+- Test auth interceptor behavior
+- Test error handling
+```
+
+---
+
+### Task 10: Test Auth Service Layer
+
+**Goal:** Test the auth service functions that wrap Cognito SDK.
+
+**Files to Create:**
+- `frontend/src/services/auth.test.ts`
+
+**Prerequisites:**
+- Phase 0 Task 1 complete (Cognito mock)
+
+**Implementation Steps:**
+
+1. **Mock amazon-cognito-identity-js**
+   - Mock `CognitoUserPool`, `CognitoUser`, `AuthenticationDetails`
+   - Control callback behaviors (onSuccess, onFailure)
+
+2. **Test signUp**
+   - Call `signUp(email, password)`
+   - Verify `userPool.signUp` called with correct attributes
+   - Test success case (resolves)
+   - Test failure case (rejects with error)
+
+3. **Test signIn**
+   - Call `signIn(email, password)`
+   - Verify `CognitoUser` created with correct username
+   - Verify `authenticateUser` called with correct details
+   - Test success: verify returns ID token
+   - Test failure: verify rejects with error
+
+4. **Test getCurrentUser**
+   - Mock `userPool.getCurrentUser()`
+   - Verify returns user when exists
+   - Verify returns null when no user
+
+5. **Test getIdToken**
+   - Mock `getCurrentUser` to return user
+   - Mock `user.getSession` to return session
+   - Verify returns JWT token string
+   - Test when no current user (returns null)
+   - Test when getSession fails (rejects)
+
+6. **Test signOut**
+   - Mock `getCurrentUser` to return user
+   - Call `signOut()`
+   - Verify `user.signOut()` called
+   - Test when no current user (no error)
+
+**Verification Checklist:**
+- [ ] Test file exists at `frontend/src/services/auth.test.ts`
+- [ ] signUp tested (success and failure)
+- [ ] signIn tested (success and failure)
+- [ ] getCurrentUser tested
+- [ ] getIdToken tested (all cases)
+- [ ] signOut tested
+- [ ] Tests pass: `npm test -- auth.test`
+
+**Testing Instructions:**
+```bash
+cd frontend && npm test -- auth.test
+```
+
+**Commit Message Template:**
+```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
+
+test(frontend): add auth service tests
+
+- Test Cognito SDK wrapper functions
+- Test signUp, signIn, signOut flows
+- Test token retrieval
+```
+
+---
+
+## Phase Verification
+
+**How to verify Phase 1 is complete:**
+
+1. **Run all frontend tests:**
    ```bash
-   # Clone repository
-   git clone https://github.com/HatmanStack/plot-palette.git
-   cd plot-palette
-
-   # Deploy infrastructure
-   ./infrastructure/scripts/deploy.sh --region us-east-1 --environment production
-
-   # Access web UI
-   # URL will be output by deployment script
+   cd frontend && npm test
    ```
+   - All tests should pass
+   - No skipped tests (unless intentional)
 
-5. **Update features section:**
-   - Web-based UI for job management
-   - Real-time progress tracking and cost monitoring
-   - Custom prompt templates with multi-step generation
-   - Multiple export formats (JSONL, Parquet, CSV)
-   - Automatic Glacier archival
-   - Budget limits and cost controls
-
-6. **Add architecture section:**
-   - List AWS services used
-   - Explain Fargate Spot cost savings
-   - Mention Bedrock model selection
-
-7. **Update license and attribution:**
-   - Keep existing license
-   - Update model list if using different Bedrock models
-   - Acknowledge AWS services
-
-8. **Add "Migration from v1" section:**
-   - Note for existing users about breaking changes
-   - Explain how to migrate seed data to S3
-   - Offer support channel (GitHub issues)
-
-### Verification Checklist
-
-- [ ] README accurately describes new architecture
-- [ ] Installation instructions are clear and complete
-- [ ] All links work (documentation, HuggingFace dataset, etc.)
-- [ ] Markdown formatting is correct
-- [ ] Badges updated (if applicable)
-- [ ] License section preserved
-
-### Testing Instructions
-
-**Manual Review:**
-- Render README in GitHub or with `grip` tool
-- Follow installation instructions on a fresh AWS account (or document steps)
-- Verify all links are valid
-- Check for typos and grammar
-
-**Automated Check:**
-```bash
-# Install markdown linter
-npm install -g markdownlint-cli
-
-# Lint README
-markdownlint README.md
-
-# Check links (requires markdown-link-check)
-npm install -g markdown-link-check
-markdown-link-check README.md
-```
-
-### Commit Message Template
-
-```
-docs: update README for AWS serverless architecture
-
-- Rewrite project description for AWS deployment
-- Add architecture diagram and service overview
-- Update installation instructions with deployment script
-- Document new features (web UI, cost tracking, templates)
-- Add migration guide for v1 users
-- Preserve license and attribution
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~8,000
-
----
-
-## Phase 1 Verification
-
-After completing all tasks, verify the entire phase:
-
-### Integration Tests
-
-1. **Deploy all stacks:**
+2. **Check coverage (optional):**
    ```bash
-   ./infrastructure/scripts/deploy.sh --region us-east-1 --environment test
+   cd frontend && npm test -- --coverage
    ```
+   - Hooks: ~90%+ coverage
+   - Contexts: ~90%+ coverage
+   - Key components: ~80%+ coverage
+   - Services: ~90%+ coverage
 
-2. **Verify VPC:**
+3. **Verify in CI:**
    ```bash
-   aws ec2 describe-vpcs --filters "Name=tag:Name,Values=plot-palette-*"
-   aws ec2 describe-subnets --filters "Name=vpc-id,Values=<vpc-id>"
+   npm run check
    ```
+   - Lint passes
+   - All tests pass
 
-3. **Verify S3:**
-   ```bash
-   aws s3 ls
-   aws s3api get-bucket-lifecycle-configuration --bucket <bucket-name>
-   ```
+**Integration Points:**
+- Tests use utilities from Phase 0
+- Patterns established here inform Phase 2 approach
 
-4. **Verify DynamoDB:**
-   ```bash
-   aws dynamodb list-tables
-   aws dynamodb describe-table --table-name plot-palette-Jobs
-   ```
+**Known Limitations:**
+- CreateJob tests are focused on key interactions, not exhaustive
+- Monaco editor (in TemplateEditor) is not tested (complex external dependency)
+- Some components (Layout, Sidebar, Header) are not tested (low value, mostly static)
 
-5. **Verify IAM:**
-   ```bash
-   aws iam get-role --role-name plot-palette-ECSTaskRole
-   aws iam get-role-policy --role-name plot-palette-ECSTaskRole --policy-name BedrockAccess
-   ```
-
-6. **Test shared library:**
-   ```bash
-   cd backend
-   python3.13 -m pytest tests/unit/test_shared.py -v
-   ```
-
-### Success Criteria
-
-- [ ] All CloudFormation stacks deployed successfully
-- [ ] VPC has 3 public subnets in different AZs
-- [ ] S3 bucket created with lifecycle policies
-- [ ] 4 DynamoDB tables exist with correct schemas
-- [ ] 3 IAM roles created with appropriate permissions
-- [ ] Deployment script runs without errors
-- [ ] Shared library passes all unit tests
-- [ ] README accurately describes the system
-- [ ] No hardcoded values in code (use constants)
-- [ ] All resources tagged appropriately
-
-### Estimated Total Cost (Phase 1 deployed for 1 hour)
-
-- VPC, subnets, IGW: $0
-- S3 bucket (empty): $0
-- DynamoDB (on-demand, no data): $0
-- IAM roles: $0
-- **Total: $0** (all resources are free when idle)
-
----
-
-## Known Limitations & Technical Debt
-
-1. **No VPC Endpoints:** Using public internet for AWS API calls (acceptable for now, can add VPC endpoints later for optimization)
-2. **Single Region Template:** While templates are region-agnostic, no cross-region replication yet
-3. **No CloudWatch Alarms:** Monitoring configured in later phases
-4. **IAM Policies Not Fully Restricted:** Some resources use `*`, will tighten in Phase 7 during CFN integration
-
----
-
-## Next Steps
-
-With core infrastructure deployed, you're ready to proceed to **Phase 2: Authentication & API Gateway**.
-
-Phase 2 will add:
-- Cognito User Pool for authentication
-- HTTP API Gateway with JWT authorizer
-- Lambda functions for basic API operations (health check, user info)
-
----
-
----
-
-## Review Feedback (Code Review - Senior Engineer)
-
-### Task 6: Backend Shared Library - Unit Tests Missing
-
-> **Consider:** The plan at lines 863-894 explicitly instructs you to "**create** `tests/unit/test_shared.py`" with unit tests for the shared library. Have you created this file?
->
-> **Think about:** When I checked the tests directory with `ls -la /root/plot-palette/tests/unit/`, it was empty. The Phase 1 Verification section (line 1076-1080) expects to run `python3.13 -m pytest tests/unit/test_shared.py -v`. What would happen if someone tried to run this command right now?
->
-> **Reflect:** The success criteria at line 1090 states "Shared library passes all unit tests". How can unit tests pass if they don't exist?
->
-> **Review your implementation:** Look at the Testing Instructions section for Task 6 (lines 861-895). The code examples aren't just for reference - they're meant to be implemented. What test cases should you create to verify the shared library functions correctly?
-
-### Task 6: Python Package Imports (Dependency Installation)
-
-> **Consider:** When I tested imports with `python3 -c "from backend.shared import JobConfig"`, it failed with `ModuleNotFoundError: No module named 'pydantic'`. While requirements.txt exists with the right dependencies, should there be instructions somewhere about installing them?
->
-> **Think about:** The verification checklist at line 856 says "Package imports work correctly". What needs to happen before imports can work? Is this documented in the README or a setup guide?
-
-### Task 2: S3 Folder Structure (Minor - Optional Enhancement)
-
-> **Consider:** The plan at lines 210-215 suggests creating placeholder objects (`.keep` files) for folder structure: `seed-data/.keep`, `sample-datasets/.keep`, `jobs/.keep`. Did you implement this?
->
-> **Reflect:** The plan notes "S3 doesn't have true folders, but this helps UI navigation." Is this a critical requirement or a nice-to-have? The lifecycle rules already reference these prefixes, so folders will be created when objects are uploaded. Should you add these placeholders or is the current implementation acceptable?
-
----
-
-**Review Status:** Issues found - implementation needs unit tests before approval.
-
-**Tool Evidence:**
-- `find /root/plot-palette/tests -type f -name "*.py"` returned no results
-- `ls -la /root/plot-palette/tests/unit/` shows empty directory
-- All 4 CloudFormation templates exist and have proper structure (verified with Read tool)
-- Deployment script has correct logic for dependency management (verified lines 207-277)
-- Backend shared library code structure is correct (verified models.py, constants.py, utils.py)
-- All 7 commits follow conventional commit format (verified with git log)
-
----
-
-**Navigation:**
-- [← Back to README](./README.md)
-- [← Previous: Phase 0](./Phase-0.md)
-- [Next: Phase 2 - Authentication & API Gateway →](./Phase-2.md)
+**Technical Debt:**
+- Download button in JobCard has TODO placeholder - tests document current behavior
+- cancelJob and deleteJob use same endpoint - tests document this

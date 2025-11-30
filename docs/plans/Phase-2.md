@@ -1,1172 +1,853 @@
-# Phase 2: Authentication & API Gateway
+# Phase 2: Backend Tests
 
 ## Phase Goal
 
-Implement user authentication with Amazon Cognito User Pools and create HTTP API Gateway with JWT authorization. By the end of this phase, users can sign up, log in, and the API infrastructure will be ready to receive authenticated requests from the frontend.
+Expand backend unit test coverage for Lambda handlers and Worker/ECS failure scenarios. Focus on error paths, edge cases, and failure recovery that aren't covered by existing tests. Tests must run without AWS connectivity using moto and manual mocking.
 
 **Success Criteria:**
-- Cognito User Pool configured with email verification and password policies
-- Cognito User Pool Client created for web application
-- HTTP API Gateway deployed with JWT authorizer
-- Lambda functions for health check and user info endpoints
-- API Gateway CORS configured for frontend access
-- All endpoints tested with authenticated requests
+- Lambda handlers have tests for input validation, auth failures, and AWS service errors
+- Worker has tests for Spot interruption, Bedrock failures, and S3/DynamoDB errors
+- All tests pass with `npm run test:backend`
+- No AWS credentials required
 
-**Estimated Tokens:** ~88,000
-
----
+**Estimated Tokens:** ~40,000
 
 ## Prerequisites
 
-- **Phase 1** completed (VPC, S3, DynamoDB, IAM roles deployed)
-- AWS CLI configured
-- Python 3.13 virtualenv activated
-- Understanding of JWT authentication flow
-- Postman or curl for API testing
+- Phase 0 complete (fixtures and factories available)
+- Phase 1 complete (patterns established)
+- `tests/conftest.py` with shared AWS mocks
+- `tests/fixtures/` with event and item factories
 
 ---
 
-## Task 1: Cognito User Pool Stack
+## Tasks
 
-### Goal
+### Task 1: Test Lambda Input Validation Errors
 
-Create Amazon Cognito User Pool with secure password policies, email verification, and MFA support (optional). Configure user pool client for the web application.
+**Goal:** Test that Lambda handlers properly reject malformed and invalid input.
 
-### Files to Create
+**Files to Create:**
+- `tests/unit/test_lambda_validation.py`
 
-- `infrastructure/cloudformation/auth-stack.yaml` - Cognito User Pool template
+**Prerequisites:**
+- Phase 0 Task 2 complete (Lambda event factory)
 
-### Prerequisites
+**Implementation Steps:**
 
-- Phase 1 IAM stack deployed (AmplifyServiceRole may need Cognito permissions)
-- Valid email configured in AWS SES for sending verification emails (or use Cognito default)
+1. **Set up test module structure**
+   - Import Lambda handlers from `backend/lambdas/`
+   - Import event factory from fixtures
+   - Create test class `TestCreateJobValidation`
 
-### Implementation Steps
+2. **Test missing required fields**
+   - Create event with empty body
+   - Call `create_job.lambda_handler(event, context)`
+   - Verify 400 status code
+   - Verify error message mentions missing field
 
-1. **Create Cognito User Pool resource:**
-   - Pool name: `plot-palette-users-{EnvironmentName}`
-   - **Username attributes:** Email (users sign in with email)
-   - **Auto-verified attributes:** Email
-   - **Password policy:**
-     - Minimum length: 12 characters
-     - Require uppercase: true
-     - Require lowercase: true
-     - Require numbers: true
-     - Require symbols: true
-     - Temporary password validity: 7 days
-   - **MFA configuration:** Optional (user choice)
-   - **Account recovery:** Email only
+3. **Test invalid JSON body**
+   - Create event with body `"not valid json"`
+   - Verify 400 status code
+   - Verify error message indicates JSON parse error
 
-2. **Configure email settings:**
-   - **Email verification message:**
-     - Subject: "Verify your Plot Palette account"
-     - Message: "Your verification code is {####}"
-   - **Email sending:** Use Cognito default (or SES if configured)
-   - **From email:** `no-reply@verificationemail.com` (Cognito default)
+4. **Test invalid budget_limit values**
+   - Test with negative value: `{"budget_limit": -10}`
+   - Test with zero: `{"budget_limit": 0}`
+   - Test with too high: `{"budget_limit": 2000}` (max is 1000)
+   - Test with non-numeric: `{"budget_limit": "fifty"}`
+   - Verify 400 for each with appropriate message
 
-3. **Add custom attributes:**
-   - `custom:user_role` (String) - "admin" or "user" (for future RBAC)
-   - `custom:organization` (String) - for multi-tenant support (optional)
+5. **Test invalid output_format**
+   - Test with invalid format: `{"output_format": "XML"}`
+   - Verify 400 with message listing valid formats
 
-4. **Configure user pool policies:**
-   - **Sign-up:** Allow users to sign themselves up
-   - **Admin create user:** Allowed
-   - **Case sensitivity:** False (email matching is case-insensitive)
+6. **Test invalid num_records values**
+   - Test with zero: `{"num_records": 0}`
+   - Test with negative: `{"num_records": -5}`
+   - Test with too high: `{"num_records": 2000000}` (max 1M)
+   - Test with non-integer: `{"num_records": 100.5}`
+   - Verify 400 for each
 
-5. **Create User Pool Client:**
-   - Client name: `plot-palette-web-client`
-   - **Auth flows:** `ALLOW_USER_PASSWORD_AUTH`, `ALLOW_REFRESH_TOKEN_AUTH`
-   - **Prevent user existence errors:** Enabled (don't reveal if user exists)
-   - **Token validity:**
-     - ID token: 60 minutes
-     - Access token: 60 minutes
-     - Refresh token: 30 days
-   - **Read attributes:** email, name, custom:user_role
-   - **Write attributes:** name, custom:user_role
-   - **No client secret** (for web apps, client secret not needed)
+7. **Test missing template_id**
+   - Provide all fields except template_id
+   - Verify 400 with missing field message
 
-6. **Add Lambda triggers (optional for Phase 2, can add later):**
-   - Pre-signup: Validate email domain (if restricting to certain domains)
-   - Post-confirmation: Create user record in DynamoDB
-   - For now, skip triggers - add in future phases if needed
+8. **Test missing seed_data_path**
+   - Provide all fields except seed_data_path
+   - Verify 400 with missing field message
 
-7. **Add CloudFormation Outputs:**
-   - User Pool ID
-   - User Pool ARN
-   - User Pool Client ID
-   - User Pool Domain (if using Hosted UI)
+9. **Repeat pattern for other Lambda handlers**
+   - `get_job`: test invalid job_id format
+   - `delete_job`: test invalid job_id format
+   - `create_template`: test missing required fields
+   - `validate_seed_data`: test invalid JSON structure
 
-### Verification Checklist
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_lambda_validation.py`
+- [ ] All create_job validation cases tested
+- [ ] Other Lambda validation cases tested
+- [ ] All tests return appropriate 400 status codes
+- [ ] Tests pass: `pytest tests/unit/test_lambda_validation.py -v`
 
-- [ ] User Pool created with correct name
-- [ ] Password policy enforces 12+ chars with complexity requirements
-- [ ] Email verification required
-- [ ] MFA optional (users can enable)
-- [ ] User Pool Client created without client secret
-- [ ] Token expiration configured (60min access, 30day refresh)
-- [ ] Custom attributes defined
-- [ ] Auto sign-up enabled
-- [ ] Outputs exported
-
-### Testing Instructions
-
-**Unit Test:**
+**Testing Instructions:**
 ```bash
-aws cloudformation validate-template \
-  --template-body file://infrastructure/cloudformation/auth-stack.yaml
+PYTHONPATH=. pytest tests/unit/test_lambda_validation.py -v
 ```
 
-**Integration Test:**
-```bash
-# Deploy stack
-aws cloudformation create-stack \
-  --stack-name plot-palette-auth-test \
-  --template-body file://infrastructure/cloudformation/auth-stack.yaml \
-  --parameters ParameterKey=EnvironmentName,ParameterValue=test
-
-aws cloudformation wait stack-create-complete \
-  --stack-name plot-palette-auth-test
-
-# Get outputs
-USER_POOL_ID=$(aws cloudformation describe-stacks \
-  --stack-name plot-palette-auth-test \
-  --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
-  --output text)
-
-CLIENT_ID=$(aws cloudformation describe-stacks \
-  --stack-name plot-palette-auth-test \
-  --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
-  --output text)
-
-# Test user signup
-aws cognito-idp sign-up \
-  --client-id $CLIENT_ID \
-  --username test@example.com \
-  --password TestPassword123! \
-  --user-attributes Name=email,Value=test@example.com Name=name,Value="Test User"
-
-# Verify email (in real scenario, user receives code via email)
-# For testing, admin confirm user
-aws cognito-idp admin-confirm-sign-up \
-  --user-pool-id $USER_POOL_ID \
-  --username test@example.com
-
-# Test login
-aws cognito-idp initiate-auth \
-  --client-id $CLIENT_ID \
-  --auth-flow USER_PASSWORD_AUTH \
-  --auth-parameters USERNAME=test@example.com,PASSWORD=TestPassword123!
-
-# Cleanup
-aws cognito-idp admin-delete-user \
-  --user-pool-id $USER_POOL_ID \
-  --username test@example.com
-
-aws cloudformation delete-stack --stack-name plot-palette-auth-test
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-### Commit Message Template
+test(backend): add Lambda input validation tests
 
+- Test create_job validation for all fields
+- Test validation in other Lambda handlers
+- Verify appropriate error responses
 ```
-feat(auth): add Cognito User Pool for authentication
-
-- Create User Pool with email sign-in and verification
-- Configure secure password policy (12+ chars, complexity)
-- Add User Pool Client for web application
-- Set token expiration (60min access, 30day refresh)
-- Enable optional MFA and account recovery
-- Add custom attributes for user roles
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~12,000
 
 ---
 
-## Task 2: HTTP API Gateway Stack
+### Task 2: Test Lambda Authorization Failures
 
-### Goal
+**Goal:** Test that Lambda handlers properly handle authorization failures.
 
-Create HTTP API Gateway (v2) with routes for health check and user authentication. Configure JWT authorizer using Cognito User Pool.
+**Files to Create:**
+- `tests/unit/test_lambda_auth.py`
 
-### Files to Create
+**Prerequisites:**
+- Phase 0 Task 2 complete
 
-- `infrastructure/cloudformation/api-stack.yaml` - API Gateway template
+**Implementation Steps:**
 
-### Prerequisites
+1. **Test missing JWT claims**
+   - Create event without `requestContext.authorizer.jwt.claims`
+   - Verify 400 or 401 status code
+   - Verify appropriate error message
 
-- Task 1 completed (Cognito User Pool deployed)
-- Understanding of API Gateway v2 (HTTP API) vs v1 (REST API)
+2. **Test missing user_id (sub) claim**
+   - Create event with JWT but no `sub` claim
+   - Verify error response
 
-### Implementation Steps
+3. **Test resource access by wrong user**
+   - Create job owned by user-A
+   - Try to access/delete with user-B credentials
+   - Mock DynamoDB to return job with different user_id
+   - Verify 403 or 404 status (depending on implementation)
 
-1. **Create HTTP API resource:**
-   - API name: `plot-palette-api-{EnvironmentName}`
-   - Protocol type: HTTP
-   - CORS configuration:
-     - Allow origins: `*` (will restrict to Amplify domain in Phase 6)
-     - Allow methods: GET, POST, PUT, DELETE, OPTIONS
-     - Allow headers: `Content-Type`, `Authorization`, `X-Amz-Date`, `X-Api-Key`, `X-Amz-Security-Token`
-     - Max age: 300 seconds
-   - Description: "Plot Palette API for synthetic data generation"
+4. **Test template access by wrong user**
+   - Create template owned by user-A
+   - Try to access/update/delete with user-B credentials
+   - Verify appropriate error
 
-2. **Create JWT Authorizer:**
-   - Authorizer name: `cognito-jwt-authorizer`
-   - Identity source: `$request.header.Authorization`
-   - Issuer URL: `https://cognito-idp.{region}.amazonaws.com/{UserPoolId}`
-   - Audience: `{UserPoolClientId}` (from Cognito stack)
-   - Authorizer type: JWT
-   - JWT configuration validates:
-     - Token signature (using Cognito public keys)
-     - Token expiration
-     - Audience matches client ID
+5. **Test job operations on non-existent jobs**
+   - Try to get job that doesn't exist
+   - Mock DynamoDB to return empty Item
+   - Verify 404 status
 
-3. **Create API stages:**
-   - **$default stage:** Auto-deployment enabled
-   - Stage variables (for future use): `environment=production`
-   - Throttling: 1000 requests per second (default)
-   - Access logging: CloudWatch Logs (create log group)
+6. **Test delete on already-deleted resource**
+   - Mock DynamoDB conditional check failure
+   - Verify appropriate error handling
 
-4. **Create routes (initial set for Phase 2):**
-   - `GET /health` - Health check endpoint (no auth required)
-   - `GET /user` - Get current user info (requires auth)
-   - Additional routes will be added in Phase 3
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_lambda_auth.py`
+- [ ] Missing auth context tested
+- [ ] Wrong user access tested
+- [ ] Non-existent resource tested
+- [ ] Tests pass: `pytest tests/unit/test_lambda_auth.py -v`
 
-5. **Add CloudWatch logging:**
-   - Create CloudWatch Log Group: `/aws/apigateway/plot-palette-api`
-   - Retention: 7 days (for cost optimization)
-   - Log format: JSON with request ID, caller IP, status code
-
-6. **Add CloudFormation Parameters:**
-   - `UserPoolId` (from auth stack)
-   - `UserPoolClientId` (from auth stack)
-   - `EnvironmentName`
-
-7. **Add CloudFormation Outputs:**
-   - API Gateway ID
-   - API Gateway endpoint URL (e.g., `https://abc123.execute-api.us-east-1.amazonaws.com`)
-   - API Gateway stage name
-
-### Verification Checklist
-
-- [ ] HTTP API created with correct name
-- [ ] JWT authorizer configured with Cognito User Pool
-- [ ] CORS enabled for all required origins and methods
-- [ ] Routes created for /health and /user
-- [ ] CloudWatch logging enabled
-- [ ] $default stage auto-deploys on changes
-- [ ] Outputs exported
-
-### Testing Instructions
-
-**Unit Test:**
+**Testing Instructions:**
 ```bash
-aws cloudformation validate-template \
-  --template-body file://infrastructure/cloudformation/api-stack.yaml
+PYTHONPATH=. pytest tests/unit/test_lambda_auth.py -v
 ```
 
-**Integration Test:**
-```bash
-# Deploy with Cognito User Pool parameters
-aws cloudformation create-stack \
-  --stack-name plot-palette-api-test \
-  --template-body file://infrastructure/cloudformation/api-stack.yaml \
-  --parameters \
-    ParameterKey=UserPoolId,ParameterValue=$USER_POOL_ID \
-    ParameterKey=UserPoolClientId,ParameterValue=$CLIENT_ID \
-    ParameterKey=EnvironmentName,ParameterValue=test
-
-aws cloudformation wait stack-create-complete \
-  --stack-name plot-palette-api-test
-
-# Get API endpoint
-API_ENDPOINT=$(aws cloudformation describe-stacks \
-  --stack-name plot-palette-api-test \
-  --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
-  --output text)
-
-# Test health endpoint (no auth)
-curl $API_ENDPOINT/health
-
-# Test authenticated endpoint (should return 401 without token)
-curl $API_ENDPOINT/user
-
-# Get token from Cognito (using test user from Task 1)
-TOKEN=$(aws cognito-idp initiate-auth \
-  --client-id $CLIENT_ID \
-  --auth-flow USER_PASSWORD_AUTH \
-  --auth-parameters USERNAME=test@example.com,PASSWORD=TestPassword123! \
-  --query 'AuthenticationResult.IdToken' \
-  --output text)
-
-# Test with token (should return 404 because Lambda not connected yet)
-curl -H "Authorization: Bearer $TOKEN" $API_ENDPOINT/user
-
-# Cleanup
-aws cloudformation delete-stack --stack-name plot-palette-api-test
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-### Commit Message Template
+test(backend): add Lambda authorization tests
 
+- Test missing and invalid JWT claims
+- Test cross-user access attempts
+- Test non-existent resource handling
 ```
-feat(api): add HTTP API Gateway with JWT authorization
-
-- Create HTTP API Gateway v2 for REST endpoints
-- Configure JWT authorizer with Cognito User Pool
-- Enable CORS for cross-origin requests
-- Add initial routes (/health, /user)
-- Configure CloudWatch logging for requests
-- Create $default stage with auto-deployment
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~13,000
 
 ---
 
-## Task 3: Lambda Function - Health Check
+### Task 3: Test Lambda AWS Service Errors
 
-### Goal
+**Goal:** Test Lambda handler behavior when AWS services fail.
 
-Create a simple Lambda function to handle the `/health` endpoint, verifying API Gateway and Lambda integration works correctly.
+**Files to Create:**
+- `tests/unit/test_lambda_aws_errors.py`
 
-### Files to Create
+**Prerequisites:**
+- Phase 0 Task 2 complete
+- moto configured for DynamoDB and S3 mocking
 
-- `backend/lambdas/health/handler.py` - Health check Lambda handler
-- `backend/lambdas/health/requirements.txt` - Dependencies (minimal)
+**Implementation Steps:**
 
-### Prerequisites
+1. **Test DynamoDB read failures**
+   - Mock `get_item` to raise `ClientError` with `InternalError`
+   - Call get_job handler
+   - Verify 500 status with generic error message
+   - Verify error is logged (mock logger if needed)
 
-- Task 2 completed (API Gateway deployed)
-- Phase 1 Task 6 completed (shared library)
-- Python 3.13 available
+2. **Test DynamoDB write failures**
+   - Mock `put_item` to raise `ClientError`
+   - Call create_job handler with valid input
+   - Verify 500 status
+   - Verify partial writes are handled (rollback attempted)
 
-### Implementation Steps
+3. **Test DynamoDB conditional check failures**
+   - Mock `update_item` to raise `ConditionalCheckFailedException`
+   - Verify appropriate handling (retry or error)
 
-1. **Create handler function:**
-   - Return HTTP 200 with JSON body
-   - Include timestamp, version, status
-   - No external dependencies needed (keep it simple)
-   - Use structured logging
+4. **Test S3 presigned URL generation failure**
+   - Mock S3 client to raise `ClientError`
+   - Call generate_upload_url handler
+   - Verify 500 status
 
-2. **Handler structure:**
-   ```python
-   import json
-   import logging
-   from datetime import datetime
+5. **Test ECS task start failure**
+   - Mock `ecs_client.run_task` to raise `ClientError`
+   - Call create_job (which starts worker task)
+   - Verify job is created but error is logged
+   - Verify job status reflects issue (or is handled gracefully)
 
-   logger = logging.getLogger()
-   logger.setLevel(logging.INFO)
+6. **Test DynamoDB throttling**
+   - Mock `ProvisionedThroughputExceededException`
+   - Verify handler behavior (retry or error)
 
-   def lambda_handler(event, context):
-       """Health check endpoint - returns API status"""
-       logger.info(json.dumps({
-           "event": "health_check",
-           "request_id": context.request_id
-       }))
+7. **Test S3 read failures in seed_data validation**
+   - Mock S3 `get_object` to raise `NoSuchKey`
+   - Verify appropriate error message
 
-       response = {
-           "status": "healthy",
-           "timestamp": datetime.utcnow().isoformat(),
-           "version": "1.0.0",
-           "service": "plot-palette-api"
-       }
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_lambda_aws_errors.py`
+- [ ] DynamoDB read/write failures tested
+- [ ] S3 failures tested
+- [ ] ECS failures tested
+- [ ] All return 500 with safe error messages (no internal details leaked)
+- [ ] Tests pass: `pytest tests/unit/test_lambda_aws_errors.py -v`
 
-       return {
-           "statusCode": 200,
-           "headers": {
-               "Content-Type": "application/json",
-               "Access-Control-Allow-Origin": "*"
-           },
-           "body": json.dumps(response)
-       }
-   ```
-
-3. **Create minimal requirements.txt:**
-   - No external dependencies needed for health check
-
-4. **Create deployment package:**
-   - Lambda will be deployed via CloudFormation
-   - Code can be inline for now (small enough)
-   - In Phase 7, we'll use SAM or zip deployment
-
-5. **Update API Gateway stack to connect Lambda:**
-   - Create Lambda resource in api-stack.yaml
-   - Create Lambda permission for API Gateway to invoke
-   - Create API Gateway integration for `GET /health` route
-   - Target: Lambda function ARN
-
-### Verification Checklist
-
-- [ ] Handler function created with correct signature
-- [ ] Returns 200 status code with JSON body
-- [ ] Includes timestamp and version in response
-- [ ] Structured logging implemented
-- [ ] CORS headers included in response
-- [ ] No errors when invoked locally
-- [ ] API Gateway integration configured
-
-### Testing Instructions
-
-**Unit Test (create `tests/unit/test_health.py`):**
-```python
-import json
-from backend.lambdas.health.handler import lambda_handler
-
-class MockContext:
-    request_id = "test-request-id"
-
-def test_health_check():
-    event = {}
-    context = MockContext()
-
-    response = lambda_handler(event, context)
-
-    assert response["statusCode"] == 200
-    body = json.loads(response["body"])
-    assert body["status"] == "healthy"
-    assert "timestamp" in body
-    assert body["version"] == "1.0.0"
-
-# Run: pytest tests/unit/test_health.py -v
-```
-
-**Local Test:**
+**Testing Instructions:**
 ```bash
-# Test locally with SAM (if installed)
-echo '{}' | sam local invoke HealthCheckFunction
-
-# Or test with Python directly
-python3.13 -c "
-from backend.lambdas.health.handler import lambda_handler
-class Context:
-    request_id = 'local-test'
-print(lambda_handler({}, Context()))
-"
+PYTHONPATH=. pytest tests/unit/test_lambda_aws_errors.py -v
 ```
 
-**Integration Test (after deployment):**
-```bash
-# Invoke via API Gateway
-curl https://{api-id}.execute-api.{region}.amazonaws.com/health
-
-# Expected output:
-# {
-#   "status": "healthy",
-#   "timestamp": "2025-11-19T10:00:00.000000",
-#   "version": "1.0.0",
-#   "service": "plot-palette-api"
-# }
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-### Commit Message Template
+test(backend): add Lambda AWS error handling tests
 
+- Test DynamoDB read/write/throttling failures
+- Test S3 operation failures
+- Test ECS task start failures
+- Verify safe error responses
 ```
-feat(lambda): add health check endpoint
-
-- Create Lambda function for /health endpoint
-- Return service status, version, and timestamp
-- Implement structured JSON logging
-- Add CORS headers for cross-origin requests
-- Connect to API Gateway with Lambda integration
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~10,000
 
 ---
 
-## Task 4: Lambda Function - Get User Info
+### Task 4: Test Worker Spot Interruption Handling
 
-### Goal
+**Goal:** Test the Worker's graceful shutdown and checkpoint saving on SIGTERM.
 
-Create Lambda function to return authenticated user information from Cognito JWT token, demonstrating JWT authorizer integration.
+**Files to Create:**
+- `tests/unit/test_worker_spot_interruption.py`
 
-### Files to Create
+**Prerequisites:**
+- Phase 0 Task 2 complete
+- Understanding of Worker signal handling
 
-- `backend/lambdas/user/handler.py` - User info Lambda handler
-- `backend/lambdas/user/requirements.txt` - Dependencies
+**Implementation Steps:**
 
-### Prerequisites
+1. **Set up Worker test environment**
+   - Mock all AWS clients (DynamoDB, S3, Bedrock)
+   - Mock environment variables
+   - Create Worker instance without running main loop
 
-- Task 1 completed (Cognito User Pool)
-- Task 2 completed (API Gateway with JWT authorizer)
-- Task 3 completed (Health check Lambda pattern)
-- Understanding of JWT claims structure
+2. **Test SIGTERM handler sets shutdown flag**
+   - Access `worker.shutdown_requested`
+   - Call `worker.handle_shutdown(signal.SIGTERM, None)`
+   - Verify `worker.shutdown_requested` is True
 
-### Implementation Steps
+3. **Test generation loop checks shutdown flag**
+   - Start generation with 100 records
+   - Set `shutdown_requested = True` after 10 records
+   - Verify loop exits early
+   - Verify checkpoint is saved with current progress
 
-1. **Create handler function:**
-   - Extract user claims from `event['requestContext']['authorizer']['jwt']['claims']`
-   - Return user information (email, sub/user_id, custom attributes)
-   - Handle missing or invalid claims
-   - Use shared library for structured logging
+4. **Test checkpoint contains correct data on interruption**
+   - Trigger shutdown during generation
+   - Capture checkpoint data passed to `save_checkpoint`
+   - Verify `records_generated` matches actual progress
+   - Verify `tokens_used` is tracked
+   - Verify `current_batch` is correct
 
-2. **Handler structure:**
-   ```python
-   import json
-   import logging
-   from backend.shared.utils import setup_logger
+5. **Test batch is saved before exit**
+   - Have partial batch (e.g., 37 records when checkpoint interval is 50)
+   - Trigger shutdown
+   - Verify `save_batch` called with partial batch
 
-   logger = setup_logger(__name__)
+6. **Test alarm is set for forced exit**
+   - Call `handle_shutdown`
+   - Verify `signal.alarm(100)` was called
+   - (Use mock to verify)
 
-   def lambda_handler(event, context):
-       """Get current user information from JWT claims"""
-       logger.info(json.dumps({
-           "event": "get_user_info",
-           "request_id": context.request_id
-       }))
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_worker_spot_interruption.py`
+- [ ] SIGTERM handler tested
+- [ ] Generation loop exit tested
+- [ ] Checkpoint saving tested
+- [ ] Partial batch saving tested
+- [ ] Tests pass: `pytest tests/unit/test_worker_spot_interruption.py -v`
 
-       try:
-           # Extract claims from JWT (set by API Gateway authorizer)
-           claims = event.get('requestContext', {}).get('authorizer', {}).get('jwt', {}).get('claims', {})
-
-           if not claims:
-               return {
-                   "statusCode": 401,
-                   "headers": {"Content-Type": "application/json"},
-                   "body": json.dumps({"error": "Unauthorized"})
-               }
-
-           user_info = {
-               "user_id": claims.get('sub'),
-               "email": claims.get('email'),
-               "email_verified": claims.get('email_verified'),
-               "name": claims.get('name'),
-               "role": claims.get('custom:user_role', 'user'),
-               "token_issued_at": claims.get('iat'),
-               "token_expires_at": claims.get('exp')
-           }
-
-           return {
-               "statusCode": 200,
-               "headers": {
-                   "Content-Type": "application/json",
-                   "Access-Control-Allow-Origin": "*"
-               },
-               "body": json.dumps(user_info)
-           }
-
-       except Exception as e:
-           logger.error(f"Error getting user info: {str(e)}", exc_info=True)
-           return {
-               "statusCode": 500,
-               "headers": {"Content-Type": "application/json"},
-               "body": json.dumps({"error": "Internal server error"})
-           }
-   ```
-
-3. **Add to requirements.txt:**
-   - Reference `../shared` for shared library
-
-4. **Update API Gateway stack:**
-   - Create Lambda resource for user info function
-   - Attach JWT authorizer to `GET /user` route
-   - Create Lambda permission for API Gateway
-   - Configure integration
-
-5. **Update IAM role:**
-   - Ensure LambdaExecutionRole from Phase 1 has CloudWatch Logs permissions
-   - No additional permissions needed (reading JWT claims doesn't require Cognito API access)
-
-### Verification Checklist
-
-- [ ] Handler extracts JWT claims correctly
-- [ ] Returns user information (ID, email, role)
-- [ ] Returns 401 if claims missing
-- [ ] Returns 500 on errors with logging
-- [ ] CORS headers included
-- [ ] Connected to API Gateway with authorizer
-- [ ] Unit tests pass
-- [ ] Integration test with real JWT token works
-
-### Testing Instructions
-
-**Unit Test (create `tests/unit/test_user.py`):**
-```python
-import json
-from backend.lambdas.user.handler import lambda_handler
-
-class MockContext:
-    request_id = "test-request-id"
-
-def test_user_info_success():
-    event = {
-        "requestContext": {
-            "authorizer": {
-                "jwt": {
-                    "claims": {
-                        "sub": "user-123",
-                        "email": "test@example.com",
-                        "email_verified": "true",
-                        "custom:user_role": "admin"
-                    }
-                }
-            }
-        }
-    }
-    context = MockContext()
-
-    response = lambda_handler(event, context)
-
-    assert response["statusCode"] == 200
-    body = json.loads(response["body"])
-    assert body["user_id"] == "user-123"
-    assert body["email"] == "test@example.com"
-    assert body["role"] == "admin"
-
-def test_user_info_unauthorized():
-    event = {}
-    context = MockContext()
-
-    response = lambda_handler(event, context)
-
-    assert response["statusCode"] == 401
-
-# Run: pytest tests/unit/test_user.py -v
-```
-
-**Integration Test:**
+**Testing Instructions:**
 ```bash
-# Sign up and confirm user (from Task 1)
-aws cognito-idp sign-up \
-  --client-id $CLIENT_ID \
-  --username test@example.com \
-  --password TestPassword123! \
-  --user-attributes Name=email,Value=test@example.com
-
-aws cognito-idp admin-confirm-sign-up \
-  --user-pool-id $USER_POOL_ID \
-  --username test@example.com
-
-# Get ID token
-TOKEN=$(aws cognito-idp initiate-auth \
-  --client-id $CLIENT_ID \
-  --auth-flow USER_PASSWORD_AUTH \
-  --auth-parameters USERNAME=test@example.com,PASSWORD=TestPassword123! \
-  --query 'AuthenticationResult.IdToken' \
-  --output text)
-
-# Call /user endpoint with token
-curl -H "Authorization: Bearer $TOKEN" $API_ENDPOINT/user
-
-# Expected output:
-# {
-#   "user_id": "abc-123-def",
-#   "email": "test@example.com",
-#   "email_verified": true,
-#   "role": "user",
-#   ...
-# }
+PYTHONPATH=. pytest tests/unit/test_worker_spot_interruption.py -v
 ```
 
-### Commit Message Template
-
+**Commit Message Template:**
 ```
-feat(lambda): add get user info endpoint with JWT authorization
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-- Create Lambda function to extract user data from JWT claims
-- Return user ID, email, role, and token metadata
-- Handle unauthorized requests with 401 response
-- Implement error handling and structured logging
-- Configure API Gateway integration with JWT authorizer
+test(backend): add Worker Spot interruption tests
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+- Test SIGTERM signal handling
+- Test graceful shutdown with checkpoint save
+- Test partial batch handling
 ```
-
-**Estimated Tokens:** ~12,000
 
 ---
 
-## Task 5: Update Deployment Script for Auth and API
+### Task 5: Test Worker Bedrock API Failures
 
-### Goal
+**Goal:** Test Worker behavior when Bedrock API calls fail.
 
-Update the deployment script from Phase 1 to include Cognito and API Gateway stacks with proper dependency management.
+**Files to Create:**
+- `tests/unit/test_worker_bedrock_errors.py`
 
-### Files to Modify
+**Prerequisites:**
+- Task 4 complete (Worker test patterns)
 
-- `infrastructure/scripts/deploy.sh` - Add auth and api stacks
+**Implementation Steps:**
 
-### Prerequisites
+1. **Mock Bedrock client**
+   - Mock `bedrock_client.invoke_model`
+   - Configure to raise various errors
 
-- Tasks 1-4 completed (all templates and Lambda functions created)
-- Phase 1 deployment script working
+2. **Test Bedrock rate limiting (ThrottlingException)**
+   - Mock Bedrock to raise throttling error
+   - Verify worker handles gracefully
+   - Verify error is logged
+   - Note: Current implementation continues to next record
 
-### Implementation Steps
+3. **Test Bedrock model error**
+   - Mock to raise `ModelErrorException`
+   - Verify worker logs error
+   - Verify generation continues (doesn't fail entire job)
 
-1. **Add new stack deployments to script:**
-   - Deploy auth stack (no dependencies beyond Phase 1)
-   - Deploy api stack (depends on auth stack outputs)
-   - Update dependency chain in comments
+4. **Test Bedrock timeout**
+   - Mock to raise timeout/connection error
+   - Verify appropriate handling
 
-2. **Pass Cognito outputs to API stack:**
-   - Query auth stack for UserPoolId and UserPoolClientId
-   - Pass as parameters to api-stack.yaml
+5. **Test Bedrock validation error**
+   - Mock to raise `ValidationException` (bad prompt)
+   - Verify error logged with context
+   - Verify job continues
 
-3. **Add Lambda deployment:**
-   - Package Lambda functions (zip files or inline code)
-   - Upload to S3 bucket (from Phase 1 storage stack)
-   - Reference in CloudFormation template
+6. **Test Bedrock access denied**
+   - Mock to raise `AccessDeniedException`
+   - This is a fatal error - verify job fails appropriately
 
-4. **Update outputs.json:**
-   - Include Cognito User Pool details
-   - Include API Gateway endpoint URL
-   - Include User Pool Client ID (needed for frontend in Phase 6)
+7. **Test partial Bedrock failure**
+   - Configure mock to fail on specific records (e.g., every 5th)
+   - Run generation for 20 records
+   - Verify ~16 records generated (4 failures skipped)
+   - Verify all failures logged
 
-5. **Add validation steps:**
-   - After API deployment, test /health endpoint
-   - Display API endpoint URL prominently
-   - Show next steps (create user, get token)
+8. **Test template_engine.execute_template errors**
+   - Mock template engine to raise exception
+   - Verify error is caught and logged
+   - Verify generation continues
 
-6. **Handle Lambda code updates:**
-   - Function to package Lambda code into zip
-   - Upload to S3 with versioned key
-   - Update Lambda function code reference in CFN
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_worker_bedrock_errors.py`
+- [ ] Rate limiting tested
+- [ ] Model errors tested
+- [ ] Timeout handling tested
+- [ ] Access denied (fatal) tested
+- [ ] Partial failure resilience tested
+- [ ] Tests pass: `pytest tests/unit/test_worker_bedrock_errors.py -v`
 
-### Verification Checklist
-
-- [ ] Script deploys auth stack successfully
-- [ ] Script deploys api stack with correct parameters
-- [ ] Lambda functions packaged and uploaded to S3
-- [ ] API Gateway integration works (health check returns 200)
-- [ ] Outputs.json includes all new stack outputs
-- [ ] Script handles errors gracefully
-- [ ] Can run script multiple times (idempotent)
-
-### Testing Instructions
-
-**Test deployment:**
+**Testing Instructions:**
 ```bash
-# Full deployment
-./infrastructure/scripts/deploy.sh --region us-east-1 --environment test
-
-# Verify auth stack
-aws cognito-idp describe-user-pool --user-pool-id <from outputs>
-
-# Verify API
-API_ENDPOINT=$(cat infrastructure/scripts/outputs.json | jq -r '.ApiEndpoint')
-curl $API_ENDPOINT/health
-
-# Test authenticated endpoint
-# (Requires creating user and getting token - see Task 4)
-
-# Cleanup
-./infrastructure/scripts/deploy.sh --delete --environment test
+PYTHONPATH=. pytest tests/unit/test_worker_bedrock_errors.py -v
 ```
 
-### Commit Message Template
-
+**Commit Message Template:**
 ```
-feat(deploy): update deployment script for auth and API stacks
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-- Add Cognito User Pool stack deployment
-- Add API Gateway stack with dependency on auth stack
-- Package and upload Lambda functions to S3
-- Pass Cognito outputs to API Gateway parameters
-- Update outputs.json with API endpoint and User Pool details
-- Add health check validation after deployment
+test(backend): add Worker Bedrock error handling tests
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+- Test rate limiting and throttling
+- Test model and validation errors
+- Test partial failure resilience
 ```
-
-**Estimated Tokens:** ~9,000
 
 ---
 
-## Task 6: CORS Configuration Testing
+### Task 6: Test Worker S3 Failures
 
-### Goal
+**Goal:** Test Worker behavior when S3 operations fail.
 
-Thoroughly test CORS configuration to ensure frontend (Amplify) can make cross-origin requests to API Gateway.
+**Files to Create:**
+- `tests/unit/test_worker_s3_errors.py`
 
-### Files to Create
+**Prerequisites:**
+- Task 4 complete
 
-- `tests/integration/test_cors.py` - CORS integration tests
+**Implementation Steps:**
 
-### Prerequisites
+1. **Test seed data load failure**
+   - Mock S3 `get_object` to raise `NoSuchKey`
+   - Call `load_seed_data()`
+   - Verify appropriate exception raised
+   - Verify job fails (seed data is required)
 
-- Task 2 completed (API Gateway with CORS)
-- API Gateway deployed
-- Understanding of CORS preflight requests
+2. **Test seed data invalid JSON**
+   - Mock S3 to return invalid JSON content
+   - Verify `JSONDecodeError` is handled
+   - Verify meaningful error message
 
-### Implementation Steps
+3. **Test checkpoint save failure**
+   - Mock S3 `put_object` to raise `ClientError`
+   - Call `save_checkpoint()`
+   - Verify exception is propagated (checkpoint is critical)
 
-1. **Create CORS test script:**
-   - Test OPTIONS preflight request
-   - Verify Access-Control-Allow-Origin header
-   - Verify Access-Control-Allow-Methods header
-   - Verify Access-Control-Allow-Headers header
-   - Test actual GET/POST requests with Origin header
+4. **Test batch save failure**
+   - Mock S3 `put_object` to fail
+   - Call `save_batch()`
+   - Verify error is logged
+   - Note: Determine if this should fail job or continue
 
-2. **Test preflight (OPTIONS) request:**
-   ```python
-   import requests
+5. **Test export failure**
+   - Mock S3 during `export_data()`
+   - Verify error handling
+   - Verify job status reflects export failure
 
-   def test_cors_preflight(api_endpoint):
-       response = requests.options(
-           f"{api_endpoint}/health",
-           headers={
-               "Origin": "http://localhost:5173",  # Vite dev server
-               "Access-Control-Request-Method": "GET",
-               "Access-Control-Request-Headers": "Content-Type,Authorization"
-           }
-       )
+6. **Test S3 bucket not configured**
+   - Remove `BUCKET_NAME` environment variable
+   - Verify appropriate error raised early
 
-       assert response.status_code == 200
-       assert "Access-Control-Allow-Origin" in response.headers
-       assert "Access-Control-Allow-Methods" in response.headers
-       assert "GET" in response.headers["Access-Control-Allow-Methods"]
-   ```
+7. **Test loading batches failure during export**
+   - Mock `list_objects_v2` to fail
+   - Call `load_all_batches()`
+   - Verify returns empty list (fail open)
+   - Verify error is logged
 
-3. **Test actual request with Origin:**
-   ```python
-   def test_cors_actual_request(api_endpoint):
-       response = requests.get(
-           f"{api_endpoint}/health",
-           headers={"Origin": "http://localhost:5173"}
-       )
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_worker_s3_errors.py`
+- [ ] Seed data load failures tested
+- [ ] Checkpoint save failures tested
+- [ ] Batch save failures tested
+- [ ] Export failures tested
+- [ ] Tests pass: `pytest tests/unit/test_worker_s3_errors.py -v`
 
-       assert response.status_code == 200
-       assert response.headers.get("Access-Control-Allow-Origin") == "*"
-   ```
-
-4. **Test with different origins:**
-   - Localhost (development)
-   - Amplify domain (will be known in Phase 6)
-   - Verify wildcard (*) works for all
-
-5. **Document CORS configuration:**
-   - Add comments to API Gateway template explaining CORS settings
-   - Note that wildcard will be restricted to Amplify domain in Phase 6
-
-### Verification Checklist
-
-- [ ] OPTIONS preflight returns correct CORS headers
-- [ ] Actual requests include Access-Control-Allow-Origin
-- [ ] Multiple origins tested (localhost, example domains)
-- [ ] All HTTP methods allowed (GET, POST, PUT, DELETE)
-- [ ] Authorization header allowed
-- [ ] Tests automated and repeatable
-
-### Testing Instructions
-
-**Manual CORS test with curl:**
+**Testing Instructions:**
 ```bash
-# Test preflight
-curl -X OPTIONS $API_ENDPOINT/health \
-  -H "Origin: http://localhost:5173" \
-  -H "Access-Control-Request-Method: GET" \
-  -v
-
-# Check response headers for:
-# Access-Control-Allow-Origin: *
-# Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS
-# Access-Control-Allow-Headers: Content-Type,Authorization,...
-
-# Test actual request
-curl $API_ENDPOINT/health \
-  -H "Origin: http://localhost:5173" \
-  -v
-
-# Verify Access-Control-Allow-Origin in response
+PYTHONPATH=. pytest tests/unit/test_worker_s3_errors.py -v
 ```
 
-**Automated test:**
-```bash
-pytest tests/integration/test_cors.py -v --api-endpoint=$API_ENDPOINT
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-### Commit Message Template
+test(backend): add Worker S3 error handling tests
 
+- Test seed data load failures
+- Test checkpoint and batch save failures
+- Test export operation failures
 ```
-test(api): add CORS integration tests
-
-- Create test suite for CORS preflight requests
-- Verify Access-Control headers on OPTIONS and actual requests
-- Test multiple origins (localhost, Amplify)
-- Ensure all required methods and headers allowed
-- Document CORS configuration for frontend integration
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~8,000
 
 ---
 
-## Task 7: End-to-End Authentication Flow Test
+### Task 7: Test Worker DynamoDB Failures
 
-### Goal
+**Goal:** Test Worker behavior when DynamoDB operations fail.
 
-Create a comprehensive test that validates the entire authentication flow: sign up → email verification → login → access protected endpoint.
+**Files to Create:**
+- `tests/unit/test_worker_dynamodb_errors.py`
 
-### Files to Create
+**Prerequisites:**
+- Task 4 complete
 
-- `tests/integration/test_auth_flow.py` - Complete auth flow test
-- `tests/fixtures/test_users.json` - Test user data
+**Implementation Steps:**
 
-### Prerequisites
+1. **Test job claim race condition**
+   - Mock `ConditionalCheckFailedException` on queue update
+   - Call `get_next_job()`
+   - Verify returns None (job claimed by another worker)
+   - Verify no error raised
 
-- All previous Phase 2 tasks completed
-- Cognito User Pool deployed
-- API Gateway deployed with /user endpoint
+2. **Test template load failure**
+   - Mock `get_item` on templates table to fail
+   - Call `load_template()`
+   - Verify exception raised
+   - Verify job fails
 
-### Implementation Steps
+3. **Test template not found**
+   - Mock `get_item` to return empty Item
+   - Verify `ValueError` raised with "Template not found"
 
-1. **Create test script for complete flow:**
-   - Sign up new user
-   - Admin confirm user (simulating email verification)
-   - Login to get tokens
-   - Call protected /user endpoint with token
-   - Verify user data returned
-   - Cleanup (delete test user)
+4. **Test job progress update failure**
+   - Mock `update_item` on jobs table to fail
+   - Call `update_job_progress()`
+   - Verify error is logged
+   - Verify exception is NOT propagated (non-critical)
 
-2. **Test structure:**
-   ```python
-   import boto3
-   import requests
-   import json
-   import pytest
-   from datetime import datetime
+5. **Test cost tracking write failure**
+   - Mock `put_item` on cost tracking table to fail
+   - Call `update_cost_tracking()`
+   - Verify error is logged
+   - Verify returns cost value (fail open)
 
-   class TestAuthFlow:
-       def setup_class(self):
-           self.cognito = boto3.client('cognito-idp')
-           self.user_pool_id = os.getenv('USER_POOL_ID')
-           self.client_id = os.getenv('CLIENT_ID')
-           self.api_endpoint = os.getenv('API_ENDPOINT')
-           self.test_email = f"test+{datetime.now().timestamp()}@example.com"
+6. **Test checkpoint metadata version conflict**
+   - Mock `ConditionalCheckFailedException`
+   - Call `save_checkpoint()`
+   - Verify retry logic executes
+   - Verify merge strategy (max records_generated)
 
-       def test_01_signup(self):
-           # Test user signup
-           response = self.cognito.sign_up(
-               ClientId=self.client_id,
-               Username=self.test_email,
-               Password="TestPassword123!",
-               UserAttributes=[
-                   {'Name': 'email', 'Value': self.test_email},
-                   {'Name': 'name', 'Value': 'Test User'}
-               ]
-           )
-           assert 'UserSub' in response
+7. **Test max retries exceeded on checkpoint**
+   - Mock persistent `ConditionalCheckFailedException`
+   - Call `save_checkpoint()` (will retry 3 times)
+   - Verify exception raised after max retries
 
-       def test_02_confirm_signup(self):
-           # Admin confirm (simulates email verification)
-           self.cognito.admin_confirm_sign_up(
-               UserPoolId=self.user_pool_id,
-               Username=self.test_email
-           )
+8. **Test mark_job_complete failure**
+   - Mock queue table operations to fail
+   - Call `mark_job_complete()`
+   - Verify jobs table is still updated
+   - Verify error is logged (not fatal)
 
-       def test_03_login(self):
-           # Login and get tokens
-           response = self.cognito.initiate_auth(
-               ClientId=self.client_id,
-               AuthFlow='USER_PASSWORD_AUTH',
-               AuthParameters={
-                   'USERNAME': self.test_email,
-                   'PASSWORD': 'TestPassword123!'
-               }
-           )
-           self.id_token = response['AuthenticationResult']['IdToken']
-           self.access_token = response['AuthenticationResult']['AccessToken']
-           self.refresh_token = response['AuthenticationResult']['RefreshToken']
+9. **Test mark_job_failed with error truncation**
+   - Pass very long error message (>1000 chars)
+   - Verify message is truncated to 1000 chars
 
-           assert self.id_token is not None
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_worker_dynamodb_errors.py`
+- [ ] Race conditions tested
+- [ ] Template load failures tested
+- [ ] Progress update failures tested (non-critical)
+- [ ] Checkpoint version conflicts tested
+- [ ] Job status update failures tested
+- [ ] Tests pass: `pytest tests/unit/test_worker_dynamodb_errors.py -v`
 
-       def test_04_access_protected_endpoint(self):
-           # Call /user endpoint with token
-           response = requests.get(
-               f"{self.api_endpoint}/user",
-               headers={'Authorization': f'Bearer {self.id_token}'}
-           )
-
-           assert response.status_code == 200
-           user_data = response.json()
-           assert user_data['email'] == self.test_email
-
-       def test_05_refresh_token(self):
-           # Test refresh token flow
-           response = self.cognito.initiate_auth(
-               ClientId=self.client_id,
-               AuthFlow='REFRESH_TOKEN_AUTH',
-               AuthParameters={
-                   'REFRESH_TOKEN': self.refresh_token
-               }
-           )
-
-           new_id_token = response['AuthenticationResult']['IdToken']
-           assert new_id_token != self.id_token
-
-       def teardown_class(self):
-           # Cleanup test user
-           try:
-               self.cognito.admin_delete_user(
-                   UserPoolId=self.user_pool_id,
-                   Username=self.test_email
-               )
-           except:
-               pass
-   ```
-
-3. **Add test for invalid scenarios:**
-   - Login with wrong password (should fail)
-   - Access protected endpoint without token (should return 401)
-   - Access with expired token (should return 401)
-   - Access with malformed token (should return 401)
-
-4. **Create test configuration:**
-   - Use pytest fixtures for API endpoint and Cognito IDs
-   - Load from environment variables or outputs.json
-
-5. **Document test execution:**
-   - Add README in tests/integration/ explaining how to run
-   - List required environment variables
-
-### Verification Checklist
-
-- [ ] Test signs up new user successfully
-- [ ] Test confirms user (simulated email verification)
-- [ ] Test logs in and receives tokens
-- [ ] Test accesses protected endpoint with valid token
-- [ ] Test refreshes token successfully
-- [ ] Test handles invalid credentials correctly
-- [ ] Test handles missing/invalid tokens correctly
-- [ ] Cleanup removes test users
-
-### Testing Instructions
-
-**Set environment variables:**
+**Testing Instructions:**
 ```bash
-export USER_POOL_ID=$(cat infrastructure/scripts/outputs.json | jq -r '.UserPoolId')
-export CLIENT_ID=$(cat infrastructure/scripts/outputs.json | jq -r '.UserPoolClientId')
-export API_ENDPOINT=$(cat infrastructure/scripts/outputs.json | jq -r '.ApiEndpoint')
+PYTHONPATH=. pytest tests/unit/test_worker_dynamodb_errors.py -v
 ```
 
-**Run tests:**
-```bash
-pytest tests/integration/test_auth_flow.py -v -s
+**Commit Message Template:**
 ```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
 
-**Expected output:**
+test(backend): add Worker DynamoDB error handling tests
+
+- Test job claim race conditions
+- Test checkpoint version conflicts with retry
+- Test critical vs non-critical failure handling
 ```
-tests/integration/test_auth_flow.py::TestAuthFlow::test_01_signup PASSED
-tests/integration/test_auth_flow.py::TestAuthFlow::test_02_confirm_signup PASSED
-tests/integration/test_auth_flow.py::TestAuthFlow::test_03_login PASSED
-tests/integration/test_auth_flow.py::TestAuthFlow::test_04_access_protected_endpoint PASSED
-tests/integration/test_auth_flow.py::TestAuthFlow::test_05_refresh_token PASSED
-```
-
-### Commit Message Template
-
-```
-test(auth): add end-to-end authentication flow tests
-
-- Create comprehensive test for signup → verify → login → access
-- Test token refresh flow
-- Add negative tests for invalid credentials and tokens
-- Implement automatic test user cleanup
-- Document test execution with environment variables
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-```
-
-**Estimated Tokens:** ~14,000
 
 ---
 
-## Phase 2 Verification
+### Task 8: Test Worker Budget Enforcement
 
-After completing all tasks, verify the entire phase:
+**Goal:** Test that Worker correctly enforces budget limits and handles BudgetExceededError.
 
-### Integration Tests
+**Files to Create:**
+- `tests/unit/test_worker_budget.py`
 
-1. **Deploy complete Phase 2 infrastructure:**
+**Prerequisites:**
+- Task 4 complete
+
+**Implementation Steps:**
+
+1. **Test budget check before each record**
+   - Mock `calculate_current_cost` to return specific values
+   - Set budget_limit to $10
+   - Return $5 for first 5 records, then $11
+   - Verify generation stops at budget limit
+
+2. **Test BudgetExceededError raises correctly**
+   - Configure cost to exceed budget
+   - Verify `BudgetExceededError` is raised
+   - Verify error message includes budget amount
+
+3. **Test mark_job_budget_exceeded called**
+   - Trigger budget exceeded
+   - Verify `mark_job_budget_exceeded` is called
+   - Verify job status set to `BUDGET_EXCEEDED`
+
+4. **Test budget with string value (DynamoDB)**
+   - Pass `budget_limit` as string "100.0"
+   - Verify it's converted to float correctly
+
+5. **Test invalid budget value fallback**
+   - Pass invalid budget_limit (None, "invalid")
+   - Verify default of 100.0 is used
+   - Verify warning is logged
+
+6. **Test cost calculation query failure**
+   - Mock `calculate_current_cost` to fail
+   - Verify returns 0.0 (fail open)
+   - Verify generation continues
+
+7. **Test budget exactly at limit**
+   - Set cost exactly equal to budget
+   - Verify budget exceeded (>= comparison)
+
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_worker_budget.py`
+- [ ] Budget enforcement before each record tested
+- [ ] BudgetExceededError handling tested
+- [ ] Job status update tested
+- [ ] Edge cases (string values, invalid values) tested
+- [ ] Tests pass: `pytest tests/unit/test_worker_budget.py -v`
+
+**Testing Instructions:**
+```bash
+PYTHONPATH=. pytest tests/unit/test_worker_budget.py -v
+```
+
+**Commit Message Template:**
+```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
+
+test(backend): add Worker budget enforcement tests
+
+- Test budget limit checking
+- Test BudgetExceededError handling
+- Test edge cases with invalid budget values
+```
+
+---
+
+### Task 9: Test Worker Checkpoint Recovery
+
+**Goal:** Test that Worker correctly resumes from checkpoints after interruption.
+
+**Files to Create:**
+- `tests/unit/test_worker_checkpoint_recovery.py`
+
+**Prerequisites:**
+- Tasks 4, 6, 7 complete
+
+**Implementation Steps:**
+
+1. **Test load checkpoint from S3**
+   - Mock S3 with existing checkpoint data
+   - Mock DynamoDB metadata with version
+   - Call `load_checkpoint()`
+   - Verify returned data matches stored checkpoint
+   - Verify `_version` is populated
+
+2. **Test load checkpoint when none exists**
+   - Mock S3 to raise `NoSuchKey`
+   - Call `load_checkpoint()`
+   - Verify returns default checkpoint structure
+   - Verify `records_generated: 0`
+
+3. **Test generation resumes from checkpoint**
+   - Set checkpoint with `records_generated: 50`
+   - Start generation for 100 records
+   - Verify Bedrock called only 50 times (records 50-99)
+   - Verify batch numbering continues correctly
+
+4. **Test checkpoint version increments**
+   - Start with version 5
+   - Save checkpoint
+   - Verify new version is 6
+
+5. **Test checkpoint S3 + DynamoDB consistency**
+   - Save checkpoint
+   - Verify DynamoDB metadata updated first
+   - Verify S3 blob updated second
+   - Verify version matches in both
+
+6. **Test checkpoint with existing batches**
+   - Set checkpoint with `current_batch: 3`
+   - Save new batch
+   - Verify batch number is 3 (not 1)
+
+7. **Test corrupted checkpoint recovery**
+   - Mock S3 to return invalid JSON
+   - Verify error logged
+   - Verify returns default checkpoint (fail safe)
+
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_worker_checkpoint_recovery.py`
+- [ ] Checkpoint loading tested
+- [ ] Resume from checkpoint tested
+- [ ] Version management tested
+- [ ] Corrupted checkpoint handling tested
+- [ ] Tests pass: `pytest tests/unit/test_worker_checkpoint_recovery.py -v`
+
+**Testing Instructions:**
+```bash
+PYTHONPATH=. pytest tests/unit/test_worker_checkpoint_recovery.py -v
+```
+
+**Commit Message Template:**
+```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
+
+test(backend): add Worker checkpoint recovery tests
+
+- Test checkpoint load and save
+- Test generation resume from checkpoint
+- Test version management
+- Test corrupted checkpoint handling
+```
+
+---
+
+### Task 10: Test Worker Export Formats
+
+**Goal:** Test that Worker correctly exports data in all supported formats.
+
+**Files to Create:**
+- `tests/unit/test_worker_export.py`
+
+**Prerequisites:**
+- Task 6 complete (S3 mocking)
+
+**Implementation Steps:**
+
+1. **Test JSONL export**
+   - Generate sample records
+   - Call `export_jsonl()`
+   - Verify S3 put_object called with correct key
+   - Verify content is valid JSONL (one JSON per line)
+
+2. **Test Parquet export**
+   - Generate sample records
+   - Call `export_parquet()`
+   - Verify S3 put_object called
+   - Verify content type is octet-stream
+   - (Optionally verify Parquet structure if practical)
+
+3. **Test CSV export**
+   - Generate sample records
+   - Call `export_csv()`
+   - Verify S3 put_object called
+   - Verify content is valid CSV with headers
+
+4. **Test multiple format export**
+   - Set `output_format: ['JSONL', 'PARQUET']`
+   - Call `export_data()`
+   - Verify both formats exported
+
+5. **Test partition_strategy: timestamp (JSONL)**
+   - Set `partition_strategy: 'timestamp'`
+   - Generate records with different dates
+   - Verify partitioned keys like `date=2025-01-01/records.jsonl`
+
+6. **Test partition_strategy unsupported warning**
+   - Set partition_strategy on Parquet export
+   - Verify warning logged
+   - Verify falls back to single file
+
+7. **Test export with empty records**
+   - Call `export_data()` with no records
+   - Verify warning logged
+   - Verify no S3 writes attempted
+
+8. **Test nested JSON serialization in Parquet**
+   - Include nested `generation_result` in records
+   - Export to Parquet
+   - Verify nested data is JSON-serialized string
+
+**Verification Checklist:**
+- [ ] Test file exists at `tests/unit/test_worker_export.py`
+- [ ] JSONL export tested
+- [ ] Parquet export tested
+- [ ] CSV export tested
+- [ ] Multiple format export tested
+- [ ] Partition strategy tested
+- [ ] Empty records handling tested
+- [ ] Tests pass: `pytest tests/unit/test_worker_export.py -v`
+
+**Testing Instructions:**
+```bash
+PYTHONPATH=. pytest tests/unit/test_worker_export.py -v
+```
+
+**Commit Message Template:**
+```
+Author & Committer: HatmanStack
+Email: 82614182+HatmanStack@users.noreply.github.com
+
+test(backend): add Worker export format tests
+
+- Test JSONL, Parquet, CSV exports
+- Test multiple format exports
+- Test partition strategies
+- Test edge cases
+```
+
+---
+
+## Phase Verification
+
+**How to verify Phase 2 is complete:**
+
+1. **Run all backend tests:**
    ```bash
-   ./infrastructure/scripts/deploy.sh --region us-east-1 --environment phase2-test
+   PYTHONPATH=. pytest tests/unit tests/integration -v
    ```
+   - All tests should pass
+   - No AWS credentials required
 
-2. **Verify Cognito:**
+2. **Run specific new test files:**
    ```bash
-   aws cognito-idp describe-user-pool --user-pool-id <pool-id>
-   aws cognito-idp describe-user-pool-client --user-pool-id <pool-id> --client-id <client-id>
+   PYTHONPATH=. pytest tests/unit/test_lambda_*.py tests/unit/test_worker_*.py -v
    ```
 
-3. **Verify API Gateway:**
+3. **Check coverage (optional):**
    ```bash
-   aws apigatewayv2 get-apis
-   aws apigatewayv2 get-routes --api-id <api-id>
-   aws apigatewayv2 get-authorizers --api-id <api-id>
+   PYTHONPATH=. pytest tests/unit --cov=backend --cov-report=term-missing
    ```
+   - Lambda handlers: ~80%+ coverage
+   - Worker: ~80%+ coverage
 
-4. **Test health endpoint:**
+4. **Verify in CI:**
    ```bash
-   curl https://<api-id>.execute-api.<region>.amazonaws.com/health
+   npm run check
    ```
+   - All linting passes
+   - All tests pass
 
-5. **Test complete auth flow:**
-   ```bash
-   pytest tests/integration/test_auth_flow.py -v
-   ```
+**Integration Points:**
+- Uses fixtures from Phase 0
+- Follows patterns established in Phase 1
 
-6. **Test CORS:**
-   ```bash
-   pytest tests/integration/test_cors.py -v
-   ```
+**Known Limitations:**
+- Bedrock response mocking is simplified (no actual model behavior)
+- moto may not perfectly replicate all AWS error conditions
+- Some edge cases in ECS task management not tested (complex to mock)
 
-### Success Criteria
-
-- [ ] Cognito User Pool created with correct policies
-- [ ] User Pool Client configured for web app
-- [ ] HTTP API Gateway deployed
-- [ ] JWT authorizer configured and working
-- [ ] /health endpoint returns 200 without auth
-- [ ] /user endpoint requires valid JWT token
-- [ ] /user endpoint returns correct user data from token
-- [ ] CORS headers present on all responses
-- [ ] Complete auth flow test passes
-- [ ] Lambda functions log to CloudWatch
-- [ ] Deployment script handles all Phase 2 stacks
-
-### Estimated Total Cost (Phase 2 running for 1 hour)
-
-- Cognito: $0 (50,000 MAU free tier)
-- API Gateway: $0 (1M requests free tier)
-- Lambda: $0 (1M requests free tier, minimal invocations)
-- CloudWatch Logs: $0.01 (minimal logs)
-- **Total: ~$0.01/hour**
-
----
-
-## Known Limitations & Technical Debt
-
-1. **CORS Wildcard:** Currently allowing all origins (*), will restrict to Amplify domain in Phase 6
-2. **No Rate Limiting:** API Gateway throttling at default 1000 req/sec, may need per-user quotas later
-3. **Inline Lambda Code:** Small functions use inline code in CFN, larger functions in Phase 3+ will use S3
-4. **No Custom Domain:** Using default API Gateway domain, can add custom domain in future
-5. **No WAF:** No Web Application Firewall yet, can add if needed for production
-6. **Admin User Confirmation:** Using admin confirm for tests, real flow requires email with verification code
-
----
-
-## Next Steps
-
-With authentication and API infrastructure in place, you're ready to proceed to **Phase 3: Backend APIs & Job Management**.
-
-Phase 3 will add:
-- Lambda functions for creating and managing generation jobs
-- Job queue management with DynamoDB
-- Seed data upload with presigned S3 URLs
-- Prompt template CRUD operations
-- Real-time job status queries
-- Cost calculation APIs
-
----
-
-**Navigation:**
-- [← Back to README](./README.md)
-- [← Previous: Phase 1](./Phase-1.md)
-- [Next: Phase 3 - Backend APIs & Job Management →](./Phase-3.md)
+**Technical Debt:**
+- Download functionality in frontend has TODO - tests document current state
+- cancelJob and deleteJob share endpoint - tests document this behavior
+- Some DynamoDB error codes may not be exhaustively tested
