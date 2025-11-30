@@ -148,25 +148,16 @@ npm run lint:backend  # Backend ruff
 ## AWS Bedrock Models
 
 **Tier 1 (Cost-Efficient)**:
-- `meta.llama3-1-8b-instruct-v1:0` - $0.30/$0.60 per 1M tokens
-- `mistral.mistral-7b-instruct-v0:2` - $0.15/$0.20 per 1M tokens
+- `meta.llama3-1-8b-instruct-v1:0`
+- `mistral.mistral-7b-instruct-v0:2`
 
 **Tier 2 (Balanced)**:
-- `meta.llama3-1-70b-instruct-v1:0` - $0.99/$0.99 per 1M tokens
+- `meta.llama3-1-70b-instruct-v1:0`
 
 **Tier 3 (Premium)**:
-- `anthropic.claude-3-5-sonnet-20241022-v2:0` - $3.00/$15.00 per 1M tokens
+- `anthropic.claude-3-5-sonnet-20241022-v2:0`
 
-## Estimated Costs
-
-**Idle Infrastructure**: ~$0/month (serverless, pay-per-use)
-
-**Active Usage** (example: 100k records):
-- ECS Fargate Spot: $5-20
-- AWS Bedrock: $10-100 (depends on model and token count)
-- S3 Storage: $1-5
-- DynamoDB: $1-3
-- **Total**: ~$20-140/month
+See [AWS Bedrock Pricing](https://aws.amazon.com/bedrock/pricing/) for current rates.
 
 ## License
 
