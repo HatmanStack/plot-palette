@@ -275,10 +275,10 @@ test(backend): add shared fixtures and mock factories
    - Avoiding test interdependence
 
 **Verification Checklist:**
-- [ ] Document exists at `docs/testing-conventions.md`
-- [ ] All code examples are syntactically correct
-- [ ] Covers both frontend and backend patterns
-- [ ] References actual project files and patterns
+- [x] Document exists at `docs/testing-conventions.md`
+- [x] All code examples are syntactically correct
+- [x] Covers both frontend and backend patterns
+- [x] References actual project files and patterns
 
 **Testing Instructions:**
 - Review document for completeness
