@@ -212,11 +212,11 @@ test(frontend): add test utilities and mock factories
      - `make_checkpoint_item(overrides)` - Checkpoint metadata item
 
 **Verification Checklist:**
-- [ ] `pytest tests/unit -v` passes
-- [ ] Fixtures can be imported in test files
-- [ ] Lambda event factory produces valid event structures
-- [ ] DynamoDB item factory produces properly typed items
-- [ ] No AWS credentials required to run tests
+- [x] `pytest tests/unit -v` passes
+- [x] Fixtures can be imported in test files
+- [x] Lambda event factory produces valid event structures
+- [x] DynamoDB item factory produces properly typed items
+- [x] No AWS credentials required to run tests
 
 **Testing Instructions:**
 - Run existing unit tests to verify no regressions
