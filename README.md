@@ -2,7 +2,7 @@
 <h1>Plot Palette</h1>
 
 <h4 align="center">
-<a href="https://www.apache.org/licenses/LICENSE-2.0.html"><img src="https://img.shields.io/badge/license-Apache2.0-blue" alt="Plot Palette is under the Apache 2.0 license" /></a><a href="https://aws.amazon.com/bedrock/"><img src="https://img.shields.io/badge/AWS%20Bedrock-orange" alt="AWS Bedrock" /></a><a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.13-blue" alt="Python 3.13" /></a><a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-24-green" alt="Node.js 24" /></a>
+<a href="https://www.apache.org/licenses/LICENSE-2.0.html"><img src="https://img.shields.io/badge/license-Apache2.0-blue" alt="Plot Palette is under the Apache 2.0 license" /></a><a href="https://aws.amazon.com/bedrock/"><img src="https://img.shields.io/badge/AWS%20Bedrock-orange" alt="AWS Bedrock" /></a><a href="https://aws.amazon.com/sam/"><img src="https://img.shields.io/badge/AWS%20SAM-yellow" alt="AWS SAM" /></a><a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-61DAFB" alt="React 19" /></a><a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.13-blue" alt="Python 3.13" /></a><a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-24-green" alt="Node.js 24" /></a>
 </h4>
 <p align="center">
   <p align="center"><b>Production-Ready Serverless Synthetic Data Generator<br> <a href="https://huggingface.co/datasets/Hatman/plot-palette-100k"> Plot Palette Dataset » </a> </b> </p>
