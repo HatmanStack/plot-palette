@@ -1,0 +1,540 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Plot Palette - Synthetic Data Generation Platform API
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  CognitoUserPoolId:
+    Type: String
+    Description: Cognito User Pool ID for JWT authorization
+  CognitoClientId:
+    Type: String
+    Description: Cognito App Client ID
+  EcsClusterName:
+    Type: String
+    Default: ""
+    Description: ECS Cluster name for worker tasks (optional)
+  TaskDefinitionArn:
+    Type: String
+    Default: ""
+    Description: ECS Task Definition ARN (optional)
+  SubnetIds:
+    Type: String
+    Default: ""
+    Description: Comma-separated subnet IDs for ECS tasks (optional)
+  SecurityGroupId:
+    Type: String
+    Default: ""
+    Description: Security Group ID for ECS tasks (optional)
+
+Globals:
+  Function:
+    Timeout: 15
+    MemorySize: 256
+    Runtime: python3.13
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        JOBS_TABLE_NAME: !Ref JobsTable
+        QUEUE_TABLE_NAME: !Ref QueueTable
+        TEMPLATES_TABLE_NAME: !Ref TemplatesTable
+        COST_TRACKING_TABLE_NAME: !Ref CostTrackingTable
+        BUCKET_NAME: !Ref DataBucket
+        ECS_CLUSTER_NAME: !Ref EcsClusterName
+        TASK_DEFINITION_ARN: !Ref TaskDefinitionArn
+        SUBNET_IDS: !Ref SubnetIds
+        SECURITY_GROUP_ID: !Ref SecurityGroupId
+    LoggingConfig:
+      LogGroup: !Ref LambdaLogGroup
+      LogFormat: JSON
+
+Resources:
+  # ============================================================
+  # CloudWatch Logs
+  # ============================================================
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/plot-palette-${Environment}
+      RetentionInDays: 14
+
+  # ============================================================
+  # DynamoDB Tables
+  # ============================================================
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-Jobs-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  QueueTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-Queue-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: job_id_timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: status
+          KeyType: HASH
+        - AttributeName: job_id_timestamp
+          KeyType: RANGE
+
+  TemplatesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-Templates-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: template_id
+          AttributeType: S
+        - AttributeName: version
+          AttributeType: N
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: template_id
+          KeyType: HASH
+        - AttributeName: version
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  CostTrackingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-CostTracking-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ============================================================
+  # S3 Bucket
+  # ============================================================
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub plot-palette-data-${Environment}-${AWS::AccountId}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveOldJobs
+            Status: Enabled
+            Prefix: jobs/
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 30
+          - Id: IntelligentTieringSeedData
+            Status: Enabled
+            Prefix: seed-data/
+            Transitions:
+              - StorageClass: INTELLIGENT_TIERING
+                TransitionInDays: 30
+
+  # ============================================================
+  # API Gateway (HTTP API v2)
+  # ============================================================
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Environment
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            AuthorizationScopes:
+              - openid
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}
+              audience:
+                - !Ref CognitoClientId
+
+  # ============================================================
+  # Lambda Functions - Jobs
+  # ============================================================
+  CreateJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-create-job-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: create_job.lambda_handler
+      MemorySize: 256
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QueueTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ecs:RunTask
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - iam:PassRole
+              Resource: '*'
+      Events:
+        CreateJob:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs
+            Method: POST
+
+  ListJobsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-list-jobs-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: list_jobs.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+      Events:
+        ListJobs:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs
+            Method: GET
+
+  GetJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-job-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: get_job.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+      Events:
+        GetJob:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}
+            Method: GET
+
+  DeleteJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-delete-job-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: delete_job.lambda_handler
+      MemorySize: 256
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QueueTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CostTrackingTable
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ecs:StopTask
+              Resource: '*'
+      Events:
+        DeleteJob:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}
+            Method: DELETE
+
+  # ============================================================
+  # Lambda Functions - Templates
+  # ============================================================
+  CreateTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-create-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: create_template.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        CreateTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates
+            Method: POST
+
+  ListTemplatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-list-templates-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: list_templates.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        ListTemplates:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates
+            Method: GET
+
+  GetTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: get_template.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        GetTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}
+            Method: GET
+
+  UpdateTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-update-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: update_template.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        UpdateTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}
+            Method: PUT
+
+  DeleteTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-delete-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: delete_template.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        DeleteTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}
+            Method: DELETE
+
+  TestTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-test-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: test_template.lambda_handler
+      Timeout: 30
+      MemorySize: 512
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+      Events:
+        TestTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}/test
+            Method: POST
+
+  ImportTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-import-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: import_template.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        ImportTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/import
+            Method: POST
+
+  ExportTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-export-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: export_template.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        ExportTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}/export
+            Method: GET
+
+  # ============================================================
+  # Lambda Functions - Seed Data
+  # ============================================================
+  GenerateUploadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-generate-upload-url-${Environment}
+      CodeUri: lambdas/seed_data/
+      Handler: generate_upload_url.lambda_handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+      Events:
+        GenerateUploadUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /seed-data/upload
+            Method: POST
+
+  ValidateSeedDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-validate-seed-data-${Environment}
+      CodeUri: lambdas/seed_data/
+      Handler: validate_seed_data.lambda_handler
+      MemorySize: 512
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        ValidateSeedData:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /seed-data/validate
+            Method: POST
+
+  # ============================================================
+  # Lambda Functions - Dashboard
+  # ============================================================
+  GetStatsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-stats-${Environment}
+      CodeUri: lambdas/dashboard/
+      Handler: get_stats.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref CostTrackingTable
+      Events:
+        GetStats:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /dashboard/{job_id}
+            Method: GET
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiUrl
+
+  Region:
+    Description: AWS Region
+    Value: !Ref AWS::Region
+
+  DataBucketName:
+    Description: S3 bucket for data storage
+    Value: !Ref DataBucket
+    Export:
+      Name: !Sub ${AWS::StackName}-DataBucket
+
+  JobsTableName:
+    Description: DynamoDB Jobs table name
+    Value: !Ref JobsTable
+
+  TemplatesTableName:
+    Description: DynamoDB Templates table name
+    Value: !Ref TemplatesTable

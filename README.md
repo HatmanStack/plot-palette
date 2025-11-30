@@ -1,6 +1,6 @@
 <div align="center" style="display: block;margin-left: auto;margin-right: auto;width: 50%;">
 <h1 >
-  <img width="400" height="100" src="banner.png" alt="plot-palette icon">
+  <img width="400" height="100" src="docs/assets/banner.png" alt="plot-palette icon">
 </h1>
 <div style="display: flex; justify-content: center; align-items: center;">
   <h4 style="margin: 0; display: flex;">

@@ -1,4 +1,0 @@
-requests
-python-dotenv
-transformers
-huggingface_hub

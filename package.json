@@ -1,0 +1,25 @@
+{
+  "name": "plot-palette",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AWS serverless synthetic data generation platform",
+  "scripts": {
+    "test": "cd frontend && npm test -- --passWithNoTests --ci --runInBand --forceExit",
+    "test:backend": "PYTHONPATH=backend pytest tests/backend -v --tb=short",
+    "lint": "cd frontend && npm run lint && npx tsc --noEmit",
+    "lint:backend": "cd backend && uvx ruff check .",
+    "check": "npm run lint && npm run lint:backend && npm test && npm run test:backend",
+    "deploy": "bash ./backend/infrastructure/scripts/deploy.sh",
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HatmanStack/plot-palette"
+  },
+  "author": "HatmanStack",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  }
+}

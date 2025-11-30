@@ -30,7 +30,7 @@ aws ecr get-login-password --region $REGION | \
 
 # Build image
 echo "Building Docker image..."
-cd backend/ecs_tasks/worker
+cd ../ecs_tasks/worker
 
 # Create temporary directory with shared library
 mkdir -p temp_build

@@ -92,7 +92,6 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
             onClick={() => {
               // TODO: Implement download functionality
               // Should call API endpoint to download generated data for job['job-id']
-              console.warn('Download not yet implemented for job:', job['job-id'])
             }}
             className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
           >

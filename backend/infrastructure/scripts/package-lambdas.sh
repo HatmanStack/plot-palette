@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 echo -e "${YELLOW}Starting Lambda packaging...${NC}"
 
 # Configuration
-LAMBDA_DIR="backend/lambdas"
+LAMBDA_DIR="../lambdas"
 BUILD_DIR="build/lambda"
 SHARED_DIR="backend/shared"
 
