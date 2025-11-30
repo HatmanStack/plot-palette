@@ -137,10 +137,10 @@ tests/
    - Wrapper component for easy test setup
 
 **Verification Checklist:**
-- [ ] `npm test` runs without errors in frontend directory
-- [ ] Test utilities export correctly from `test-utils.tsx`
-- [ ] Mock factories can be imported and used
-- [ ] No console warnings about missing providers in tests
+- [x] `npm test` runs without errors in frontend directory
+- [x] Test utilities export correctly from `test-utils.tsx`
+- [x] Mock factories can be imported and used
+- [x] No console warnings about missing providers in tests
 
 **Testing Instructions:**
 - Write a simple smoke test that uses the custom render function
