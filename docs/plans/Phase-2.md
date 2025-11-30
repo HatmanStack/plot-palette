@@ -94,11 +94,11 @@ Expand backend unit test coverage for Lambda handlers and Worker/ECS failure sce
    - `validate_seed_data`: test invalid JSON structure
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_lambda_validation.py`
-- [ ] All create_job validation cases tested
-- [ ] Other Lambda validation cases tested
-- [ ] All tests return appropriate 400 status codes
-- [ ] Tests pass: `pytest tests/unit/test_lambda_validation.py -v`
+- [x] Test file exists at `tests/unit/test_lambda_validation.py`
+- [x] All create_job validation cases tested
+- [x] Other Lambda validation cases tested
+- [x] All tests return appropriate 400 status codes
+- [x] Tests pass: `pytest tests/unit/test_lambda_validation.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -161,11 +161,11 @@ test(backend): add Lambda input validation tests
    - Verify appropriate error handling
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_lambda_auth.py`
-- [ ] Missing auth context tested
-- [ ] Wrong user access tested
-- [ ] Non-existent resource tested
-- [ ] Tests pass: `pytest tests/unit/test_lambda_auth.py -v`
+- [x] Test file exists at `tests/unit/test_lambda_auth.py`
+- [x] Missing auth context tested
+- [x] Wrong user access tested
+- [x] Non-existent resource tested
+- [x] Tests pass: `pytest tests/unit/test_lambda_auth.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -235,12 +235,12 @@ test(backend): add Lambda authorization tests
    - Verify appropriate error message
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_lambda_aws_errors.py`
-- [ ] DynamoDB read/write failures tested
-- [ ] S3 failures tested
-- [ ] ECS failures tested
-- [ ] All return 500 with safe error messages (no internal details leaked)
-- [ ] Tests pass: `pytest tests/unit/test_lambda_aws_errors.py -v`
+- [x] Test file exists at `tests/unit/test_lambda_aws_errors.py`
+- [x] DynamoDB read/write failures tested
+- [x] S3 failures tested
+- [x] ECS failures tested
+- [x] All return 500 with safe error messages (no internal details leaked)
+- [x] Tests pass: `pytest tests/unit/test_lambda_aws_errors.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -309,12 +309,12 @@ test(backend): add Lambda AWS error handling tests
    - (Use mock to verify)
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_worker_spot_interruption.py`
-- [ ] SIGTERM handler tested
-- [ ] Generation loop exit tested
-- [ ] Checkpoint saving tested
-- [ ] Partial batch saving tested
-- [ ] Tests pass: `pytest tests/unit/test_worker_spot_interruption.py -v`
+- [x] Test file exists at `tests/unit/test_worker_spot_interruption.py`
+- [x] SIGTERM handler tested
+- [x] Generation loop exit tested
+- [x] Checkpoint saving tested
+- [x] Partial batch saving tested
+- [x] Tests pass: `pytest tests/unit/test_worker_spot_interruption.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -387,13 +387,13 @@ test(backend): add Worker Spot interruption tests
    - Verify generation continues
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_worker_bedrock_errors.py`
-- [ ] Rate limiting tested
-- [ ] Model errors tested
-- [ ] Timeout handling tested
-- [ ] Access denied (fatal) tested
-- [ ] Partial failure resilience tested
-- [ ] Tests pass: `pytest tests/unit/test_worker_bedrock_errors.py -v`
+- [x] Test file exists at `tests/unit/test_worker_bedrock_errors.py`
+- [x] Rate limiting tested
+- [x] Model errors tested
+- [x] Timeout handling tested
+- [x] Access denied (fatal) tested
+- [x] Partial failure resilience tested
+- [x] Tests pass: `pytest tests/unit/test_worker_bedrock_errors.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -464,12 +464,12 @@ test(backend): add Worker Bedrock error handling tests
    - Verify error is logged
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_worker_s3_errors.py`
-- [ ] Seed data load failures tested
-- [ ] Checkpoint save failures tested
-- [ ] Batch save failures tested
-- [ ] Export failures tested
-- [ ] Tests pass: `pytest tests/unit/test_worker_s3_errors.py -v`
+- [x] Test file exists at `tests/unit/test_worker_s3_errors.py`
+- [x] Seed data load failures tested
+- [x] Checkpoint save failures tested
+- [x] Batch save failures tested
+- [x] Export failures tested
+- [x] Tests pass: `pytest tests/unit/test_worker_s3_errors.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -552,13 +552,13 @@ test(backend): add Worker S3 error handling tests
    - Verify message is truncated to 1000 chars
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_worker_dynamodb_errors.py`
-- [ ] Race conditions tested
-- [ ] Template load failures tested
-- [ ] Progress update failures tested (non-critical)
-- [ ] Checkpoint version conflicts tested
-- [ ] Job status update failures tested
-- [ ] Tests pass: `pytest tests/unit/test_worker_dynamodb_errors.py -v`
+- [x] Test file exists at `tests/unit/test_worker_dynamodb_errors.py`
+- [x] Race conditions tested
+- [x] Template load failures tested
+- [x] Progress update failures tested (non-critical)
+- [x] Checkpoint version conflicts tested
+- [x] Job status update failures tested
+- [x] Tests pass: `pytest tests/unit/test_worker_dynamodb_errors.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -626,12 +626,12 @@ test(backend): add Worker DynamoDB error handling tests
    - Verify budget exceeded (>= comparison)
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_worker_budget.py`
-- [ ] Budget enforcement before each record tested
-- [ ] BudgetExceededError handling tested
-- [ ] Job status update tested
-- [ ] Edge cases (string values, invalid values) tested
-- [ ] Tests pass: `pytest tests/unit/test_worker_budget.py -v`
+- [x] Test file exists at `tests/unit/test_worker_budget.py`
+- [x] Budget enforcement before each record tested
+- [x] BudgetExceededError handling tested
+- [x] Job status update tested
+- [x] Edge cases (string values, invalid values) tested
+- [x] Tests pass: `pytest tests/unit/test_worker_budget.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -705,12 +705,12 @@ test(backend): add Worker budget enforcement tests
    - Verify returns default checkpoint (fail safe)
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_worker_checkpoint_recovery.py`
-- [ ] Checkpoint loading tested
-- [ ] Resume from checkpoint tested
-- [ ] Version management tested
-- [ ] Corrupted checkpoint handling tested
-- [ ] Tests pass: `pytest tests/unit/test_worker_checkpoint_recovery.py -v`
+- [x] Test file exists at `tests/unit/test_worker_checkpoint.py`
+- [x] Checkpoint loading tested
+- [x] Resume from checkpoint tested
+- [x] Version management tested
+- [x] Corrupted checkpoint handling tested
+- [x] Tests pass: `pytest tests/unit/test_worker_checkpoint.py -v`
 
 **Testing Instructions:**
 ```bash
@@ -789,14 +789,14 @@ test(backend): add Worker checkpoint recovery tests
    - Verify nested data is JSON-serialized string
 
 **Verification Checklist:**
-- [ ] Test file exists at `tests/unit/test_worker_export.py`
-- [ ] JSONL export tested
-- [ ] Parquet export tested
-- [ ] CSV export tested
-- [ ] Multiple format export tested
-- [ ] Partition strategy tested
-- [ ] Empty records handling tested
-- [ ] Tests pass: `pytest tests/unit/test_worker_export.py -v`
+- [x] Test file exists at `tests/unit/test_worker_export.py`
+- [x] JSONL export tested
+- [x] Parquet export tested
+- [x] CSV export tested
+- [x] Multiple format export tested
+- [x] Partition strategy tested
+- [x] Empty records handling tested
+- [x] Tests pass: `pytest tests/unit/test_worker_export.py -v`
 
 **Testing Instructions:**
 ```bash
