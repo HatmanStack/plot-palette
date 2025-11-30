@@ -57,10 +57,10 @@ Add comprehensive unit tests for React hooks, contexts, and key UI components. T
    - Verify return type matches `AuthContextType`
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/hooks/useAuth.test.ts`
-- [ ] Error case tested (hook outside provider)
-- [ ] Happy path tested (hook inside provider)
-- [ ] Tests pass: `npm test -- useAuth`
+- [x] Test file exists at `frontend/src/hooks/useAuth.test.ts`
+- [x] Error case tested (hook outside provider)
+- [x] Happy path tested (hook inside provider)
+- [x] Tests pass: `npm test -- useAuth`
 
 **Testing Instructions:**
 ```bash
@@ -117,11 +117,11 @@ test(frontend): add useAuth hook tests
    - Verify `data` is empty array, not undefined
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/hooks/useJobs.test.ts`
-- [ ] Success case with data tested
-- [ ] Error case tested
-- [ ] Empty state tested
-- [ ] Tests pass: `npm test -- useJobs`
+- [x] Test file exists at `frontend/src/hooks/useJobs.test.ts`
+- [x] Success case with data tested
+- [x] Error case tested
+- [x] Empty state tested
+- [x] Tests pass: `npm test -- useJobs`
 
 **Testing Instructions:**
 ```bash
@@ -183,11 +183,11 @@ test(frontend): add useJobs hook tests
    - Verify queryKey includes jobId
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/hooks/useJobPolling.test.ts`
-- [ ] Polling active for RUNNING/QUEUED tested
-- [ ] Polling disabled for terminal states tested
-- [ ] JobId passed correctly tested
-- [ ] Tests pass: `npm test -- useJobPolling`
+- [x] Test file exists at `frontend/src/hooks/useJobPolling.test.ts`
+- [x] Polling active for RUNNING/QUEUED tested
+- [x] Polling disabled for terminal states tested
+- [x] JobId passed correctly tested
+- [x] Tests pass: `npm test -- useJobPolling`
 
 **Testing Instructions:**
 ```bash
@@ -269,13 +269,13 @@ test(frontend): add useJobPolling hook tests
    - Verify `idToken` becomes null
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/contexts/AuthContext.test.tsx`
-- [ ] Initial state tested
-- [ ] Auto-auth on mount tested (success and failure)
-- [ ] Login tested (success and failure)
-- [ ] Signup tested
-- [ ] Logout tested
-- [ ] Tests pass: `npm test -- AuthContext`
+- [x] Test file exists at `frontend/src/contexts/AuthContext.test.tsx`
+- [x] Initial state tested
+- [x] Auto-auth on mount tested (success and failure)
+- [x] Login tested (success and failure)
+- [x] Signup tested
+- [x] Logout tested
+- [x] Tests pass: `npm test -- AuthContext`
 
 **Testing Instructions:**
 ```bash
@@ -357,12 +357,12 @@ test(frontend): add AuthContext and AuthProvider tests
    - CANCELLED: Delete visible
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/components/JobCard.test.tsx`
-- [ ] Basic rendering tested
-- [ ] Progress calculations tested
-- [ ] All button states tested by job status
-- [ ] Callback functions tested
-- [ ] Tests pass: `npm test -- JobCard`
+- [x] Test file exists at `frontend/src/components/JobCard.test.tsx`
+- [x] Basic rendering tested
+- [x] Progress calculations tested
+- [x] All button states tested by job status
+- [x] Callback functions tested
+- [x] Tests pass: `npm test -- JobCard`
 
 **Testing Instructions:**
 ```bash
@@ -413,10 +413,10 @@ test(frontend): add JobCard component tests
    - Verify sufficient color contrast (if applicable)
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/components/StatusBadge.test.tsx`
-- [ ] All 6 status values tested
-- [ ] Styling classes verified
-- [ ] Tests pass: `npm test -- StatusBadge`
+- [x] Test file exists at `frontend/src/components/StatusBadge.test.tsx`
+- [x] All 6 status values tested
+- [x] Styling classes verified
+- [x] Tests pass: `npm test -- StatusBadge`
 
 **Testing Instructions:**
 ```bash
@@ -473,11 +473,11 @@ test(frontend): add StatusBadge component tests
    - Verify nested routes render correctly
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/components/PrivateRoute.test.tsx`
-- [ ] Loading state tested
-- [ ] Authenticated access tested
-- [ ] Unauthenticated redirect tested
-- [ ] Tests pass: `npm test -- PrivateRoute`
+- [x] Test file exists at `frontend/src/components/PrivateRoute.test.tsx`
+- [x] Loading state tested
+- [x] Authenticated access tested
+- [x] Unauthenticated redirect tested
+- [x] Tests pass: `npm test -- PrivateRoute`
 
 **Testing Instructions:**
 ```bash
@@ -543,12 +543,12 @@ test(frontend): add PrivateRoute component tests
    - Verify error message displayed to user
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/routes/CreateJob.test.tsx`
-- [ ] Form fields render tested
-- [ ] Basic validation feedback tested
-- [ ] Successful submission flow tested
-- [ ] Error handling tested
-- [ ] Tests pass: `npm test -- CreateJob`
+- [x] Test file exists at `frontend/src/routes/CreateJob.test.tsx`
+- [x] Form fields render tested
+- [x] Basic validation feedback tested
+- [x] Successful submission flow tested
+- [x] Error handling tested
+- [x] Tests pass: `npm test -- CreateJob`
 
 **Testing Instructions:**
 ```bash
@@ -625,11 +625,11 @@ test(frontend): add CreateJob form tests
    - Test when `getIdToken` throws (logs error, continues)
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/services/api.test.ts`
-- [ ] All exported functions tested
-- [ ] Auth interceptor tested
-- [ ] Error cases tested
-- [ ] Tests pass: `npm test -- api.test`
+- [x] Test file exists at `frontend/src/services/api.test.ts`
+- [x] All exported functions tested
+- [x] Auth interceptor tested
+- [x] Error cases tested
+- [x] Tests pass: `npm test -- api.test`
 
 **Testing Instructions:**
 ```bash
@@ -698,13 +698,13 @@ test(frontend): add API service tests
    - Test when no current user (no error)
 
 **Verification Checklist:**
-- [ ] Test file exists at `frontend/src/services/auth.test.ts`
-- [ ] signUp tested (success and failure)
-- [ ] signIn tested (success and failure)
-- [ ] getCurrentUser tested
-- [ ] getIdToken tested (all cases)
-- [ ] signOut tested
-- [ ] Tests pass: `npm test -- auth.test`
+- [x] Test file exists at `frontend/src/services/auth.test.ts`
+- [x] signUp tested (success and failure)
+- [x] signIn tested (success and failure)
+- [x] getCurrentUser tested
+- [x] getIdToken tested (all cases)
+- [x] signOut tested
+- [x] Tests pass: `npm test -- auth.test`
 
 **Testing Instructions:**
 ```bash
@@ -764,3 +764,53 @@ test(frontend): add auth service tests
 **Technical Debt:**
 - Download button in JobCard has TODO placeholder - tests document current behavior
 - cancelJob and deleteJob use same endpoint - tests document this
+
+---
+
+## Review Feedback (Iteration 1)
+
+### Build Failure: TypeScript Errors
+
+> **Consider:** Running `npm run build` results in 34 TypeScript errors. Have you verified that the build passes after adding tests?
+>
+> **Think about:** Test files are excluded from the production build (via `tsconfig.app.json`), but there are also errors in source files like `src/App.tsx`. What might have changed in `src/contexts/AuthContext.tsx` that broke the `AuthProvider` export?
+
+### Task 1: useAuth.test.tsx
+
+> **Consider:** The test file imports `vi` from vitest but doesn't include it in the import statement. Looking at line 10, `vi.spyOn(console, 'error')` is used, but where is `vi` defined?
+>
+> **Think about:** Compare your import statement `import { describe, it, expect } from 'vitest'` with other test files that use `vi.fn()`. What's missing?
+
+### Task 1: Type Imports
+
+> **Reflect:** TypeScript's `verbatimModuleSyntax` requires type-only imports. Looking at `import { AuthContextType } from '../contexts/AuthContext'`, should this be `import type { AuthContextType }`?
+>
+> **Consider:** The same pattern appears in multiple test files with `ReactNode`, `RenderOptions`, `ReactElement`, and `Mock`. How would you update these imports?
+
+### Task 9: api.test.ts
+
+> **Think about:** The axios mock in `api.test.ts` uses `mockAxios._requestInterceptor`, but TypeScript doesn't know about this custom property. How might you type the mock to include your custom properties?
+>
+> **Consider:** The mock methods like `mockAxios.get.mockResolvedValueOnce()` are failing type checks. When you create a mock with `vi.mock()`, does the mocked object automatically have Vitest mock methods, or do you need to cast or type it differently?
+
+### Task 10: auth.test.ts
+
+> **Reflect:** The import `import { Mock } from 'vitest'` needs to be a type-only import. What's the difference between `import { Mock }` and `import type { Mock }`?
+
+### Test Utilities: test-utils.tsx and react-query.tsx
+
+> **Consider:** Your test utility files have the same type import issues. Since these are shared utilities, fixing them will likely cascade to other tests.
+
+### vite.config.ts
+
+> **Think about:** The error at `vite.config.ts(8,3)` suggests a `test` property issue. Is this configuration intended for the app build or only for vitest? Should test configuration live in a separate config file?
+
+### Summary of Required Fixes
+
+The tests run and pass (✅ 122 passing), but the build fails. This suggests:
+
+1. Test files use patterns that work at runtime but fail TypeScript's strict checks
+2. Some source files may have been modified unintentionally
+3. Type imports need the `type` keyword for verbatimModuleSyntax compliance
+
+> **Reflect:** Before submitting, always run both `npm test` AND `npm run build` to catch these discrepancies.

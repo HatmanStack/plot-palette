@@ -19,19 +19,21 @@ vi.stubGlobal('import.meta', {
 })
 
 // Mock amazon-cognito-identity-js
-vi.mock('amazon-cognito-identity-js', () => ({
-  CognitoUserPool: vi.fn().mockImplementation(() => ({
-    signUp: vi.fn(),
-    getCurrentUser: vi.fn(() => null),
-  })),
-  CognitoUser: vi.fn().mockImplementation(() => ({
-    authenticateUser: vi.fn(),
-    signOut: vi.fn(),
-    getSession: vi.fn(),
-  })),
-  AuthenticationDetails: vi.fn(),
-  CognitoUserAttribute: vi.fn(),
-}))
+vi.mock('amazon-cognito-identity-js', () => {
+  return {
+    CognitoUserPool: class MockCognitoUserPool {
+      signUp = vi.fn()
+      getCurrentUser = vi.fn(() => null)
+    },
+    CognitoUser: class MockCognitoUser {
+      authenticateUser = vi.fn()
+      signOut = vi.fn()
+      getSession = vi.fn()
+    },
+    AuthenticationDetails: class MockAuthenticationDetails {},
+    CognitoUserAttribute: class MockCognitoUserAttribute {},
+  }
+})
 
 // Suppress console errors in tests unless explicitly needed
 const originalError = console.error

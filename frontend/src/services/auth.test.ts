@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, Mock } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Mock } from 'vitest'
 
 // Mock setup before imports
 const mockFns = {
@@ -9,9 +10,8 @@ const mockFns = {
   getSession: null as Mock | null,
 }
 
-vi.mock('amazon-cognito-identity-js', async (importOriginal) => {
-  // Get the original module to reference types only
-  const _actual = await importOriginal<typeof import('amazon-cognito-identity-js')>()
+vi.mock('amazon-cognito-identity-js', async () => {
+  // Mock Cognito SDK classes
 
   return {
     CognitoUserPool: class {

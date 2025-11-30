@@ -4,7 +4,7 @@ import { useJobPolling } from './useJobPolling'
 import * as api from '../services/api'
 import { createTestQueryClient } from '../test/test-utils'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 // Mock the API module
 vi.mock('../services/api', () => ({

@@ -1,8 +1,10 @@
-import { render, RenderOptions } from '@testing-library/react'
+import { render } from '@testing-library/react'
+import type { RenderOptions } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, MemoryRouter } from 'react-router-dom'
-import { ReactElement, ReactNode } from 'react'
-import { AuthContext, AuthContextType } from '../contexts/AuthContext'
+import type { ReactElement, ReactNode } from 'react'
+import { AuthContext } from '../contexts/AuthContext'
+import type { AuthContextType } from '../contexts/AuthContext'
 
 // Create a test QueryClient with sensible defaults for testing
 export function createTestQueryClient() {
