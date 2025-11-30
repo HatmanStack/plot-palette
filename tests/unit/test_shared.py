@@ -15,6 +15,7 @@ from backend.shared.models import (
     TemplateStep,
     CheckpointState,
     CostBreakdown,
+    CostComponents,
     QueueItem,
 )
 from backend.shared.constants import (
@@ -180,7 +181,7 @@ class TestCostBreakdown:
             bedrock_tokens=100000,
             fargate_hours=0.5,
             s3_operations=50,
-            estimated_cost=3.50,
+            estimated_cost=CostComponents(bedrock=3.0, fargate=0.3, s3=0.2, total=3.50),
             model_id="meta.llama3-1-8b-instruct-v1:0",
         )
 
@@ -189,7 +190,7 @@ class TestCostBreakdown:
         assert dynamodb_item["job_id"]["S"] == "job-123"
         assert dynamodb_item["bedrock_tokens"]["N"] == "100000"
         assert dynamodb_item["fargate_hours"]["N"] == "0.5"
-        assert dynamodb_item["estimated_cost"]["N"] == "3.5"
+        assert dynamodb_item["estimated_cost"]["M"]["total"]["N"] == "3.5"
         assert "ttl" in dynamodb_item
 
 

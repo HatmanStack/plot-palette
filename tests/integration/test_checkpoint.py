@@ -13,7 +13,7 @@ import json
 import os
 from unittest.mock import MagicMock, patch, Mock
 from datetime import datetime
-from moto import mock_s3, mock_dynamodb
+from moto import mock_aws
 import boto3
 
 from backend.shared.models import CheckpointState
@@ -22,7 +22,7 @@ from backend.shared.models import CheckpointState
 @pytest.fixture
 def s3_client():
     """Create mock S3 client."""
-    with mock_s3():
+    with mock_aws():
         s3 = boto3.client('s3', region_name='us-east-1')
         s3.create_bucket(Bucket='test-bucket')
         yield s3

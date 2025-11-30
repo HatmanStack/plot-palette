@@ -8,9 +8,8 @@ and cost tracking using Pydantic for validation and serialization.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
-from enum import Enum
 
-from .constants import JobStatus, ExportFormat
+from .constants import JobStatus
 
 
 class JobConfig(BaseModel):

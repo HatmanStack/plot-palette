@@ -117,7 +117,7 @@ class TestTemplateEngine:
         rendered = engine.render_step(step_def, context)
         assert 'Authors: Jane Doe, John Smith, Alice Johnson' == rendered
 
-    @patch('template_engine.TemplateEngine.call_bedrock')
+    @patch('backend.ecs_tasks.worker.template_engine.TemplateEngine.call_bedrock')
     def test_execute_template_single_step(self, mock_bedrock):
         """Test executing single-step template."""
         mock_bedrock.return_value = "Generated question about Jane Doe"
@@ -142,7 +142,7 @@ class TestTemplateEngine:
         assert results['question']['model'] == 'meta.llama3-1-8b-instruct-v1:0'
         mock_bedrock.assert_called_once()
 
-    @patch('template_engine.TemplateEngine.call_bedrock')
+    @patch('backend.ecs_tasks.worker.template_engine.TemplateEngine.call_bedrock')
     def test_execute_template_multi_step(self, mock_bedrock):
         """Test executing multi-step template with context propagation."""
         mock_bedrock.side_effect = [
@@ -176,7 +176,7 @@ class TestTemplateEngine:
         assert results['answer']['output'] == "Jane Doe was inspired by her childhood experiences."
         assert mock_bedrock.call_count == 2
 
-    @patch('template_engine.TemplateEngine.call_bedrock')
+    @patch('backend.ecs_tasks.worker.template_engine.TemplateEngine.call_bedrock')
     def test_execute_template_with_model_tier(self, mock_bedrock):
         """Test template execution with model tier resolution."""
         mock_bedrock.return_value = "Output"
@@ -200,7 +200,7 @@ class TestTemplateEngine:
         # Should resolve tier-1 to actual model
         assert 'llama' in results['step1']['model'].lower()
 
-    @patch('template_engine.TemplateEngine.call_bedrock')
+    @patch('backend.ecs_tasks.worker.template_engine.TemplateEngine.call_bedrock')
     def test_execute_template_error_handling(self, mock_bedrock):
         """Test error handling in template execution."""
         mock_bedrock.side_effect = Exception("Bedrock API error")
@@ -247,7 +247,7 @@ class TestTemplateEngine:
         call_args = mock_client.invoke_model.call_args
         body = json.loads(call_args[1]['body'])
         assert body['messages'][0]['role'] == 'user'
-        assert body['messages'][0]['content'] == 'Test prompt'
+        assert body['messages'][0]['content'][0]['text'] == 'Test prompt'
         assert 'anthropic_version' in body
 
     def test_call_bedrock_llama(self):

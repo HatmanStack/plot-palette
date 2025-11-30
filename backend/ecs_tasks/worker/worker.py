@@ -17,7 +17,7 @@ import boto3
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from datetime import datetime, timedelta
+from datetime import datetime
 from botocore.exceptions import ClientError
 from template_engine import TemplateEngine
 
@@ -522,7 +522,6 @@ class Worker:
     def update_cost_tracking(self, job_id, checkpoint):
         """Write cost tracking record to DynamoDB with 90-day TTL."""
         tokens_used = checkpoint.get('tokens_used', 0)
-        records_generated = checkpoint.get('records_generated', 0)
 
         # Calculate Bedrock cost (simplified - assumes Claude Sonnet average)
         # In real implementation, would track per-model usage

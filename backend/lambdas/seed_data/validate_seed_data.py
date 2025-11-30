@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 import boto3
 from botocore.exceptions import ClientError
 
-from utils import get_nested_field, validate_seed_data, setup_logger
+from utils import validate_seed_data, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)

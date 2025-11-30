@@ -266,7 +266,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Try to rollback job creation
             try:
                 jobs_table.delete_item(Key={'job_id': job_id})
-            except:
+            except ClientError:
                 pass
             return error_response(500, "Error queuing job")
 
@@ -280,16 +280,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Start ECS worker task to process the job
         try:
-            task_arn = start_worker_task(job_id)
+            start_worker_task(job_id)
         except Exception as e:
             logger.error(json.dumps({
                 "event": "worker_task_start_failed",
                 "job_id": job_id,
                 "error": str(e)
             }))
-            # Don't fail the job creation - worker can be started manually
-            # or another task will pick it up from the queue
-            task_arn = None
 
         return {
             "statusCode": 201,
