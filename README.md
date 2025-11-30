@@ -8,7 +8,7 @@
   <p align="center"><b>Production-Ready Serverless Synthetic Data Generator<br> <a href="https://huggingface.co/datasets/Hatman/plot-palette-100k"> Plot Palette Dataset » </a> </b> </p>
 </p>
 <h1 align="center">
-  <img width="400" src="docs/assets/banner.png" alt="plot-palette icon">
+  <img width="400" src="banner.png" alt="plot-palette icon">
 </h1>
 <p>Generate synthetic training data at scale using AWS Bedrock foundation models. Leverage ECS Fargate Spot instances for up to 70% cost savings with automatic checkpoint recovery. Configure jobs, upload seed data, and monitor progress through a modern React web interface.</p>
 </div>
