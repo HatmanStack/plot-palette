@@ -11,7 +11,6 @@ from typing import Optional
 import boto3
 from botocore.config import Config
 
-
 # Standard client configuration with connection pooling
 _standard_config = Config(
     max_pool_connections=25,

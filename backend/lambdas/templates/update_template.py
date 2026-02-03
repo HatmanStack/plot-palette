@@ -15,13 +15,12 @@ from typing import Any, Dict, List
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 import boto3
-from botocore.exceptions import ClientError
 import jinja2
 import jinja2.meta
 from boto3.dynamodb.conditions import Key
-
-from utils import setup_logger
+from botocore.exceptions import ClientError
 from template_filters import validate_template_syntax
+from utils import setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -49,7 +48,7 @@ def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str
         return sorted(schema_vars)
 
     except jinja2.TemplateSyntaxError as e:
-        raise ValueError(f"Invalid template syntax: {str(e)}")
+        raise ValueError(f"Invalid template syntax: {str(e)}") from e
 
 
 def error_response(status_code: int, message: str) -> Dict[str, Any]:

@@ -16,9 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-
 from constants import PRESIGNED_URL_EXPIRATION
-from utils import setup_logger, sanitize_filename
+from utils import sanitize_filename, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)

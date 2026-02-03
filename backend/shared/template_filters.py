@@ -5,12 +5,12 @@ This module provides custom filters for LLM prompt generation including
 text manipulation, token operations, and data extraction.
 """
 
-import random
-import re
 import json
 import logging
-from typing import List, Any, Tuple
+import random
+import re
 from collections import Counter
+from typing import Any, List, Tuple
 
 logger = logging.getLogger(__name__)
 

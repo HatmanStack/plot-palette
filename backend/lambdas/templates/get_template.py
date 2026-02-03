@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 import boto3
 from botocore.exceptions import ClientError
-
 from utils import setup_logger
 
 # Initialize logger

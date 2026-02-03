@@ -16,9 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../ecs_tasks/work
 
 import boto3
 from botocore.exceptions import ClientError
-
-from utils import setup_logger, get_nested_field
 from template_engine import TemplateEngine
+from utils import get_nested_field, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -116,7 +115,7 @@ def execute_template_real(template_def: Dict, seed_data: Dict) -> Dict:
         results = engine.execute_template(template_def, seed_data, bedrock)
 
         # Add metadata
-        for step_id, step_result in results.items():
+        for _step_id, step_result in results.items():
             step_result['mocked'] = False
             if 'prompt' in step_result:
                 step_result['prompt_length'] = len(step_result['prompt'])

@@ -5,25 +5,26 @@ This worker pulls jobs from the DynamoDB queue, generates synthetic data using
 AWS Bedrock, and implements checkpoint-based graceful shutdown for Spot interruptions.
 """
 
+import io
+import json
+import logging
+import os
+import random
 import signal
 import sys
-import logging
-import json
-import os
 import time
-import random
-import io
+from datetime import datetime
+
 import boto3
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from datetime import datetime
 from botocore.exceptions import ClientError
 from template_engine import TemplateEngine
 
 # Import from shared constants
 sys.path.append('/app')
-from shared.constants import MODEL_PRICING, FARGATE_SPOT_PRICING, S3_PRICING
+from shared.constants import FARGATE_SPOT_PRICING, MODEL_PRICING, S3_PRICING
 from shared.models import CostBreakdown, CostComponents
 
 # Setup logging

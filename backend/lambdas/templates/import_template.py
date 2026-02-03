@@ -22,8 +22,8 @@ except ImportError:
     # YAML will be available via Lambda layer
     yaml = None
 
-from utils import setup_logger, generate_template_id, sanitize_error_message
 from template_filters import validate_template_syntax
+from utils import generate_template_id, sanitize_error_message, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)

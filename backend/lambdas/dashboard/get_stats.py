@@ -15,9 +15,8 @@ from typing import Any, Dict, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 import boto3
-from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
-
+from botocore.exceptions import ClientError
 from utils import setup_logger
 
 # Initialize logger
