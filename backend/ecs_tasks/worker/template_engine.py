@@ -10,12 +10,16 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 from template_filters import CUSTOM_FILTERS
+from retry import retry_with_backoff, CircuitBreakerOpen
+
+if TYPE_CHECKING:
+    from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +48,10 @@ class TemplateEngine:
             except Exception as e:
                 logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
 
-        # Create Jinja2 environment with custom loader
+        # Create Jinja2 environment with custom loader and autoescape enabled
         self.env = jinja2.Environment(
             loader=jinja2.FunctionLoader(self.load_template_string),
-            autoescape=False,
+            autoescape=jinja2.select_autoescape(default_for_string=True, default=True),
             trim_blocks=True,
             lstrip_blocks=True
         )
@@ -103,14 +107,20 @@ class TemplateEngine:
 
         except Exception as e:
             logger.error(f"Error loading template {template_name}: {str(e)}", exc_info=True)
-            return f"<!-- Error loading template {template_name}: {str(e)} -->"
+            # Sanitize error to prevent information leakage in rendered output
+            return f"<!-- Error loading template {template_name} -->"
 
-    def render_step(self, step_def: Dict, context: Dict[str, Any]) -> str:
+    def render_step(self, step_def: Dict[str, Any], context: Dict[str, Any]) -> str:
         """Render a single template step with context."""
         template = self.env.from_string(step_def['prompt'])
         return template.render(**context)
 
-    def execute_template(self, template_def: Dict, seed_data: Dict, bedrock_client) -> Dict:
+    def execute_template(
+        self,
+        template_def: Dict[str, Any],
+        seed_data: Dict[str, Any],
+        bedrock_client: "BedrockRuntimeClient"
+    ) -> Dict[str, Any]:
         """Execute multi-step template with Bedrock calls."""
         context = seed_data.copy()
         results = {}
@@ -153,6 +163,16 @@ class TemplateEngine:
 
                 logger.info(f"Step '{step_id}' completed successfully")
 
+            except CircuitBreakerOpen as e:
+                logger.error(f"Circuit breaker open for step '{step_id}': {str(e)}")
+                # Circuit breaker open - fail fast, don't continue
+                results[step_id] = {
+                    'error': 'Service temporarily unavailable (circuit breaker open)',
+                    'model': model_id
+                }
+                # Don't continue with remaining steps if circuit is open
+                break
+
             except Exception as e:
                 logger.error(f"Error executing step '{step_id}': {str(e)}", exc_info=True)
                 # Store error but continue with other steps
@@ -163,8 +183,19 @@ class TemplateEngine:
 
         return results
 
+    @retry_with_backoff(
+        max_retries=3,
+        base_delay=1.0,
+        max_delay=30.0,
+        circuit_breaker_name='bedrock'
+    )
     def call_bedrock(self, client, model_id: str, prompt: str) -> str:
-        """Call AWS Bedrock API with model-specific formatting."""
+        """
+        Call AWS Bedrock API with model-specific formatting.
+
+        Uses retry with exponential backoff and circuit breaker pattern
+        to handle transient failures and throttling.
+        """
         try:
             # Format request based on model family
             if 'claude' in model_id.lower():

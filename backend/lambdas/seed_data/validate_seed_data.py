@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 import boto3
 from botocore.exceptions import ClientError
 
-from utils import validate_seed_data, setup_logger
+from utils import validate_seed_data, setup_logger, sanitize_error_message
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -144,7 +144,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return error_response(404, "Seed data file not found")
 
         except json.JSONDecodeError as e:
-            return error_response(400, f"Invalid JSON in seed data file: {str(e)}")
+            return error_response(400, f"Invalid JSON in seed data file: {sanitize_error_message(str(e))}")
 
         except ClientError as e:
             logger.error(json.dumps({

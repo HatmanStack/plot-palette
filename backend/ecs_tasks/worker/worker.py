@@ -347,11 +347,24 @@ class Worker:
             logger.error(f"Error loading seed data from {s3_path}: {str(e)}", exc_info=True)
             raise
 
-    def estimate_tokens(self, result):
-        """Estimate tokens used in generation (rough approximation)."""
+    def estimate_tokens(self, result, model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"):
+        """
+        Estimate tokens used in generation using model-specific approximation.
+
+        Args:
+            result: Generation result (will be JSON-serialized)
+            model_id: Model identifier for model-specific estimation
+
+        Returns:
+            int: Estimated token count
+        """
         text = json.dumps(result)
-        # Rough estimate: 1 token ≈ 4 characters
-        return len(text) // 4
+        # Use model-specific token estimation
+        # Claude: ~3.5 chars/token, Llama/Mistral: ~4 chars/token
+        if 'claude' in model_id.lower():
+            return max(1, int(len(text) / 3.5))
+        else:
+            return max(1, int(len(text) / 4))
 
     def load_checkpoint(self, job_id):
         """Load checkpoint from S3 with version from DynamoDB."""

@@ -19,17 +19,17 @@ apiClient.interceptors.request.use(async (config) => {
 })
 
 export interface Job {
-  'job-id': string
-  'user-id': string
+  job_id: string
+  user_id: string
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'BUDGET_EXCEEDED'
-  'created-at': string
-  'updated-at': string
-  'template-id': string
-  'budget-limit': number
-  'num-records': number
-  'records-generated': number
-  'tokens-used': number
-  'cost-estimate': number
+  created_at: string
+  updated_at: string
+  template_id: string
+  budget_limit: number
+  num_records: number
+  records_generated: number
+  tokens_used: number
+  cost_estimate: number
   config?: {
     output_format?: string
     model?: string
@@ -47,11 +47,11 @@ export async function fetchJobDetails(jobId: string): Promise<Job> {
 }
 
 export async function createJob(jobData: {
-  'template-id': string
-  'seed-data-key': string
-  'budget-limit': number
-  'num-records': number
-  'output-format'?: string
+  template_id: string
+  seed_data_path: string
+  budget_limit: number
+  num_records: number
+  output_format?: string
 }): Promise<Job> {
   const { data } = await apiClient.post('/jobs', jobData)
   return data

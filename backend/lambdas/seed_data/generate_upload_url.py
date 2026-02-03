@@ -18,7 +18,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from constants import PRESIGNED_URL_EXPIRATION
-from utils import setup_logger
+from utils import setup_logger, sanitize_filename
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -72,10 +72,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not filename:
             return error_response(400, "Missing required field: filename")
 
+        # Sanitize filename to prevent path traversal
+        try:
+            safe_filename = sanitize_filename(filename)
+        except ValueError:
+            return error_response(400, "Invalid filename")
+
         content_type = body.get('content_type', 'application/json')
 
         # Generate S3 key with user isolation
-        s3_key = f"seed-data/{user_id}/{filename}"
+        s3_key = f"seed-data/{user_id}/{safe_filename}"
         bucket = os.environ.get('BUCKET_NAME')
 
         if not bucket:

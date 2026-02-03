@@ -8,11 +8,38 @@ NOTE: Phase 8 is code writing only. These tests will run against
 mocked AWS services. Real infrastructure testing happens in Phase 9.
 """
 
+import json
 import pytest
+from datetime import datetime
+from decimal import Decimal
+from unittest.mock import patch, Mock
 
-pytest.skip("Requires moto Decimal compatibility fixes", allow_module_level=True)
+import boto3
+from moto import mock_aws
 
 from backend.shared.constants import JobStatus
+
+
+def convert_floats_to_decimal(obj):
+    """
+    Recursively convert float values to Decimal for DynamoDB compatibility.
+
+    DynamoDB does not support Python float types directly. This helper
+    converts floats to Decimal for proper storage.
+
+    Args:
+        obj: The object to convert (dict, list, or scalar)
+
+    Returns:
+        The converted object with floats replaced by Decimals
+    """
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    elif isinstance(obj, dict):
+        return {k: convert_floats_to_decimal(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_floats_to_decimal(i) for i in obj]
+    return obj
 
 
 @pytest.fixture
@@ -113,8 +140,8 @@ def sample_job(dynamodb_tables):
     job_id = 'test-job-123'
     timestamp = datetime.utcnow().isoformat()
 
-    # Add to Jobs table
-    jobs_table.put_item(Item={
+    # Add to Jobs table (convert floats to Decimal for DynamoDB)
+    jobs_table.put_item(Item=convert_floats_to_decimal({
         'job_id': job_id,
         'user_id': 'test-user',
         'status': 'QUEUED',
@@ -129,7 +156,7 @@ def sample_job(dynamodb_tables):
         'tokens_used': 0,
         'records_generated': 0,
         'cost_estimate': 0.0
-    })
+    }))
 
     # Add to Queue table
     queue_table.put_item(Item={
@@ -325,8 +352,8 @@ class TestWorkerDataGeneration:
         """Test updating cost tracking in DynamoDB."""
         cost_table = dynamodb_tables.Table('test-CostTracking')
 
-        # Add cost entry
-        cost_table.put_item(Item={
+        # Add cost entry (convert floats to Decimal for DynamoDB)
+        cost_table.put_item(Item=convert_floats_to_decimal({
             'job_id': 'test-job-123',
             'timestamp': datetime.utcnow().isoformat(),
             'bedrock_tokens': 10000,
@@ -334,7 +361,7 @@ class TestWorkerDataGeneration:
             's3_operations': 10,
             'estimated_cost': 1.25,
             'model_id': 'meta.llama3-1-8b-instruct-v1:0'
-        })
+        }))
 
         # Query cost for job
         response = cost_table.query(
@@ -343,7 +370,7 @@ class TestWorkerDataGeneration:
         )
 
         assert len(response['Items']) == 1
-        assert response['Items'][0]['estimated_cost'] == 1.25
+        assert response['Items'][0]['estimated_cost'] == Decimal('1.25')
 
 
 @pytest.mark.integration

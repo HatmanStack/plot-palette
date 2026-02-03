@@ -13,6 +13,10 @@ Parameters:
   CognitoClientId:
     Type: String
     Description: Cognito App Client ID
+  AllowedOrigins:
+    Type: CommaDelimitedList
+    Default: 'https://plot-palette.example.com'
+    Description: Comma-separated list of allowed CORS origins (no wildcards in production)
   EcsClusterName:
     Type: String
     Default: ""
@@ -159,9 +163,9 @@ Resources:
       BucketName: !Sub plot-palette-data-${Environment}-${AWS::AccountId}
       CorsConfiguration:
         CorsRules:
-          - AllowedHeaders: ['*']
+          - AllowedHeaders: ['Content-Type', 'Authorization', 'x-amz-*']
             AllowedMethods: [GET, PUT, POST]
-            AllowedOrigins: ['*']
+            AllowedOrigins: !Ref AllowedOrigins
             MaxAge: 3600
       LifecycleConfiguration:
         Rules:
@@ -186,8 +190,7 @@ Resources:
     Properties:
       StageName: !Ref Environment
       CorsConfiguration:
-        AllowOrigins:
-          - '*'
+        AllowOrigins: !Ref AllowedOrigins
         AllowHeaders:
           - Content-Type
           - Authorization

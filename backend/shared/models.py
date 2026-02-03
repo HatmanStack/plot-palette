@@ -7,9 +7,43 @@ and cost tracking using Pydantic for validation and serialization.
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from typing_extensions import TypedDict, NotRequired
 from pydantic import BaseModel, Field, field_validator
 
-from .constants import JobStatus
+from .constants import JobStatus, ExportFormat
+
+
+# TypedDict definitions for strongly-typed dictionaries
+class TemplateStepDict(TypedDict):
+    """Type definition for a template step configuration."""
+    id: str
+    prompt: str
+    model: NotRequired[str]
+    model_tier: NotRequired[str]
+
+
+class TemplateDefinitionDict(TypedDict):
+    """Type definition for a complete template definition."""
+    steps: List[TemplateStepDict]
+
+
+class JobConfigDict(TypedDict):
+    """Type definition for job configuration."""
+    template_id: str
+    seed_data_path: str
+    budget_limit: float
+    output_format: str
+    num_records: int
+    template_version: NotRequired[int]
+    partition_strategy: NotRequired[str]
+    priority: NotRequired[int]
+
+
+class ResumeStateDict(TypedDict, total=False):
+    """Type definition for checkpoint resume state."""
+    last_seed_index: int
+    partial_results: Dict[str, Any]
+    step_outputs: Dict[str, str]
 
 
 class JobConfig(BaseModel):
@@ -20,7 +54,7 @@ class JobConfig(BaseModel):
     status: JobStatus = Field(default=JobStatus.QUEUED, description="Current job status")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Job creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
-    config: Dict[str, Any] = Field(..., description="Job configuration dictionary")
+    config: JobConfigDict = Field(..., description="Job configuration dictionary")
     budget_limit: float = Field(..., gt=0, description="Budget limit in USD")
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
@@ -162,7 +196,7 @@ class CheckpointState(BaseModel):
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     cost_accumulated: float = Field(default=0.0, ge=0, description="Cost accumulated in USD")
     last_updated: datetime = Field(default_factory=datetime.utcnow, description="Last checkpoint timestamp")
-    resume_state: Dict[str, Any] = Field(
+    resume_state: ResumeStateDict = Field(
         default_factory=dict,
         description="Custom state for resuming generation",
     )

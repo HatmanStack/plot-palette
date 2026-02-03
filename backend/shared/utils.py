@@ -5,6 +5,8 @@ This module provides utility functions for ID generation, cost calculation,
 S3 operations, logging, and data manipulation.
 """
 
+import os
+import re
 import uuid
 import logging
 import sys
@@ -22,6 +24,123 @@ from .constants import (
     PRESIGNED_URL_EXPIRATION,
     MODEL_TIERS,
 )
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename to prevent path traversal attacks.
+
+    Args:
+        filename: Raw filename from user input
+
+    Returns:
+        str: Sanitized filename safe for S3 keys
+
+    Raises:
+        ValueError: If filename is empty or contains only invalid characters
+
+    Examples:
+        >>> sanitize_filename("../../../etc/passwd")
+        'passwd'
+        >>> sanitize_filename("my file (1).json")
+        'my_file__1_.json'
+        >>> sanitize_filename("data.json")
+        'data.json'
+    """
+    # Extract basename to prevent path traversal
+    basename = os.path.basename(filename)
+    # Remove control characters
+    basename = re.sub(r'[\x00-\x1f\x7f]', '', basename)
+    # Replace unsafe characters with underscore, keeping only alphanumeric, dot, dash, underscore
+    sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', basename)
+    # Remove leading dots to prevent hidden files or relative paths
+    sanitized = sanitized.lstrip('.')
+    # Truncate to 255 characters (common filesystem limit)
+    sanitized = sanitized[:255]
+
+    if not sanitized:
+        raise ValueError("Invalid filename")
+
+    return sanitized
+
+
+def sanitize_error_message(error: str, max_length: int = 200) -> str:
+    """
+    Sanitize error messages to prevent information leakage.
+
+    Removes potentially sensitive information like file paths, stack traces,
+    internal identifiers, and truncates to a safe length.
+
+    Args:
+        error: Raw error message
+        max_length: Maximum length of output message
+
+    Returns:
+        str: Sanitized error message safe for client responses
+
+    Examples:
+        >>> sanitize_error_message("Error at /var/task/app.py:123")
+        'Error occurred'
+        >>> sanitize_error_message("KeyError: 'password'")
+        'Invalid key error'
+    """
+    if not error:
+        return "An error occurred"
+
+    # Remove file paths
+    sanitized = re.sub(r'(?:/[\w.-]+)+(?:\.\w+)?(?::\d+)?', '[path]', error)
+    # Remove potential stack traces
+    sanitized = re.sub(r'(?:File|Line|Traceback|at ).*', '', sanitized, flags=re.IGNORECASE)
+    # Remove AWS resource identifiers (ARNs, account IDs)
+    sanitized = re.sub(r'arn:aws:[a-zA-Z0-9-]+:[a-z0-9-]*:\d{12}:[^\s]+', '[resource]', sanitized)
+    sanitized = re.sub(r'\b\d{12}\b', '[account]', sanitized)
+    # Remove potential secrets/tokens (long alphanumeric strings)
+    sanitized = re.sub(r'\b[A-Za-z0-9+/=]{32,}\b', '[redacted]', sanitized)
+    # Clean up excessive whitespace
+    sanitized = ' '.join(sanitized.split())
+    # Truncate
+    if len(sanitized) > max_length:
+        sanitized = sanitized[:max_length - 3] + '...'
+
+    return sanitized.strip() or "An error occurred"
+
+
+def estimate_tokens(text: str, model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0") -> int:
+    """
+    Estimate token count based on model family.
+
+    Different model families have different tokenization characteristics.
+    Claude models average ~3.5 characters per token, while Llama/Mistral
+    average ~4 characters per token.
+
+    Args:
+        text: Input text to estimate tokens for
+        model_id: Bedrock model identifier
+
+    Returns:
+        int: Estimated token count
+
+    Examples:
+        >>> estimate_tokens("Hello, world!", "anthropic.claude-3-5-sonnet-20241022-v2:0")
+        4
+        >>> estimate_tokens("Hello, world!", "meta.llama3-1-8b-instruct-v1:0")
+        3
+    """
+    if not text:
+        return 0
+
+    text_len = len(text)
+
+    # Model-specific token estimation
+    if 'claude' in model_id.lower():
+        # Claude: ~3.5 characters per token
+        return max(1, int(text_len / 3.5))
+    elif 'llama' in model_id.lower() or 'mistral' in model_id.lower():
+        # Llama/Mistral: ~4 characters per token
+        return max(1, int(text_len / 4))
+    else:
+        # Default: ~4 characters per token
+        return max(1, int(text_len / 4))
 
 
 def generate_job_id() -> str:

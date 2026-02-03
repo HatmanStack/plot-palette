@@ -11,6 +11,11 @@ Parameters:
       - staging
       - production
 
+  AllowedOrigins:
+    Type: CommaDelimitedList
+    Default: 'https://plot-palette.example.com'
+    Description: Comma-separated list of allowed CORS origins (no wildcards in production)
+
 Resources:
   # Main S3 Bucket for all application data
   DataBucket:
@@ -54,8 +59,7 @@ Resources:
                 StorageClass: INTELLIGENT_TIERING
       CorsConfiguration:
         CorsRules:
-          - AllowedOrigins:
-              - '*'
+          - AllowedOrigins: !Ref AllowedOrigins
             AllowedMethods:
               - GET
               - PUT
@@ -63,7 +67,11 @@ Resources:
               - DELETE
               - HEAD
             AllowedHeaders:
-              - '*'
+              - Content-Type
+              - Authorization
+              - x-amz-content-sha256
+              - x-amz-date
+              - x-amz-security-token
             MaxAge: 3600
             ExposedHeaders:
               - ETag

@@ -11,7 +11,13 @@ from .models import (
     TemplateStep,
     CheckpointState,
     CostBreakdown,
+    CostComponents,
     QueueItem,
+    # TypedDict definitions
+    JobConfigDict,
+    TemplateStepDict,
+    TemplateDefinitionDict,
+    ResumeStateDict,
 )
 from .constants import (
     JobStatus,
@@ -49,6 +55,26 @@ from .utils import (
     parse_timestamp,
     get_aws_account_id,
     get_aws_region,
+    # New security utilities
+    sanitize_filename,
+    sanitize_error_message,
+    estimate_tokens,
+)
+from .aws_clients import (
+    get_dynamodb_resource,
+    get_dynamodb_client,
+    get_s3_client,
+    get_bedrock_client,
+    get_ecs_client,
+    get_sts_client,
+    clear_client_cache,
+)
+from .retry import (
+    retry_with_backoff,
+    CircuitBreaker,
+    CircuitBreakerOpen,
+    get_circuit_breaker,
+    is_retryable_error,
 )
 
 __version__ = "1.0.0"
@@ -60,7 +86,13 @@ __all__ = [
     "TemplateStep",
     "CheckpointState",
     "CostBreakdown",
+    "CostComponents",
     "QueueItem",
+    # TypedDict definitions
+    "JobConfigDict",
+    "TemplateStepDict",
+    "TemplateDefinitionDict",
+    "ResumeStateDict",
     # Constants
     "JobStatus",
     "ExportFormat",
@@ -96,4 +128,21 @@ __all__ = [
     "parse_timestamp",
     "get_aws_account_id",
     "get_aws_region",
+    "sanitize_filename",
+    "sanitize_error_message",
+    "estimate_tokens",
+    # AWS Clients
+    "get_dynamodb_resource",
+    "get_dynamodb_client",
+    "get_s3_client",
+    "get_bedrock_client",
+    "get_ecs_client",
+    "get_sts_client",
+    "clear_client_cache",
+    # Retry utilities
+    "retry_with_backoff",
+    "CircuitBreaker",
+    "CircuitBreakerOpen",
+    "get_circuit_breaker",
+    "is_retryable_error",
 ]

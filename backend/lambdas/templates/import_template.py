@@ -22,7 +22,7 @@ except ImportError:
     # YAML will be available via Lambda layer
     yaml = None
 
-from utils import setup_logger, generate_template_id
+from utils import setup_logger, generate_template_id, sanitize_error_message
 from template_filters import validate_template_syntax
 
 # Initialize logger
@@ -87,7 +87,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             template_data = yaml.safe_load(yaml_content)
         except yaml.YAMLError as e:
             logger.error(f"YAML parsing error: {str(e)}")
-            return error_response(400, f"Invalid YAML: {str(e)}")
+            return error_response(400, f"Invalid YAML: {sanitize_error_message(str(e))}")
 
         # Validate structure - ensure it's a dict
         if not isinstance(template_data, dict):
