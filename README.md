@@ -13,6 +13,8 @@
 <p>Generate synthetic training data at scale using AWS Bedrock foundation models. Leverage ECS Fargate Spot instances for up to 70% cost savings with automatic checkpoint recovery. Configure jobs, upload seed data, and monitor progress through a modern React web interface.</p>
 </div>
 
+** THIS REPO IS IN ACTIVE DEVELOPMENT AND WILL CHANGE OFTEN **
+
 ## Structure
 
 ```text
