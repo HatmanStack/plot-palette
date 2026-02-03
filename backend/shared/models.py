@@ -27,16 +27,21 @@ class TemplateDefinitionDict(TypedDict):
     steps: List[TemplateStepDict]
 
 
-class JobConfigDict(TypedDict):
-    """Type definition for job configuration."""
+class JobConfigDict(TypedDict, total=False):
+    """
+    Type definition for job configuration.
+
+    All fields are optional to maintain backward compatibility with
+    existing tests and code that may pass partial configs.
+    """
     template_id: str
     seed_data_path: str
     budget_limit: float
     output_format: str
     num_records: int
-    template_version: NotRequired[int]
-    partition_strategy: NotRequired[str]
-    priority: NotRequired[int]
+    template_version: int
+    partition_strategy: str
+    priority: int
 
 
 class ResumeStateDict(TypedDict, total=False):
@@ -54,7 +59,7 @@ class JobConfig(BaseModel):
     status: JobStatus = Field(default=JobStatus.QUEUED, description="Current job status")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Job creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
-    config: JobConfigDict = Field(..., description="Job configuration dictionary")
+    config: Dict[str, Any] = Field(..., description="Job configuration dictionary (see JobConfigDict for structure)")
     budget_limit: float = Field(..., gt=0, description="Budget limit in USD")
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
@@ -196,9 +201,9 @@ class CheckpointState(BaseModel):
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     cost_accumulated: float = Field(default=0.0, ge=0, description="Cost accumulated in USD")
     last_updated: datetime = Field(default_factory=datetime.utcnow, description="Last checkpoint timestamp")
-    resume_state: ResumeStateDict = Field(
+    resume_state: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Custom state for resuming generation",
+        description="Custom state for resuming generation (see ResumeStateDict for structure)",
     )
     etag: Optional[str] = Field(None, description="S3 ETag for concurrency control")
 

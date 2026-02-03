@@ -4,6 +4,9 @@ End-to-End Authentication Flow Tests for Plot Palette
 Tests the complete authentication flow from user signup through accessing
 protected API endpoints. Validates Cognito User Pool and API Gateway JWT
 authorization integration.
+
+These tests require REAL AWS Cognito credentials and are skipped by default.
+To run: REAL_AUTH_TESTS=1 pytest tests/integration/test_auth_flow.py
 """
 
 import os
@@ -14,6 +17,14 @@ import boto3
 import requests
 from datetime import datetime
 from botocore.exceptions import ClientError
+
+# Skip entire module unless REAL_AUTH_TESTS is set
+if not os.getenv('REAL_AUTH_TESTS'):
+    pytest.skip(
+        "Skipping auth flow tests (require real AWS Cognito). "
+        "Set REAL_AUTH_TESTS=1 to run.",
+        allow_module_level=True
+    )
 
 
 @pytest.fixture(scope="class")
