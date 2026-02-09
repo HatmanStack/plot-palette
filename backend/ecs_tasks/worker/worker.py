@@ -395,6 +395,9 @@ class Worker:
             response = s3_client.get_object(Bucket=bucket, Key=key)
             checkpoint_data = json.loads(response['Body'].read())
 
+            # Capture S3 ETag for conditional writes
+            checkpoint_data['_etag'] = response.get('ETag', '')
+
             # Load version from DynamoDB
             metadata_response = checkpoint_metadata_table.get_item(
                 Key={'job_id': job_id}
@@ -467,22 +470,29 @@ class Worker:
                 }
             )
 
-            # Successfully claimed write permission - now write to S3
-            s3_client.put_object(
-                Bucket=bucket,
-                Key=s3_key,
-                Body=checkpoint_json.encode('utf-8'),
-                ContentType='application/json'
-            )
+            # Successfully claimed write permission - now write to S3 with ETag condition
+            put_kwargs = {
+                'Bucket': bucket,
+                'Key': s3_key,
+                'Body': checkpoint_json.encode('utf-8'),
+                'ContentType': 'application/json',
+            }
+            stored_etag = checkpoint_data.get('_etag')
+            if stored_etag:
+                put_kwargs['IfMatch'] = stored_etag
 
-            # Store the new version for next write
+            s3_response = s3_client.put_object(**put_kwargs)
+
+            # Store the new version and ETag for next write
             checkpoint_data['_version'] = new_version
+            checkpoint_data['_etag'] = s3_response.get('ETag', '')
 
             logger.info(f"Saved checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {new_version})")
 
         except ClientError as e:
-            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                logger.warning(f"Checkpoint version conflict for job {job_id} (retry {retry_count + 1}/{MAX_RETRIES}), reloading and merging")
+            error_code = e.response['Error']['Code']
+            if error_code in ('ConditionalCheckFailedException', 'PreconditionFailed', '412'):
+                logger.warning(f"Checkpoint conflict ({error_code}) for job {job_id} (retry {retry_count + 1}/{MAX_RETRIES}), reloading and merging")
 
                 # Another task updated checkpoint - reload and merge
                 current_checkpoint = self.load_checkpoint(job_id)

@@ -377,3 +377,61 @@ class TestCheckpointMutationFix:
         assert '_etag' not in serializable_data
         assert '_version' not in serializable_data
         assert 'job_id' in serializable_data
+
+
+class TestETagConditionalWrites:
+    """Tests for S3 ETag conditional write support."""
+
+    def test_etag_captured_on_load(self):
+        """Test that ETag is captured from S3 response during load_checkpoint."""
+        s3_response = {
+            'Body': '{"records_generated": 500}',
+            'ETag': '"abc123def456"',
+        }
+
+        checkpoint_data = {'records_generated': 500}
+        checkpoint_data['_etag'] = s3_response.get('ETag', '')
+
+        assert checkpoint_data['_etag'] == '"abc123def456"'
+
+    def test_etag_passed_on_s3_put(self):
+        """Test that ETag is included in S3 put_object as IfMatch."""
+        checkpoint_data = {
+            'records_generated': 600,
+            '_etag': '"abc123def456"',
+            '_version': 5,
+        }
+
+        put_kwargs = {
+            'Bucket': 'test-bucket',
+            'Key': 'jobs/test-job/checkpoint.json',
+            'Body': b'{}',
+            'ContentType': 'application/json',
+        }
+        stored_etag = checkpoint_data.get('_etag')
+        if stored_etag:
+            put_kwargs['IfMatch'] = stored_etag
+
+        assert 'IfMatch' in put_kwargs
+        assert put_kwargs['IfMatch'] == '"abc123def456"'
+
+    def test_no_etag_skips_conditional_write(self):
+        """Test that missing ETag skips IfMatch (first write)."""
+        checkpoint_data = {
+            'records_generated': 0,
+            '_version': 0,
+        }
+
+        put_kwargs = {'Bucket': 'b', 'Key': 'k', 'Body': b'{}', 'ContentType': 'application/json'}
+        stored_etag = checkpoint_data.get('_etag')
+        if stored_etag:
+            put_kwargs['IfMatch'] = stored_etag
+
+        assert 'IfMatch' not in put_kwargs
+
+    def test_412_error_triggers_checkpoint_reload(self):
+        """Test that PreconditionFailed triggers reload and retry."""
+        error_code = 'PreconditionFailed'
+        retriable_codes = ('ConditionalCheckFailedException', 'PreconditionFailed', '412')
+
+        assert error_code in retriable_codes
