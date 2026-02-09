@@ -74,6 +74,7 @@ class Worker:
     def __init__(self):
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_shutdown)
+        signal.signal(signal.SIGALRM, self.handle_alarm_timeout)
         self.template_engine = TemplateEngine()
         logger.info("Worker initialized")
 
@@ -83,6 +84,11 @@ class Worker:
         self.shutdown_requested = True
         # Set alarm to force exit after 100 seconds (leave 20s buffer)
         signal.alarm(100)
+
+    def handle_alarm_timeout(self, signum, frame):
+        """Handle SIGALRM — graceful shutdown timed out, force exit."""
+        logger.error("SIGALRM: graceful shutdown timed out, forcing exit")
+        sys.exit(1)
 
     def run(self):
         """Main worker loop - process one job then exit."""
@@ -427,10 +433,12 @@ class Worker:
         checkpoint_data['last_updated'] = datetime.utcnow().isoformat()
 
         # Get current version from checkpoint_data (or 0 for first write)
-        current_version = checkpoint_data.pop('_version', 0)
+        current_version = checkpoint_data.get('_version', 0)
         new_version = current_version + 1
 
-        checkpoint_json = json.dumps(checkpoint_data, indent=2)
+        # Build serializable dict excluding internal metadata keys
+        serializable_data = {k: v for k, v in checkpoint_data.items() if k not in ('_version', '_etag')}
+        checkpoint_json = json.dumps(serializable_data, indent=2)
 
         # First, try to claim write permission via DynamoDB conditional update
         try:
