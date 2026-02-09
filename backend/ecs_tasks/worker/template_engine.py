@@ -16,7 +16,7 @@ import jinja2
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
-from retry import CircuitBreakerOpen, retry_with_backoff
+from retry import CircuitBreakerOpen, get_circuit_breaker, retry_with_backoff
 from template_filters import CUSTOM_FILTERS
 
 if TYPE_CHECKING:
@@ -184,19 +184,33 @@ class TemplateEngine:
 
         return results
 
-    @retry_with_backoff(
-        max_retries=3,
-        base_delay=1.0,
-        max_delay=30.0,
-        circuit_breaker_name='bedrock'
-    )
     def call_bedrock(self, client, model_id: str, prompt: str) -> str:
         """
         Call AWS Bedrock API with model-specific formatting.
 
-        Uses retry with exponential backoff and circuit breaker pattern
+        Uses retry with exponential backoff and per-model circuit breaker
         to handle transient failures and throttling.
         """
+        cb_name = f'bedrock:{model_id}'
+        cb = get_circuit_breaker(cb_name)
+        if not cb.can_execute():
+            raise CircuitBreakerOpen(f"Circuit breaker '{cb_name}' is open")
+
+        try:
+            result = self._invoke_bedrock(client, model_id, prompt)
+            cb.record_success()
+            return result
+        except Exception:
+            cb.record_failure()
+            raise
+
+    @retry_with_backoff(
+        max_retries=3,
+        base_delay=1.0,
+        max_delay=30.0,
+    )
+    def _invoke_bedrock(self, client, model_id: str, prompt: str) -> str:
+        """Invoke Bedrock model with retry logic (no circuit breaker)."""
         try:
             # Format request based on model family
             if 'claude' in model_id.lower():

@@ -243,6 +243,7 @@ class Worker:
 
         batch_records = []
         batch_number = checkpoint.get('current_batch', 1)
+        running_cost = checkpoint.get('cost_accumulated', 0.0)
 
         for i in range(start_index, target_records):
             if self.shutdown_requested:
@@ -251,10 +252,9 @@ class Worker:
                 self.save_batch(job_id, batch_number, batch_records)
                 break
 
-            # Check budget before each generation (stub for now, implemented in Task 6)
-            current_cost = self.calculate_current_cost(job_id)
-            if current_cost >= budget_limit:
-                logger.warning(f"Budget limit reached: ${current_cost:.2f} >= ${budget_limit:.2f}")
+            # Check budget using in-memory running cost (updated after every call)
+            if running_cost >= budget_limit:
+                logger.warning(f"Budget limit reached: ${running_cost:.2f} >= ${budget_limit:.2f}")
                 raise BudgetExceededError(f"Exceeded budget limit of ${budget_limit}")
 
             # Select random seed data
@@ -278,9 +278,21 @@ class Worker:
 
                 batch_records.append(record)
 
+                # Determine model_id for cost tracking
+                step_model_id = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+                if isinstance(result, dict):
+                    for step_result in result.values():
+                        if isinstance(step_result, dict) and 'model' in step_result:
+                            step_model_id = step_result['model']
+                            break
+
                 # Update checkpoint counters
                 checkpoint['records_generated'] = i + 1
-                checkpoint['tokens_used'] = checkpoint.get('tokens_used', 0) + self.estimate_tokens(result)
+                checkpoint['tokens_used'] = checkpoint.get('tokens_used', 0) + self.estimate_tokens(result, step_model_id)
+                checkpoint['model_id'] = step_model_id
+
+                # Update in-memory running cost after every Bedrock call
+                running_cost += self.estimate_single_call_cost(result, step_model_id)
 
                 # Checkpoint every N records
                 if (i + 1) % self.CHECKPOINT_INTERVAL == 0:
@@ -541,13 +553,29 @@ class Worker:
             # Fail open to avoid blocking generation
             return 0.0
 
+    def estimate_single_call_cost(self, result, model_id):
+        """Estimate cost of a single Bedrock call including input and output tokens."""
+        pricing = MODEL_PRICING.get(model_id, MODEL_PRICING['anthropic.claude-3-5-sonnet-20241022-v2:0'])
+        tokens = self.estimate_tokens(result, model_id)
+        # Assume 40/60 input/output token split
+        input_tokens = int(tokens * 0.4)
+        output_tokens = tokens - input_tokens
+        input_cost = (input_tokens / 1_000_000) * pricing['input']
+        output_cost = (output_tokens / 1_000_000) * pricing['output']
+        return input_cost + output_cost
+
     def update_cost_tracking(self, job_id, checkpoint):
         """Write cost tracking record to DynamoDB with 90-day TTL."""
         tokens_used = checkpoint.get('tokens_used', 0)
+        model_id = checkpoint.get('model_id', 'anthropic.claude-3-5-sonnet-20241022-v2:0')
 
-        # Calculate Bedrock cost (simplified - assumes Claude Sonnet average)
-        # In real implementation, would track per-model usage
-        bedrock_cost = (tokens_used / 1_000_000) * MODEL_PRICING['anthropic.claude-3-5-sonnet-20241022-v2:0']['input']
+        # Calculate Bedrock cost using both input and output pricing
+        pricing = MODEL_PRICING.get(model_id, MODEL_PRICING['anthropic.claude-3-5-sonnet-20241022-v2:0'])
+        # Assume 40/60 input/output token split
+        input_tokens = int(tokens_used * 0.4)
+        output_tokens = tokens_used - input_tokens
+        bedrock_cost = (input_tokens / 1_000_000) * pricing['input'] + \
+                       (output_tokens / 1_000_000) * pricing['output']
 
         # Calculate Fargate cost (elapsed time)
         started_at_str = checkpoint.get('started_at')
