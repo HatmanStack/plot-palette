@@ -51,7 +51,7 @@ class TemplateEngine:
                 logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
 
         # Create Jinja2 environment with custom loader (no autoescape — prompts are plain text, not HTML)
-        self.env = jinja2.Environment(
+        self.env = jinja2.Environment(  # nosec B701 — LLM prompts are plain text, not HTML
             loader=jinja2.FunctionLoader(self.load_template_string),
             autoescape=False,
             trim_blocks=True,
