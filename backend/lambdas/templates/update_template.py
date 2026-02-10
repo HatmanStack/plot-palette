@@ -18,6 +18,7 @@ import jinja2
 import jinja2.meta
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+from lambda_responses import error_response, success_response
 from template_filters import validate_template_syntax
 from utils import sanitize_error_message, setup_logger
 
@@ -50,18 +51,6 @@ def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str
 
     except jinja2.TemplateSyntaxError as e:
         raise ValueError(f"Invalid template syntax: {str(e)}") from e
-
-
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """Generate error response."""
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
 
 
 def get_latest_version(template_id: str) -> int:
@@ -196,20 +185,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "new_version": new_version
         }))
 
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps({
-                "template_id": template_id,
-                "version": new_version,
-                "previous_version": latest_version,
-                "schema_requirements": schema_reqs,
-                "message": "Template updated successfully"
-            })
-        }
+        return success_response(200, {
+            "template_id": template_id,
+            "version": new_version,
+            "previous_version": latest_version,
+            "schema_requirements": schema_reqs,
+            "message": "Template updated successfully"
+        })
 
     except KeyError as e:
         logger.error(json.dumps({

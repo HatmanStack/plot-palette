@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from constants import ExportFormat, JobStatus
+from lambda_responses import error_response, success_response
 from models import JobConfig
 from utils import generate_job_id, sanitize_error_message, setup_logger
 
@@ -143,27 +144,6 @@ def start_worker_task(job_id: str) -> str:
         raise
 
 
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """
-    Generate error response.
-
-    Args:
-        status_code: HTTP status code
-        message: Error message
-
-    Returns:
-        Dict: API Gateway response object
-    """
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
-
-
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for POST /jobs endpoint.
@@ -210,19 +190,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "job_id": item['job_id'],
                         "idempotency_token": idempotency_token,
                     }))
-                    return {
-                        "statusCode": 200,
-                        "headers": {
-                            "Content-Type": "application/json",
-                            "Access-Control-Allow-Origin": "*",
-                        },
-                        "body": json.dumps({
-                            "job_id": item['job_id'],
-                            "status": item['status'],
-                            "created_at": item.get('created_at', ''),
-                            "message": "Existing job returned (idempotent)",
-                        }),
-                    }
+                    return success_response(200, {
+                        "job_id": item['job_id'],
+                        "status": item['status'],
+                        "created_at": item.get('created_at', ''),
+                        "message": "Existing job returned (idempotent)",
+                    })
             except ClientError as e:
                 logger.warning(json.dumps({
                     "event": "idempotency_check_failed",
@@ -337,19 +310,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "error": str(e)
             }))
 
-        return {
-            "statusCode": 201,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps({
-                "job_id": job_id,
-                "status": "QUEUED",
-                "created_at": now,
-                "message": "Job created successfully"
-            })
-        }
+        return success_response(201, {
+            "job_id": job_id,
+            "status": "QUEUED",
+            "created_at": now,
+            "message": "Job created successfully"
+        })
 
     except KeyError as e:
         logger.error(json.dumps({

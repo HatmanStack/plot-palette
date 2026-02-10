@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+from lambda_responses import error_response, success_response
 from utils import sanitize_error_message, setup_logger
 
 # Initialize logger
@@ -34,17 +35,6 @@ cost_tracking_table = dynamodb.Table(os.environ.get('COST_TRACKING_TABLE_NAME', 
 ecs_client = get_ecs_client()
 s3_client = get_s3_client()
 
-
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """Generate error response."""
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
 
 
 def delete_s3_job_data(bucket: str, job_id: str) -> None:
@@ -313,17 +303,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "action": message
         }))
 
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps({
-                "message": message,
-                "job_id": job_id
-            })
-        }
+        return success_response(200, {"message": message, "job_id": job_id})
 
     except KeyError as e:
         logger.error(json.dumps({

@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../ecs_tasks/worker'))
 
 from botocore.exceptions import ClientError
+from lambda_responses import error_response, success_response
 from template_engine import TemplateEngine
 from utils import get_nested_field, sanitize_error_message, setup_logger
 
@@ -119,18 +120,6 @@ def execute_template_real(template_def: Dict, seed_data: Dict) -> Dict:
         raise
 
 
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """Generate error response."""
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
-
-
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for POST /templates/{template_id}/test endpoint.
@@ -214,22 +203,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "mock": use_mock
         }))
 
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps({
-                "template_id": template_id,
-                "template_name": template['name'],
-                "sample_data": sample_data,
-                "result": result,
-                "mock": use_mock,
-                "steps_count": len(result),
-                "message": "Template test completed successfully"
-            })
-        }
+        return success_response(200, {
+            "template_id": template_id,
+            "template_name": template['name'],
+            "sample_data": sample_data,
+            "result": result,
+            "mock": use_mock,
+            "steps_count": len(result),
+            "message": "Template test completed successfully"
+        })
 
     except KeyError as e:
         logger.error(f"Missing field: {str(e)}", exc_info=True)

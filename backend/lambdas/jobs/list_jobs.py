@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
+from lambda_responses import error_response, success_response
 from utils import sanitize_error_message, setup_logger
 
 # Initialize logger
@@ -26,17 +27,6 @@ from aws_clients import get_dynamodb_resource
 dynamodb = get_dynamodb_resource()
 jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE_NAME', 'plot-palette-Jobs'))
 
-
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """Generate error response."""
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -134,14 +124,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "count": len(jobs)
         }))
 
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps(result, default=str)
-        }
+        return success_response(200, result, default=str)
 
     except KeyError as e:
         logger.error(json.dumps({

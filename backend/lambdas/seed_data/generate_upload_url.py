@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 from botocore.exceptions import ClientError
 from constants import PRESIGNED_URL_EXPIRATION
+from lambda_responses import error_response, success_response
 from utils import sanitize_error_message, sanitize_filename, setup_logger
 
 # Initialize logger
@@ -24,18 +25,6 @@ logger = setup_logger(__name__)
 from aws_clients import get_s3_client
 
 s3_client = get_s3_client()
-
-
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """Generate error response."""
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -115,20 +104,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "expires_in": PRESIGNED_URL_EXPIRATION
         }))
 
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps({
-                "upload_url": presigned_url,
-                "s3_key": s3_key,
-                "bucket": bucket,
-                "expires_in": PRESIGNED_URL_EXPIRATION,
-                "message": f"Upload URL valid for {PRESIGNED_URL_EXPIRATION // 60} minutes"
-            })
-        }
+        return success_response(200, {
+            "upload_url": presigned_url,
+            "s3_key": s3_key,
+            "bucket": bucket,
+            "expires_in": PRESIGNED_URL_EXPIRATION,
+            "message": f"Upload URL valid for {PRESIGNED_URL_EXPIRATION // 60} minutes"
+        })
 
     except KeyError as e:
         logger.error(json.dumps({

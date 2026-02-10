@@ -18,6 +18,7 @@ import jinja2
 import jinja2.meta
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
+from lambda_responses import error_response, success_response
 from utils import generate_template_id, sanitize_error_message, setup_logger
 
 # Initialize logger
@@ -62,18 +63,6 @@ def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str
 
     except jinja2.TemplateSyntaxError as e:
         raise ValueError(f"Invalid template syntax: {str(e)}") from e
-
-
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """Generate error response."""
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -121,18 +110,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "template_id": item['template_id'],
                         "idempotency_token": idempotency_token,
                     }))
-                    return {
-                        "statusCode": 200,
-                        "headers": {
-                            "Content-Type": "application/json",
-                            "Access-Control-Allow-Origin": "*",
-                        },
-                        "body": json.dumps({
+                    return success_response(200, {
                             "template_id": item['template_id'],
                             "version": item.get('version', 1),
                             "message": "Existing template returned (idempotent)",
-                        }),
-                    }
+                        })
             except ClientError as e:
                 logger.warning(json.dumps({
                     "event": "idempotency_check_failed",
@@ -210,19 +192,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "schema_requirements": schema_reqs
         }))
 
-        return {
-            "statusCode": 201,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps({
-                "template_id": template_id,
-                "version": 1,
-                "schema_requirements": schema_reqs,
-                "message": "Template created successfully"
-            })
-        }
+        return success_response(201, {
+            "template_id": template_id,
+            "version": 1,
+            "schema_requirements": schema_reqs,
+            "message": "Template created successfully"
+        })
 
     except KeyError as e:
         logger.error(json.dumps({
