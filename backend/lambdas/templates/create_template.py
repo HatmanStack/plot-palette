@@ -44,7 +44,7 @@ def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str
     Raises:
         ValueError: If template syntax is invalid
     """
-    env = jinja2.Environment()
+    env = jinja2.Environment(autoescape=True)
     all_variables = set()
 
     try:

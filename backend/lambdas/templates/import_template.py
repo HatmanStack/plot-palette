@@ -146,7 +146,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         import jinja2
         import jinja2.meta
 
-        env = jinja2.Environment()
+        env = jinja2.Environment(autoescape=True)
         all_variables = set()
 
         for step in template['steps']:
