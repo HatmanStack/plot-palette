@@ -50,10 +50,10 @@ class TemplateEngine:
             except Exception as e:
                 logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
 
-        # Create Jinja2 environment with custom loader and autoescape enabled
+        # Create Jinja2 environment with custom loader (no autoescape — prompts are plain text, not HTML)
         self.env = jinja2.Environment(
             loader=jinja2.FunctionLoader(self.load_template_string),
-            autoescape=jinja2.select_autoescape(default_for_string=True, default=True),
+            autoescape=False,
             trim_blocks=True,
             lstrip_blocks=True
         )
@@ -147,14 +147,14 @@ class TemplateEngine:
                 model_id = MODEL_TIERS.get(model_id, model_id)
 
             try:
-                # Prune context to only keep referenced step outputs
+                # Build a render context with pruned steps (don't mutate original)
+                render_context = dict(context)
                 if 'steps' in context and context['steps']:
                     referenced = self._find_referenced_steps(step.get('prompt', ''))
-                    pruned_steps = {k: v for k, v in context['steps'].items() if k in referenced}
-                    context['steps'] = pruned_steps
+                    render_context['steps'] = {k: v for k, v in context['steps'].items() if k in referenced}
 
-                # Render prompt with current context
-                prompt = self.render_step(step, context)
+                # Render prompt with pruned context
+                prompt = self.render_step(step, render_context)
 
                 # Call Bedrock
                 logger.info(f"Calling Bedrock for step '{step_id}' with model '{model_id}'")

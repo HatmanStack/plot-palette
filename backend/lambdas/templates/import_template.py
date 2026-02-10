@@ -77,7 +77,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     IndexName='user-id-index',
                     KeyConditionExpression=Key('user_id').eq(user_id),
                     FilterExpression=Attr('idempotency_token').eq(idempotency_token),
-                    Limit=1,
                 )
                 if existing.get('Items'):
                     item = existing['Items'][0]

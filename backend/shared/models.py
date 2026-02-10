@@ -94,7 +94,7 @@ class JobConfig(BaseModel):
             "status": self.status.value,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
-            "config": self.config,
+            "config": self._convert_floats(self.config),
             "budget_limit": Decimal(str(self.budget_limit)),
             "tokens_used": self.tokens_used,
             "records_generated": self.records_generated,
@@ -102,19 +102,20 @@ class JobConfig(BaseModel):
         }
 
     @staticmethod
+    def _convert_floats(obj: Any) -> Any:
+        """Convert float values to Decimal (required by DynamoDB)."""
+        if isinstance(obj, float):
+            return Decimal(str(obj))
+        if isinstance(obj, dict):
+            return {k: JobConfig._convert_floats(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [JobConfig._convert_floats(i) for i in obj]
+        return obj
+
+    @staticmethod
     def _dict_to_dynamodb_map(d: Dict[str, Any]) -> Dict[str, Any]:
         """Convert Python dict to DynamoDB Map format using boto3 TypeSerializer."""
-        def _convert_floats(obj: Any) -> Any:
-            """TypeSerializer requires Decimal instead of float."""
-            if isinstance(obj, float):
-                return Decimal(str(obj))
-            if isinstance(obj, dict):
-                return {k: _convert_floats(v) for k, v in obj.items()}
-            if isinstance(obj, list):
-                return [_convert_floats(i) for i in obj]
-            return obj
-
-        return {k: _serializer.serialize(_convert_floats(v)) for k, v in d.items()}
+        return {k: _serializer.serialize(JobConfig._convert_floats(v)) for k, v in d.items()}
 
     @classmethod
     def from_dynamodb(cls, item: Dict[str, Any]) -> "JobConfig":

@@ -563,29 +563,25 @@ class Worker:
             # Fail open to avoid blocking generation
             return 0.0
 
-    def estimate_single_call_cost(self, result, model_id):
-        """Estimate cost of a single Bedrock call including input and output tokens."""
+    def _calculate_bedrock_cost(self, tokens, model_id):
+        """Calculate Bedrock cost for a token count assuming 40/60 input/output split."""
         pricing = MODEL_PRICING.get(model_id, MODEL_PRICING['anthropic.claude-3-5-sonnet-20241022-v2:0'])
-        tokens = self.estimate_tokens(result, model_id)
-        # Assume 40/60 input/output token split
         input_tokens = int(tokens * 0.4)
         output_tokens = tokens - input_tokens
-        input_cost = (input_tokens / 1_000_000) * pricing['input']
-        output_cost = (output_tokens / 1_000_000) * pricing['output']
-        return input_cost + output_cost
+        return (input_tokens / 1_000_000) * pricing['input'] + \
+               (output_tokens / 1_000_000) * pricing['output']
+
+    def estimate_single_call_cost(self, result, model_id):
+        """Estimate cost of a single Bedrock call including input and output tokens."""
+        tokens = self.estimate_tokens(result, model_id)
+        return self._calculate_bedrock_cost(tokens, model_id)
 
     def update_cost_tracking(self, job_id, checkpoint):
         """Write cost tracking record to DynamoDB with 90-day TTL."""
         tokens_used = checkpoint.get('tokens_used', 0)
         model_id = checkpoint.get('model_id', 'anthropic.claude-3-5-sonnet-20241022-v2:0')
 
-        # Calculate Bedrock cost using both input and output pricing
-        pricing = MODEL_PRICING.get(model_id, MODEL_PRICING['anthropic.claude-3-5-sonnet-20241022-v2:0'])
-        # Assume 40/60 input/output token split
-        input_tokens = int(tokens_used * 0.4)
-        output_tokens = tokens_used - input_tokens
-        bedrock_cost = (input_tokens / 1_000_000) * pricing['input'] + \
-                       (output_tokens / 1_000_000) * pricing['output']
+        bedrock_cost = self._calculate_bedrock_cost(tokens_used, model_id)
 
         # Calculate Fargate cost (elapsed time)
         started_at_str = checkpoint.get('started_at')
