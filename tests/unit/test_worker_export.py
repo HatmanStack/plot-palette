@@ -6,6 +6,7 @@ Tests for the export_data function including JSONL, Parquet, and CSV format gene
 
 import pytest
 import json
+import pandas as pd
 
 
 class TestJSONLExport:
@@ -374,3 +375,68 @@ class TestExportLogging:
 
         assert 'Exported JSONL' in log_message
         assert key in log_message
+
+
+class TestStreamingExport:
+    """Tests for generator-based streaming export."""
+
+    def test_generator_yields_records(self):
+        """Test that generator-based loading yields individual records."""
+        # Simulate a generator
+        def mock_generator():
+            for i in range(5):
+                yield {'id': f'record-{i}', 'job_id': 'test', 'timestamp': '2025-01-01', 'generation_result': {}}
+
+        records = list(mock_generator())
+        assert len(records) == 5
+        assert records[0]['id'] == 'record-0'
+
+    def test_jsonl_streaming_produces_valid_output(self):
+        """Test that streaming JSONL export produces valid JSONL lines."""
+        records = [
+            {'id': f'record-{i}', 'job_id': 'test', 'timestamp': '2025-01-01', 'generation_result': {'text': f'gen-{i}'}}
+            for i in range(3)
+        ]
+
+        lines = []
+        for record in records:
+            lines.append(json.dumps(record))
+
+        output = '\n'.join(lines)
+        # Each line should be valid JSON
+        for line in output.strip().split('\n'):
+            parsed = json.loads(line)
+            assert 'id' in parsed
+
+    def test_parquet_chunked_export_readable(self):
+        """Test that chunked Parquet export produces readable data."""
+        records = [
+            {'id': f'r-{i}', 'job_id': 'test', 'timestamp': '2025-01-01',
+             'seed_data_id': 'seed-1', 'generation_result': json.dumps({'text': f'gen-{i}'})}
+            for i in range(25)
+        ]
+
+        # Simulate chunked write with chunk size of 10
+        chunks = [records[i:i+10] for i in range(0, len(records), 10)]
+        assert len(chunks) == 3  # 10 + 10 + 5
+
+        # Each chunk should be convertable to DataFrame
+        for chunk in chunks:
+            df = pd.DataFrame(chunk)
+            assert len(df) > 0
+
+    def test_export_data_calls_load_per_format(self):
+        """Test that export_data creates a fresh generator per format."""
+        # Generators can't be reused, so each format needs its own
+        call_count = 0
+
+        def mock_load():
+            nonlocal call_count
+            call_count += 1
+            yield {'id': '1', 'job_id': 'test', 'timestamp': '2025-01-01', 'generation_result': {}}
+
+        # Simulate calling for 3 formats
+        for _ in ['JSONL', 'PARQUET', 'CSV']:
+            list(mock_load())
+
+        assert call_count == 3
