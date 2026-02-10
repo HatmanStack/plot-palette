@@ -233,11 +233,14 @@ Resources:
             - Effect: Allow
               Action:
                 - ecs:RunTask
-              Resource: '*'
+              Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/plot-palette-*'
             - Effect: Allow
               Action:
                 - iam:PassRole
-              Resource: '*'
+              Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/plot-palette-*'
+              Condition:
+                StringEquals:
+                  iam:PassedToService: ecs-tasks.amazonaws.com
       Events:
         CreateJob:
           Type: HttpApi
@@ -300,7 +303,7 @@ Resources:
             - Effect: Allow
               Action:
                 - ecs:StopTask
-              Resource: '*'
+              Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task/plot-palette-*'
       Events:
         DeleteJob:
           Type: HttpApi
@@ -412,7 +415,10 @@ Resources:
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
-              Resource: '*'
+              Resource:
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/meta.llama*'
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/mistral.*'
       Events:
         TestTemplate:
           Type: HttpApi

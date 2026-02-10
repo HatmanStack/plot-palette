@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 import jinja2
 import jinja2.meta
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from utils import generate_template_id, sanitize_error_message, setup_logger
 
@@ -103,6 +104,41 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         except json.JSONDecodeError:
             return error_response(400, "Invalid JSON in request body")
 
+        # Check idempotency token
+        idempotency_token = body.get('idempotency_token')
+        if idempotency_token:
+            try:
+                existing = templates_table.query(
+                    IndexName='user-id-index',
+                    KeyConditionExpression=Key('user_id').eq(user_id),
+                    FilterExpression=Attr('idempotency_token').eq(idempotency_token),
+                    Limit=1,
+                )
+                if existing.get('Items'):
+                    item = existing['Items'][0]
+                    logger.info(json.dumps({
+                        "event": "idempotent_template_returned",
+                        "template_id": item['template_id'],
+                        "idempotency_token": idempotency_token,
+                    }))
+                    return {
+                        "statusCode": 200,
+                        "headers": {
+                            "Content-Type": "application/json",
+                            "Access-Control-Allow-Origin": "*",
+                        },
+                        "body": json.dumps({
+                            "template_id": item['template_id'],
+                            "version": item.get('version', 1),
+                            "message": "Existing template returned (idempotent)",
+                        }),
+                    }
+            except ClientError as e:
+                logger.warning(json.dumps({
+                    "event": "idempotency_check_failed",
+                    "error": str(e),
+                }))
+
         # Validate required fields
         if 'name' not in body:
             return error_response(400, "Missing required field: name")
@@ -147,8 +183,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Insert into Templates table
         try:
-            templates_table.put_item(Item=template)
+            if idempotency_token:
+                template['idempotency_token'] = idempotency_token
+            templates_table.put_item(
+                Item=template,
+                ConditionExpression='attribute_not_exists(template_id)',
+            )
         except ClientError as e:
+            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                logger.warning(json.dumps({
+                    "event": "template_id_conflict",
+                    "template_id": template_id,
+                }))
+                return error_response(409, "Template creation conflict, please retry")
             logger.error(json.dumps({
                 "event": "template_insert_error",
                 "error": str(e)

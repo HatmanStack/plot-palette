@@ -14,6 +14,7 @@ from typing import Any, Dict
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from constants import ExportFormat, JobStatus
 from models import JobConfig
@@ -192,6 +193,42 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         except json.JSONDecodeError:
             return error_response(400, "Invalid JSON in request body")
 
+        # Check idempotency token
+        idempotency_token = body.get('idempotency_token')
+        if idempotency_token:
+            try:
+                existing = jobs_table.query(
+                    IndexName='user-id-index',
+                    KeyConditionExpression=Key('user_id').eq(user_id),
+                    FilterExpression=Attr('idempotency_token').eq(idempotency_token),
+                    Limit=1,
+                )
+                if existing.get('Items'):
+                    item = existing['Items'][0]
+                    logger.info(json.dumps({
+                        "event": "idempotent_job_returned",
+                        "job_id": item['job_id'],
+                        "idempotency_token": idempotency_token,
+                    }))
+                    return {
+                        "statusCode": 200,
+                        "headers": {
+                            "Content-Type": "application/json",
+                            "Access-Control-Allow-Origin": "*",
+                        },
+                        "body": json.dumps({
+                            "job_id": item['job_id'],
+                            "status": item['status'],
+                            "created_at": item.get('created_at', ''),
+                            "message": "Existing job returned (idempotent)",
+                        }),
+                    }
+            except ClientError as e:
+                logger.warning(json.dumps({
+                    "event": "idempotency_check_failed",
+                    "error": str(e),
+                }))
+
         # Validate configuration
         is_valid, error_msg = validate_job_config(body)
         if not is_valid:
@@ -239,8 +276,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Insert into Jobs table using typed serialization
         try:
-            jobs_table.put_item(Item=job.to_dynamodb())
+            job_item = job.to_dynamodb()
+            if idempotency_token:
+                job_item['idempotency_token'] = idempotency_token
+            jobs_table.put_item(
+                Item=job_item,
+                ConditionExpression='attribute_not_exists(job_id)',
+            )
         except ClientError as e:
+            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                logger.warning(json.dumps({
+                    "event": "job_id_conflict",
+                    "job_id": job_id,
+                }))
+                return error_response(409, "Job creation conflict, please retry")
             logger.error(json.dumps({
                 "event": "job_insert_error",
                 "error": str(e)
