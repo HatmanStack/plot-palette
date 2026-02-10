@@ -14,7 +14,6 @@ from typing import Any, Dict, List
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
-import boto3
 import jinja2
 import jinja2.meta
 from boto3.dynamodb.conditions import Key
@@ -26,7 +25,9 @@ from utils import sanitize_error_message, setup_logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
+from aws_clients import get_dynamodb_resource
+
+dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
 
 

@@ -14,7 +14,6 @@ from typing import Any, Dict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../ecs_tasks/worker'))
 
-import boto3
 from botocore.exceptions import ClientError
 from template_engine import TemplateEngine
 from utils import get_nested_field, sanitize_error_message, setup_logger
@@ -23,19 +22,11 @@ from utils import get_nested_field, sanitize_error_message, setup_logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
+from aws_clients import get_bedrock_client, get_dynamodb_resource
+
+dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
 
-# Bedrock client (only initialized if needed)
-bedrock_client = None
-
-
-def get_bedrock_client():
-    """Lazy initialization of Bedrock client."""
-    global bedrock_client
-    if bedrock_client is None:
-        bedrock_client = boto3.client('bedrock-runtime')
-    return bedrock_client
 
 
 def execute_template_mock(template_def: Dict, seed_data: Dict) -> Dict:

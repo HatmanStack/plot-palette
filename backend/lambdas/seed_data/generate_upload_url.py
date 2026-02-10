@@ -13,8 +13,6 @@ from typing import Any, Dict
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
-import boto3
-from botocore.config import Config
 from botocore.exceptions import ClientError
 from constants import PRESIGNED_URL_EXPIRATION
 from utils import sanitize_error_message, sanitize_filename, setup_logger
@@ -23,7 +21,9 @@ from utils import sanitize_error_message, sanitize_filename, setup_logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients (with S3v4 signature for presigned URLs)
-s3_client = boto3.client('s3', config=Config(signature_version='s3v4'))
+from aws_clients import get_s3_client
+
+s3_client = get_s3_client()
 
 
 def error_response(status_code: int, message: str) -> Dict[str, Any]:

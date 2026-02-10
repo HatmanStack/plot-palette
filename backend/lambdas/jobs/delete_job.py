@@ -16,7 +16,6 @@ from typing import Any, Dict
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
-import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from utils import sanitize_error_message, setup_logger
@@ -25,13 +24,15 @@ from utils import sanitize_error_message, setup_logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
+from aws_clients import get_dynamodb_resource, get_ecs_client, get_s3_client
+
+dynamodb = get_dynamodb_resource()
 jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE_NAME', 'plot-palette-Jobs'))
 queue_table = dynamodb.Table(os.environ.get('QUEUE_TABLE_NAME', 'plot-palette-Queue'))
 cost_tracking_table = dynamodb.Table(os.environ.get('COST_TRACKING_TABLE_NAME', 'plot-palette-CostTracking'))
 
-ecs_client = boto3.client('ecs')
-s3_client = boto3.client('s3')
+ecs_client = get_ecs_client()
+s3_client = get_s3_client()
 
 
 def error_response(status_code: int, message: str) -> Dict[str, Any]:

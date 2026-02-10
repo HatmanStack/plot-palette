@@ -293,7 +293,8 @@ def create_presigned_url(
     Raises:
         ClientError: If URL generation fails
     """
-    s3_client = boto3.client("s3")
+    from .aws_clients import get_s3_client
+    s3_client = get_s3_client()
 
     try:
         url = s3_client.generate_presigned_url(
@@ -468,7 +469,8 @@ def get_aws_account_id() -> str:
     Raises:
         ClientError: If unable to retrieve account ID
     """
-    sts_client = boto3.client("sts")
+    from .aws_clients import get_sts_client
+    sts_client = get_sts_client()
     return sts_client.get_caller_identity()["Account"]
 
 

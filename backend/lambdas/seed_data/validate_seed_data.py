@@ -13,7 +13,6 @@ from typing import Any, Dict
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
-import boto3
 from botocore.exceptions import ClientError
 from utils import sanitize_error_message, setup_logger, validate_seed_data
 
@@ -21,8 +20,10 @@ from utils import sanitize_error_message, setup_logger, validate_seed_data
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-s3_client = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb')
+from aws_clients import get_dynamodb_resource, get_s3_client
+
+s3_client = get_s3_client()
+dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
 
 
