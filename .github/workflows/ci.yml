@@ -69,5 +69,10 @@ jobs:
           bandit -r backend/ -ll -ii --exclude tests
           pip-audit -r backend/requirements.txt
 
+      - name: CloudFormation lint
+        run: |
+          pip install cfn-lint
+          cfn-lint backend/template.yaml
+
       - name: Test
         run: pytest tests/unit tests/integration -v --tb=short --ignore=tests/integration/test_auth_flow.py
