@@ -60,7 +60,7 @@ class JobConfig(BaseModel):
     status: JobStatus = Field(default=JobStatus.QUEUED, description="Current job status")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Job creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
-    config: Dict[str, Any] = Field(..., description="Job configuration dictionary (see JobConfigDict for structure)")
+    config: JobConfigDict = Field(..., description="Job configuration dictionary")
     budget_limit: float = Field(..., gt=0, description="Budget limit in USD")
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
@@ -86,7 +86,9 @@ class JobConfig(BaseModel):
         """Convert Python dict to DynamoDB Map format."""
         result = {}
         for key, value in d.items():
-            if isinstance(value, str):
+            if value is None:
+                result[key] = {"NULL": True}
+            elif isinstance(value, str):
                 result[key] = {"S": value}
             elif isinstance(value, bool):  # Must check bool before int/float since bool is subclass of int
                 result[key] = {"BOOL": value}
@@ -119,7 +121,9 @@ class JobConfig(BaseModel):
         """Convert DynamoDB Map to Python dict."""
         result = {}
         for key, value in m.items():
-            if "S" in value:
+            if "NULL" in value:
+                result[key] = None
+            elif "S" in value:
                 result[key] = value["S"]
             elif "N" in value:
                 result[key] = float(value["N"])
@@ -202,9 +206,9 @@ class CheckpointState(BaseModel):
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     cost_accumulated: float = Field(default=0.0, ge=0, description="Cost accumulated in USD")
     last_updated: datetime = Field(default_factory=datetime.utcnow, description="Last checkpoint timestamp")
-    resume_state: Dict[str, Any] = Field(
+    resume_state: ResumeStateDict = Field(
         default_factory=dict,
-        description="Custom state for resuming generation (see ResumeStateDict for structure)",
+        description="Custom state for resuming generation",
     )
     etag: Optional[str] = Field(None, description="S3 ETag for concurrency control")
 

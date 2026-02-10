@@ -8,8 +8,9 @@ for multi-step synthetic data generation workflows.
 import json
 import logging
 import os
+import re
 import sys
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
 import jinja2
 
@@ -111,6 +112,11 @@ class TemplateEngine:
             # Sanitize error to prevent information leakage in rendered output
             return f"<!-- Error loading template {template_name} -->"
 
+    @staticmethod
+    def _find_referenced_steps(prompt_text: str) -> Set[str]:
+        """Parse steps.X.output references from prompt text."""
+        return set(re.findall(r'steps\.(\w+)\.output', prompt_text))
+
     def render_step(self, step_def: Dict[str, Any], context: Dict[str, Any]) -> str:
         """Render a single template step with context."""
         template = self.env.from_string(step_def['prompt'])
@@ -141,6 +147,12 @@ class TemplateEngine:
                 model_id = MODEL_TIERS.get(model_id, model_id)
 
             try:
+                # Prune context to only keep referenced step outputs
+                if 'steps' in context and context['steps']:
+                    referenced = self._find_referenced_steps(step.get('prompt', ''))
+                    pruned_steps = {k: v for k, v in context['steps'].items() if k in referenced}
+                    context['steps'] = pruned_steps
+
                 # Render prompt with current context
                 prompt = self.render_step(step, context)
 
