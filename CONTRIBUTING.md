@@ -80,3 +80,7 @@ See [`docs/README.md`](docs/README.md) for the full architecture overview and [`
 ## API Reference
 
 See [`docs/openapi.yaml`](docs/openapi.yaml) for the OpenAPI specification covering all API endpoints.
+
+## Branch Protection
+
+See [`.github/branch-protection.md`](.github/branch-protection.md) for recommended branch protection rules and setup instructions.
