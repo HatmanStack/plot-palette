@@ -181,7 +181,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     except KeyError as e:
         logger.error(f"Missing field: {str(e)}", exc_info=True)
-        return error_response(400, f"Missing required field: {str(e)}")
+        return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)

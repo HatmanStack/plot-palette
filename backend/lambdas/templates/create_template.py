@@ -18,7 +18,7 @@ import boto3
 import jinja2
 import jinja2.meta
 from botocore.exceptions import ClientError
-from utils import generate_template_id, setup_logger
+from utils import generate_template_id, sanitize_error_message, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -181,7 +181,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "event": "missing_field_error",
             "error": str(e)
         }))
-        return error_response(400, f"Missing required field: {str(e)}")
+        return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
         logger.error(json.dumps({

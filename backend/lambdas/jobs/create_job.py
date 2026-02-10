@@ -18,7 +18,7 @@ import boto3
 from botocore.exceptions import ClientError
 from constants import ExportFormat, JobStatus
 from models import JobConfig
-from utils import generate_job_id, setup_logger
+from utils import generate_job_id, sanitize_error_message, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -306,7 +306,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "event": "missing_field_error",
             "error": str(e)
         }))
-        return error_response(400, f"Missing required field: {str(e)}")
+        return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
         logger.error(json.dumps({

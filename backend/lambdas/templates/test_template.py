@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../ecs_tasks/work
 import boto3
 from botocore.exceptions import ClientError
 from template_engine import TemplateEngine
-from utils import get_nested_field, setup_logger
+from utils import get_nested_field, sanitize_error_message, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -242,7 +242,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     except KeyError as e:
         logger.error(f"Missing field: {str(e)}", exc_info=True)
-        return error_response(400, f"Missing required field: {str(e)}")
+        return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)

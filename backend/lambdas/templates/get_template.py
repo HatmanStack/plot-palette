@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
 import boto3
 from botocore.exceptions import ClientError
-from utils import setup_logger
+from utils import sanitize_error_message, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -122,7 +122,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "event": "missing_field_error",
             "error": str(e)
         }))
-        return error_response(400, f"Missing required field: {str(e)}")
+        return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
         logger.error(json.dumps({
