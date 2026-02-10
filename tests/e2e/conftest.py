@@ -13,9 +13,41 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Ensure backend shared modules are importable
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend/shared'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../backend'))
+# ---------------------------------------------------------------------------
+# Import shim for Lambda handlers
+# ---------------------------------------------------------------------------
+# Lambda handlers do:
+#   sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
+#   from utils import ...           # bare import
+#   from aws_clients import ...     # bare import
+#
+# The shared modules themselves use relative imports (from .constants import ...).
+# Relative imports only work when modules are loaded as part of a package.
+#
+# Strategy: import every shared module as part of the `shared` package first
+# (which resolves relative imports correctly), then register each module under
+# its *bare* name in sys.modules so Lambda handler `from utils import ...` works.
+# ---------------------------------------------------------------------------
+_backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../backend'))
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
+# Import shared as a proper package (resolves relative imports)
+import shared  # noqa: E402
+import shared.aws_clients  # noqa: E402
+import shared.constants  # noqa: E402
+import shared.lambda_responses  # noqa: E402
+import shared.models  # noqa: E402
+import shared.retry  # noqa: E402
+import shared.template_filters  # noqa: E402
+import shared.utils  # noqa: E402
+
+# Alias bare names so `from utils import ...` in Lambda handlers works
+for _mod_name in [
+    'aws_clients', 'constants', 'lambda_responses', 'models',
+    'retry', 'template_filters', 'utils',
+]:
+    sys.modules[_mod_name] = getattr(shared, _mod_name)
 
 ENDPOINT_URL = os.environ.get('AWS_ENDPOINT_URL', 'http://localhost:4566')
 USER_ID = 'e2e-test-user-001'
@@ -51,22 +83,19 @@ def localstack_resources():
         os.environ[k] = v
 
     # Clear the aws_clients cache so new clients use LocalStack endpoint
-    from shared.aws_clients import clear_client_cache
-    clear_client_cache()
+    shared.aws_clients.clear_client_cache()
 
     yield {'tables': tables, 'bucket': bucket}
 
-    # Cleanup: clear cache after session
-    clear_client_cache()
+    shared.aws_clients.clear_client_cache()
 
 
 @pytest.fixture(autouse=True)
 def _clear_client_cache():
     """Clear cached boto3 clients around each test."""
-    from shared.aws_clients import clear_client_cache
-    clear_client_cache()
+    shared.aws_clients.clear_client_cache()
     yield
-    clear_client_cache()
+    shared.aws_clients.clear_client_cache()
 
 
 @pytest.fixture(autouse=True)

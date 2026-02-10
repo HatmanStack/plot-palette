@@ -5,6 +5,16 @@ Creates DynamoDB tables and S3 buckets matching the SAM template definitions.
 """
 
 import boto3
+from botocore.exceptions import ClientError
+
+
+def _create_table_idempotent(dynamodb, **kwargs):
+    """Create a table, ignoring ResourceInUseException (already exists)."""
+    try:
+        dynamodb.create_table(**kwargs)
+    except ClientError as e:
+        if e.response['Error']['Code'] != 'ResourceInUseException':
+            raise
 
 
 def create_tables(endpoint_url: str) -> dict[str, str]:
@@ -19,7 +29,7 @@ def create_tables(endpoint_url: str) -> dict[str, str]:
 
     # Jobs table
     table_name = 'e2e-Jobs'
-    dynamodb.create_table(
+    _create_table_idempotent(dynamodb,
         TableName=table_name,
         AttributeDefinitions=[
             {'AttributeName': 'job_id', 'AttributeType': 'S'},
@@ -45,7 +55,7 @@ def create_tables(endpoint_url: str) -> dict[str, str]:
 
     # Queue table
     table_name = 'e2e-Queue'
-    dynamodb.create_table(
+    _create_table_idempotent(dynamodb,
         TableName=table_name,
         AttributeDefinitions=[
             {'AttributeName': 'status', 'AttributeType': 'S'},
@@ -61,7 +71,7 @@ def create_tables(endpoint_url: str) -> dict[str, str]:
 
     # Templates table
     table_name = 'e2e-Templates'
-    dynamodb.create_table(
+    _create_table_idempotent(dynamodb,
         TableName=table_name,
         AttributeDefinitions=[
             {'AttributeName': 'template_id', 'AttributeType': 'S'},
@@ -87,7 +97,7 @@ def create_tables(endpoint_url: str) -> dict[str, str]:
 
     # CostTracking table
     table_name = 'e2e-CostTracking'
-    dynamodb.create_table(
+    _create_table_idempotent(dynamodb,
         TableName=table_name,
         AttributeDefinitions=[
             {'AttributeName': 'job_id', 'AttributeType': 'S'},
@@ -117,5 +127,9 @@ def create_buckets(endpoint_url: str) -> str:
     """
     s3 = boto3.client('s3', endpoint_url=endpoint_url, region_name='us-east-1')
     bucket_name = 'e2e-data-bucket'
-    s3.create_bucket(Bucket=bucket_name)
+    try:
+        s3.create_bucket(Bucket=bucket_name)
+    except ClientError as e:
+        if e.response['Error']['Code'] not in ('BucketAlreadyExists', 'BucketAlreadyOwnedByYou'):
+            raise
     return bucket_name
