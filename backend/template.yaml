@@ -312,6 +312,25 @@ Resources:
             Path: /jobs/{job_id}
             Method: DELETE
 
+  DownloadJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-download-job-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: download_job.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
+      Events:
+        DownloadJob:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/download
+            Method: GET
+
   # ============================================================
   # Lambda Functions - Templates
   # ============================================================

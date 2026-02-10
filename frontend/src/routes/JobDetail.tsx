@@ -1,6 +1,6 @@
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useJobPolling } from '../hooks/useJobPolling'
-import { cancelJob, deleteJob } from '../services/api'
+import { cancelJob, deleteJob, downloadJobExport } from '../services/api'
 import StatusBadge from '../components/StatusBadge'
 
 export default function JobDetail() {
@@ -27,6 +27,16 @@ export default function JobDetail() {
       navigate('/dashboard')
     } catch (err) {
       console.error('Failed to delete job:', err)
+    }
+  }
+
+  async function handleDownload() {
+    if (!jobId) return
+    try {
+      const { download_url } = await downloadJobExport(jobId)
+      window.open(download_url, '_blank')
+    } catch (err) {
+      console.error('Failed to download job:', err)
     }
   }
 
@@ -182,8 +192,11 @@ export default function JobDetail() {
 
             <div className="space-y-3">
               {job.status === 'COMPLETED' && (
-                <button className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
-                  📥 Download Exports
+                <button
+                  onClick={handleDownload}
+                  className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                >
+                  Download Exports
                 </button>
               )}
 

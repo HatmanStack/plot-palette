@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import StatusBadge from './StatusBadge'
 import type { Job } from '../services/api'
+import { downloadJobExport } from '../services/api'
 
 interface JobCardProps {
   job: Job
@@ -89,9 +90,13 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
         </Link>
         {job.status === 'COMPLETED' && (
           <button
-            onClick={() => {
-              // TODO: Implement download functionality
-              // Should call API endpoint to download generated data for job['job_id']
+            onClick={async () => {
+              try {
+                const { download_url } = await downloadJobExport(job['job_id'])
+                window.open(download_url, '_blank')
+              } catch (err) {
+                console.error('Failed to download:', err)
+              }
             }}
             className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
           >

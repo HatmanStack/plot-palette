@@ -81,6 +81,11 @@ export async function cancelJob(jobId: string): Promise<void> {
   await apiClient.delete(`/jobs/${jobId}`)
 }
 
+export async function downloadJobExport(jobId: string): Promise<{ download_url: string; filename: string }> {
+  const { data } = await apiClient.get(`/jobs/${jobId}/download`)
+  return data
+}
+
 export async function generateUploadUrl(filename: string, contentType: string = 'application/json'): Promise<{
   upload_url: string
   s3_key: string
