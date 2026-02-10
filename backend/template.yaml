@@ -64,7 +64,7 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/plot-palette-${Environment}
-      RetentionInDays: 14
+      RetentionInDays: 30
 
   # ============================================================
   # DynamoDB Tables
@@ -84,6 +84,8 @@ Resources:
       KeySchema:
         - AttributeName: job_id
           KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       GlobalSecondaryIndexes:
         - IndexName: user-id-index
           KeySchema:
@@ -109,6 +111,8 @@ Resources:
           KeyType: HASH
         - AttributeName: job_id_timestamp
           KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
 
   TemplatesTable:
     Type: AWS::DynamoDB::Table
@@ -127,6 +131,8 @@ Resources:
           KeyType: HASH
         - AttributeName: version
           KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       GlobalSecondaryIndexes:
         - IndexName: user-id-index
           KeySchema:
@@ -150,6 +156,8 @@ Resources:
           KeyType: HASH
         - AttributeName: timestamp
           KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true
@@ -161,6 +169,10 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub plot-palette-data-${Environment}-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['Content-Type', 'Authorization', 'x-amz-*']
@@ -189,6 +201,9 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: !Ref Environment
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 2000
+        ThrottlingRateLimit: 1000
       CorsConfiguration:
         AllowOrigins: !Ref AllowedOrigins
         AllowHeaders:
