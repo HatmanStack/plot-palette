@@ -121,10 +121,4 @@ markers = [
 ]
 addopts = "-v --strict-markers"
 
-[tool.coverage.run]
-source = ["backend"]
-omit = ["tests/*", "backend/infrastructure/*"]
-
-[tool.coverage.report]
-fail_under = 70
-show_missing = true
+# Coverage config is in root pyproject.toml (pytest runs from repo root)
