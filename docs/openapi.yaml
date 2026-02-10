@@ -1,0 +1,1211 @@
+openapi: 3.0.3
+info:
+  title: Plot Palette API
+  description: >
+    Serverless synthetic data generation platform using AWS Bedrock LLMs to
+    generate training data at scale. Manage jobs, prompt templates, and seed
+    data through a REST API backed by API Gateway, Lambda, DynamoDB, and S3.
+  version: 1.0.0
+  contact:
+    name: Plot Palette
+
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/{stage}
+    description: AWS API Gateway
+    variables:
+      apiId:
+        default: api-id
+      region:
+        default: us-east-1
+      stage:
+        default: prod
+
+security:
+  - CognitoAuth: []
+
+tags:
+  - name: Jobs
+    description: Create, list, retrieve, cancel, and download generation jobs.
+  - name: Templates
+    description: >
+      CRUD operations on prompt templates, including testing, YAML
+      import/export, and versioning.
+  - name: Seed Data
+    description: Upload and validate seed data files used as input for generation jobs.
+  - name: Dashboard
+    description: Real-time job progress, cost breakdown, and budget tracking.
+
+paths:
+  # ---------------------------------------------------------------------------
+  # Jobs
+  # ---------------------------------------------------------------------------
+  /jobs:
+    post:
+      operationId: createJob
+      summary: Create a generation job
+      description: >
+        Creates a new synthetic-data generation job. The job is placed in a
+        queue and an ECS Fargate Spot worker task is started to process it.
+      tags: [Jobs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobRequest"
+      responses:
+        "201":
+          description: Job created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateJobResponse"
+        "400":
+          description: Validation error (missing or invalid fields).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Referenced template not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Conflict (duplicate job ID or idempotency collision).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      operationId: listJobs
+      summary: List jobs for the authenticated user
+      description: >
+        Returns a paginated list of jobs owned by the caller, ordered newest
+        first. Supports optional status filtering.
+      tags: [Jobs]
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          description: Filter jobs by status.
+          schema:
+            $ref: "#/components/schemas/JobStatus"
+        - name: last_key
+          in: query
+          description: Pagination token returned from a previous request.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated list of job summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListJobsResponse"
+
+  /jobs/{job_id}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+
+    get:
+      operationId: getJob
+      summary: Get full job details
+      description: Returns the complete job record including configuration and progress.
+      tags: [Jobs]
+      responses:
+        "200":
+          description: Full job object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "403":
+          description: Access denied -- caller does not own this job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Job not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      operationId: deleteJob
+      summary: Delete or cancel a job
+      description: >
+        Cancels a QUEUED or RUNNING job, or deletes a terminal job
+        (COMPLETED, FAILED, CANCELLED, BUDGET_EXCEEDED) along with its S3
+        data and cost tracking records.
+      tags: [Jobs]
+      responses:
+        "200":
+          description: Job cancelled or deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteJobResponse"
+        "403":
+          description: Access denied -- caller does not own this job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Job not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /jobs/{job_id}/download:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+
+    get:
+      operationId: downloadJob
+      summary: Download completed job results
+      description: >
+        Generates a time-limited presigned S3 URL for downloading the export
+        file of a completed job.
+      tags: [Jobs]
+      responses:
+        "200":
+          description: Presigned download URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJobResponse"
+        "400":
+          description: Job is not completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Job not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ---------------------------------------------------------------------------
+  # Templates
+  # ---------------------------------------------------------------------------
+  /templates:
+    post:
+      operationId: createTemplate
+      summary: Create a prompt template
+      description: >
+        Creates a new prompt template with Jinja2 syntax validation and
+        automatic schema requirement extraction.
+      tags: [Templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTemplateRequest"
+      responses:
+        "201":
+          description: Template created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTemplateResponse"
+        "400":
+          description: Validation or Jinja2 syntax error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      operationId: listTemplates
+      summary: List templates
+      description: >
+        Returns the caller's templates and, optionally, public templates from
+        other users. Only the latest version of each template is included.
+      tags: [Templates]
+      parameters:
+        - name: include_public
+          in: query
+          description: Whether to include public templates from other users.
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: List of template summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTemplatesResponse"
+
+  /templates/{template_id}:
+    parameters:
+      - $ref: "#/components/parameters/TemplateId"
+
+    get:
+      operationId: getTemplate
+      summary: Get full template details
+      description: >
+        Retrieves the complete template record including the template
+        definition. Supports fetching a specific version.
+      tags: [Templates]
+      parameters:
+        - name: version
+          in: query
+          description: Template version to retrieve.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+      responses:
+        "200":
+          description: Full template object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "403":
+          description: Template is private and caller is not the owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Template not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    put:
+      operationId: updateTemplate
+      summary: Update a template (creates a new version)
+      description: >
+        Creates a new immutable version of the template. The caller must be
+        the template owner. At least one of `name` or `template_definition`
+        must be provided.
+      tags: [Templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTemplateRequest"
+      responses:
+        "200":
+          description: New version created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateTemplateResponse"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Caller does not own this template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Template not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      operationId: deleteTemplate
+      summary: Delete a template
+      description: >
+        Deletes all versions of a template. Fails with 409 if the template is
+        currently referenced by any jobs.
+      tags: [Templates]
+      responses:
+        "200":
+          description: Template deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteTemplateResponse"
+        "403":
+          description: Caller does not own this template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Template not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Template is in use by one or more jobs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /templates/{template_id}/test:
+    parameters:
+      - $ref: "#/components/parameters/TemplateId"
+
+    post:
+      operationId: testTemplate
+      summary: Test a template with sample data
+      description: >
+        Dry-run a template against sample seed data. By default, Bedrock
+        calls are mocked to avoid costs. Set `mock: false` to invoke real
+        models.
+      tags: [Templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestTemplateRequest"
+      responses:
+        "200":
+          description: Test results for each template step.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestTemplateResponse"
+        "400":
+          description: Missing required fields in sample data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Template not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /templates/import:
+    post:
+      operationId: importTemplate
+      summary: Import a template from YAML
+      description: >
+        Parses YAML content, validates the template structure and Jinja2
+        syntax, and creates a new private template.
+      tags: [Templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportTemplateRequest"
+      responses:
+        "201":
+          description: Template imported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportTemplateResponse"
+        "400":
+          description: Invalid YAML or template structure.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /templates/{template_id}/export:
+    parameters:
+      - $ref: "#/components/parameters/TemplateId"
+
+    get:
+      operationId: exportTemplate
+      summary: Export a template as YAML
+      description: >
+        Returns the template serialized as YAML content. Accessible to the
+        owner or if the template is public.
+      tags: [Templates]
+      responses:
+        "200":
+          description: YAML content of the template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportTemplateResponse"
+        "403":
+          description: Template is private and caller is not the owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Template not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ---------------------------------------------------------------------------
+  # Seed Data
+  # ---------------------------------------------------------------------------
+  /seed-data/upload:
+    post:
+      operationId: generateUploadUrl
+      summary: Generate a presigned upload URL for seed data
+      description: >
+        Returns a time-limited presigned S3 PUT URL that the client can use
+        to upload a seed data file directly to S3.
+      tags: [Seed Data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL and S3 metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "400":
+          description: Missing or invalid filename.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /seed-data/validate:
+    post:
+      operationId: validateSeedData
+      summary: Validate seed data against a template
+      description: >
+        Downloads a sample of the uploaded seed data from S3 and validates
+        that it contains all fields required by the referenced template.
+      tags: [Seed Data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateSeedDataRequest"
+      responses:
+        "200":
+          description: Seed data is valid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateSeedDataSuccessResponse"
+        "400":
+          description: Seed data is invalid or JSON is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateSeedDataFailureResponse"
+        "404":
+          description: Seed data file or template not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ---------------------------------------------------------------------------
+  # Dashboard
+  # ---------------------------------------------------------------------------
+  /dashboard/{job_id}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+
+    get:
+      operationId: getDashboardStats
+      summary: Get job dashboard statistics
+      description: >
+        Returns real-time progress, cost breakdown by service, budget
+        tracking, timing information, and an estimated completion time for
+        running jobs.
+      tags: [Dashboard]
+      responses:
+        "200":
+          description: Job dashboard statistics.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+        "403":
+          description: Caller does not own this job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Job not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+# =============================================================================
+# Components
+# =============================================================================
+components:
+  # ---------------------------------------------------------------------------
+  # Security Schemes
+  # ---------------------------------------------------------------------------
+  securitySchemes:
+    CognitoAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        AWS Cognito JSON Web Token. Include the access token in the
+        Authorization header as `Bearer <token>`.
+
+  # ---------------------------------------------------------------------------
+  # Reusable Parameters
+  # ---------------------------------------------------------------------------
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      description: Unique job identifier (UUID).
+      schema:
+        type: string
+        format: uuid
+
+    TemplateId:
+      name: template_id
+      in: path
+      required: true
+      description: Unique template identifier (UUID).
+      schema:
+        type: string
+        format: uuid
+
+  # ---------------------------------------------------------------------------
+  # Schemas
+  # ---------------------------------------------------------------------------
+  schemas:
+    # -- Common ---------------------------------------------------------------
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+      example:
+        error: "Job not found"
+
+    JobStatus:
+      type: string
+      enum:
+        - QUEUED
+        - RUNNING
+        - COMPLETED
+        - FAILED
+        - BUDGET_EXCEEDED
+        - CANCELLED
+
+    ExportFormat:
+      type: string
+      enum:
+        - JSONL
+        - PARQUET
+        - CSV
+
+    CostBreakdown:
+      type: object
+      description: Cost totals broken down by AWS service.
+      properties:
+        bedrock:
+          type: number
+          format: double
+          description: Bedrock API costs in USD.
+        fargate:
+          type: number
+          format: double
+          description: Fargate compute costs in USD.
+        s3:
+          type: number
+          format: double
+          description: S3 storage and operations costs in USD.
+        total:
+          type: number
+          format: double
+          description: Total combined cost in USD.
+
+    TemplateStep:
+      type: object
+      required: [id, prompt]
+      properties:
+        id:
+          type: string
+          description: Step identifier.
+        prompt:
+          type: string
+          description: Jinja2 prompt template.
+        model:
+          type: string
+          description: Specific Bedrock model ID to use.
+        model_tier:
+          type: string
+          description: >
+            Model tier alias (tier-1/cheap, tier-2/balanced, tier-3/premium).
+          enum: [tier-1, tier-2, tier-3, cheap, balanced, premium]
+
+    TemplateDefinition:
+      type: object
+      required: [steps]
+      properties:
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/TemplateStep"
+
+    # -- Jobs -----------------------------------------------------------------
+    CreateJobRequest:
+      type: object
+      required:
+        - template_id
+        - seed_data_path
+        - budget_limit
+        - output_format
+        - num_records
+      properties:
+        template_id:
+          type: string
+          description: ID of the prompt template to use.
+        seed_data_path:
+          type: string
+          description: S3 key of the uploaded seed data file.
+        budget_limit:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1000
+          description: Maximum spend in USD.
+        output_format:
+          $ref: "#/components/schemas/ExportFormat"
+        num_records:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+          description: Number of records to generate.
+        priority:
+          type: integer
+          description: Job priority (higher values are processed first).
+        idempotency_token:
+          type: string
+          description: >
+            Client-generated token to prevent duplicate job creation.
+        template_version:
+          type: integer
+          minimum: 1
+          description: Specific template version to use.
+
+    CreateJobResponse:
+      type: object
+      required: [job_id, status, created_at, message]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        created_at:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    JobSummary:
+      type: object
+      description: Abbreviated job record used in list responses.
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        records_generated:
+          type: integer
+        cost_estimate:
+          type: number
+          format: double
+        budget_limit:
+          type: number
+          format: double
+
+    ListJobsResponse:
+      type: object
+      required: [jobs, has_more]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobSummary"
+        has_more:
+          type: boolean
+          description: Whether additional pages are available.
+        last_key:
+          type: string
+          description: >
+            Pagination token to pass as `last_key` query parameter for the
+            next page. Only present when `has_more` is true.
+
+    Job:
+      type: object
+      description: Full job record.
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        config:
+          type: object
+          description: >
+            The original job configuration submitted at creation time.
+          additionalProperties: true
+        budget_limit:
+          type: number
+          format: double
+        tokens_used:
+          type: integer
+        records_generated:
+          type: integer
+        cost_estimate:
+          type: number
+          format: double
+
+    DeleteJobResponse:
+      type: object
+      required: [message, job_id]
+      properties:
+        message:
+          type: string
+        job_id:
+          type: string
+          format: uuid
+
+    DownloadJobResponse:
+      type: object
+      required: [download_url, expires_in]
+      properties:
+        download_url:
+          type: string
+          format: uri
+          description: Time-limited presigned S3 GET URL.
+        expires_in:
+          type: integer
+          description: URL validity in seconds.
+
+    # -- Templates ------------------------------------------------------------
+    CreateTemplateRequest:
+      type: object
+      required: [name, template_definition]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Template display name.
+        template_definition:
+          $ref: "#/components/schemas/TemplateDefinition"
+        is_public:
+          type: boolean
+          default: false
+          description: Whether the template is visible to other users.
+        description:
+          type: string
+          description: Optional human-readable description.
+        idempotency_token:
+          type: string
+
+    CreateTemplateResponse:
+      type: object
+      required: [template_id, version, schema_requirements, message]
+      properties:
+        template_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        schema_requirements:
+          type: array
+          items:
+            type: string
+          description: >
+            Variable names extracted from the Jinja2 prompts that must be
+            present in seed data.
+        message:
+          type: string
+
+    TemplateSummary:
+      type: object
+      description: Abbreviated template record used in list responses.
+      properties:
+        template_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        name:
+          type: string
+        user_id:
+          type: string
+        is_public:
+          type: boolean
+        is_owner:
+          type: boolean
+          description: Whether the caller owns this template.
+        schema_requirements:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type: string
+        step_count:
+          type: integer
+          description: Number of steps in the template.
+
+    ListTemplatesResponse:
+      type: object
+      required: [templates, count]
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateSummary"
+        count:
+          type: integer
+
+    Template:
+      type: object
+      description: Full template record including the template definition.
+      properties:
+        template_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        name:
+          type: string
+        user_id:
+          type: string
+        template_definition:
+          $ref: "#/components/schemas/TemplateDefinition"
+        schema_requirements:
+          type: array
+          items:
+            type: string
+        is_public:
+          type: boolean
+        is_owner:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type: string
+
+    UpdateTemplateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        template_definition:
+          $ref: "#/components/schemas/TemplateDefinition"
+        is_public:
+          type: boolean
+        description:
+          type: string
+
+    UpdateTemplateResponse:
+      type: object
+      required: [template_id, version, previous_version, schema_requirements, message]
+      properties:
+        template_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          description: Newly created version number.
+        previous_version:
+          type: integer
+          description: Version number that was current before this update.
+        schema_requirements:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+
+    DeleteTemplateResponse:
+      type: object
+      required: [message, template_id, versions_deleted]
+      properties:
+        message:
+          type: string
+        template_id:
+          type: string
+          format: uuid
+        versions_deleted:
+          type: integer
+          description: Number of template versions that were removed.
+
+    TestTemplateRequest:
+      type: object
+      properties:
+        sample_data:
+          type: object
+          additionalProperties: true
+          description: >
+            Key-value pairs matching the template's schema requirements.
+        mock:
+          type: boolean
+          default: true
+          description: >
+            When true (default), Bedrock calls are simulated. Set to false
+            to invoke real models.
+
+    TestTemplateResponse:
+      type: object
+      required: [results, tokens_used]
+      properties:
+        results:
+          type: object
+          additionalProperties: true
+          description: >
+            Map of step ID to result object containing prompt, output,
+            model, and token estimates.
+        tokens_used:
+          type: integer
+          description: Total tokens consumed (0 when mocked).
+
+    ImportTemplateRequest:
+      type: object
+      required: [yaml_content]
+      properties:
+        yaml_content:
+          type: string
+          description: >
+            Raw YAML string representing a template. Must contain a
+            top-level `template` key with `name` and `steps`.
+        idempotency_token:
+          type: string
+
+    ImportTemplateResponse:
+      type: object
+      required: [template_id, version, message]
+      properties:
+        template_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        message:
+          type: string
+
+    ExportTemplateResponse:
+      type: object
+      required: [yaml_content, template_id, version]
+      properties:
+        yaml_content:
+          type: string
+          description: Template serialized as YAML.
+        template_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+
+    # -- Seed Data ------------------------------------------------------------
+    UploadUrlRequest:
+      type: object
+      required: [filename]
+      properties:
+        filename:
+          type: string
+          description: Name of the file to upload.
+        content_type:
+          type: string
+          default: application/json
+          description: MIME type of the file.
+
+    UploadUrlResponse:
+      type: object
+      required: [upload_url, s3_key, bucket, expires_in, message]
+      properties:
+        upload_url:
+          type: string
+          format: uri
+          description: Presigned S3 PUT URL.
+        s3_key:
+          type: string
+          description: S3 object key where the file will be stored.
+        bucket:
+          type: string
+          description: S3 bucket name.
+        expires_in:
+          type: integer
+          description: URL validity in seconds.
+        message:
+          type: string
+
+    ValidateSeedDataRequest:
+      type: object
+      required: [s3_key, template_id]
+      properties:
+        s3_key:
+          type: string
+          description: S3 key of the previously uploaded seed data file.
+        template_id:
+          type: string
+          description: Template whose schema requirements to validate against.
+        template_version:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Template version to use for schema lookup.
+
+    ValidateSeedDataSuccessResponse:
+      type: object
+      required: [valid, message]
+      properties:
+        valid:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+
+    ValidateSeedDataFailureResponse:
+      type: object
+      required: [valid, error, schema_requirements]
+      properties:
+        valid:
+          type: boolean
+          enum: [false]
+        error:
+          type: string
+          description: Description of the validation failure.
+        schema_requirements:
+          type: array
+          items:
+            type: string
+          description: Fields that the template expects in the seed data.
+
+    # -- Dashboard ------------------------------------------------------------
+    DashboardStats:
+      type: object
+      required: [job_id, status, progress, cost, budget, timing, tokens_used]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        progress:
+          type: object
+          required: [records_generated, target_records, percentage]
+          properties:
+            records_generated:
+              type: integer
+            target_records:
+              type: integer
+            percentage:
+              type: number
+              format: double
+              description: Completion percentage (0-100).
+        cost:
+          $ref: "#/components/schemas/CostBreakdown"
+        budget:
+          type: object
+          required: [limit, used, remaining, percentage_used]
+          properties:
+            limit:
+              type: number
+              format: double
+              description: Budget ceiling in USD.
+            used:
+              type: number
+              format: double
+              description: Amount spent so far in USD.
+            remaining:
+              type: number
+              format: double
+              description: Budget remaining in USD.
+            percentage_used:
+              type: number
+              format: double
+              description: Percentage of budget consumed (0-100).
+        timing:
+          type: object
+          properties:
+            created_at:
+              type: string
+              format: date-time
+            started_at:
+              type: string
+              format: date-time
+              nullable: true
+            completed_at:
+              type: string
+              format: date-time
+              nullable: true
+            updated_at:
+              type: string
+              format: date-time
+            estimated_completion:
+              type: string
+              format: date-time
+              nullable: true
+              description: >
+                Estimated completion time based on current generation rate.
+                Only present for RUNNING jobs.
+        tokens_used:
+          type: integer
+          description: Total tokens consumed by Bedrock.
+        template_id:
+          type: string
+          description: Template used by this job.

@@ -144,6 +144,10 @@ npm run lint:backend  # Backend ruff
 **Test Coverage**:
 Run `npm run check` to see current test counts.
 
+## API Reference
+
+See [`openapi.yaml`](openapi.yaml) for the full OpenAPI 3.0 specification covering all 16 API endpoints.
+
 ## AWS Bedrock Models
 
 **Tier 1 (Cost-Efficient)**:
