@@ -72,7 +72,7 @@ class JobConfig(BaseModel):
     cost_estimate: float = Field(default=0.0, ge=0, description="Estimated cost in USD")
 
     def to_dynamodb(self) -> Dict[str, Any]:
-        """Convert to DynamoDB item format."""
+        """Convert to low-level DynamoDB item format (for client.put_item)."""
         return {
             "job_id": {"S": self.job_id},
             "user_id": {"S": self.user_id},
@@ -84,6 +84,21 @@ class JobConfig(BaseModel):
             "tokens_used": {"N": str(self.tokens_used)},
             "records_generated": {"N": str(self.records_generated)},
             "cost_estimate": {"N": str(self.cost_estimate)},
+        }
+
+    def to_table_item(self) -> Dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        return {
+            "job_id": self.job_id,
+            "user_id": self.user_id,
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "config": self.config,
+            "budget_limit": Decimal(str(self.budget_limit)),
+            "tokens_used": self.tokens_used,
+            "records_generated": self.records_generated,
+            "cost_estimate": Decimal(str(self.cost_estimate)),
         }
 
     @staticmethod
@@ -265,6 +280,30 @@ class CostBreakdown(BaseModel):
         # Add TTL (90 days from now)
         ttl = int((datetime.utcnow().timestamp() + (90 * 24 * 60 * 60)))
         item["ttl"] = {"N": str(ttl)}
+
+        return item
+
+    def to_table_item(self) -> Dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        item: Dict[str, Any] = {
+            "job_id": self.job_id,
+            "timestamp": self.timestamp.isoformat(),
+            "bedrock_tokens": self.bedrock_tokens,
+            "fargate_hours": Decimal(str(self.fargate_hours)),
+            "s3_operations": self.s3_operations,
+            "estimated_cost": {
+                "bedrock": Decimal(str(self.estimated_cost.bedrock)),
+                "fargate": Decimal(str(self.estimated_cost.fargate)),
+                "s3": Decimal(str(self.estimated_cost.s3)),
+                "total": Decimal(str(self.estimated_cost.total)),
+            },
+        }
+        if self.model_id:
+            item["model_id"] = self.model_id
+
+        # Add TTL (90 days from now)
+        ttl = int(datetime.utcnow().timestamp() + (90 * 24 * 60 * 60))
+        item["ttl"] = ttl
 
         return item
 

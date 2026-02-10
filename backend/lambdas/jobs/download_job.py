@@ -69,9 +69,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if job.get('status') != 'COMPLETED':
             return error_response(400, "Job is not completed - cannot download")
 
-        # Generate presigned URL for the export file
-        s3_key = f"jobs/{job_id}/exports/output.jsonl"
-        filename = f"job-{job_id[:12]}-output.jsonl"
+        # Derive file extension from job config output_format
+        output_format = job.get('config', {}).get('output_format', 'JSONL').lower()
+        ext_map = {'jsonl': 'jsonl', 'parquet': 'parquet', 'csv': 'csv'}
+        ext = ext_map.get(output_format, 'jsonl')
+
+        s3_key = f"jobs/{job_id}/exports/output.{ext}"
+        filename = f"job-{job_id[:12]}-output.{ext}"
+
+        # Verify the export file exists before generating presigned URL
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=s3_key)
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                return error_response(404, "Export file not found - job may still be processing")
+            logger.error(json.dumps({"event": "head_object_error", "error": str(e)}))
+            return error_response(500, "Error checking export file")
 
         try:
             download_url = s3_client.generate_presigned_url(

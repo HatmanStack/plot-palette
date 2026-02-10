@@ -627,7 +627,7 @@ class Worker:
         )
 
         try:
-            cost_tracking_table.put_item(Item=cost_breakdown.to_dynamodb())
+            cost_tracking_table.put_item(Item=cost_breakdown.to_table_item())
             logger.info(f"Updated cost tracking for job {job_id}: ${total_cost:.4f}")
 
         except Exception as e:

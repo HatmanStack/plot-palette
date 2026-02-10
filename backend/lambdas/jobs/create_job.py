@@ -247,9 +247,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             cost_estimate=0.0
         )
 
-        # Insert into Jobs table using typed serialization
+        # Insert into Jobs table using high-level Table format
         try:
-            job_item = job.to_dynamodb()
+            job_item = job.to_table_item()
             if idempotency_token:
                 job_item['idempotency_token'] = idempotency_token
             jobs_table.put_item(
@@ -313,7 +313,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return success_response(201, {
             "job_id": job_id,
             "status": "QUEUED",
-            "created_at": now,
+            "created_at": now.isoformat(),
             "message": "Job created successfully"
         })
 

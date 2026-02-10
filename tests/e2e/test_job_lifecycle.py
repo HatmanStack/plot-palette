@@ -1,11 +1,5 @@
 """
 E2E tests for job CRUD lifecycle against real LocalStack DynamoDB.
-
-Note: create_job uses JobConfig.to_dynamodb() which produces low-level DynamoDB
-format ({"S": "value"}) but Table.put_item() expects high-level format. This
-causes failures against real DynamoDB. Tests for create/get/list/delete use
-direct DynamoDB inserts to test the read paths, while the create validation
-and template-not-found paths are tested via the handler.
 """
 
 import json
@@ -45,7 +39,7 @@ def _create_prerequisite_template():
 
 
 def _insert_job_directly(job_id: str, template_id: str):
-    """Insert a job record directly into DynamoDB (bypassing handler serialization bug)."""
+    """Insert a job record directly into DynamoDB (bypasses ECS worker startup)."""
     jobs_table = _get_jobs_table()
     queue_table = _get_queue_table()
     now = datetime.utcnow().isoformat()
@@ -82,6 +76,43 @@ def _insert_job_directly(job_id: str, template_id: str):
 
 class TestJobLifecycle:
     """Job CRUD against real DynamoDB."""
+
+    def test_create_job_via_handler(self):
+        """Create job through the handler succeeds against real DynamoDB."""
+        from lambdas.jobs.create_job import lambda_handler
+        from lambdas.jobs.get_job import lambda_handler as get_handler
+
+        template_id = _create_prerequisite_template()
+
+        event = make_api_event('POST', '/jobs', body={
+            'template_id': template_id,
+            'seed_data_path': f'seed-data/{USER_ID}/test.json',
+            'budget_limit': 10.0,
+            'output_format': 'JSONL',
+            'num_records': 100,
+        })
+
+        response = lambda_handler(event, None)
+        assert response['statusCode'] == 201
+        body = json.loads(response['body'])
+        assert body['status'] == 'QUEUED'
+        assert 'job_id' in body
+        assert 'created_at' in body
+
+        # Verify it's readable via get handler
+        job_id = body['job_id']
+        get_event = make_api_event('GET', f'/jobs/{job_id}',
+                                   path_parameters={'job_id': job_id})
+        get_resp = get_handler(get_event, None)
+        assert get_resp['statusCode'] == 200
+
+        # Verify in Queue table
+        queue_table = _get_queue_table()
+        queue_resp = queue_table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('status').eq('QUEUED'),
+        )
+        queue_job_ids = [item['job_id'] for item in queue_resp['Items']]
+        assert job_id in queue_job_ids
 
     def test_get_job(self):
         """Get job returns details for a directly-inserted job."""
