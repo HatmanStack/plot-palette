@@ -142,8 +142,7 @@ npm run lint:backend  # Backend ruff
 ```
 
 **Test Coverage**:
-- Frontend: 122 tests (hooks, contexts, components, services)
-- Backend: 475 tests (Lambda handlers, Worker scenarios, integration)
+Run `npm run check` to see current test counts.
 
 ## AWS Bedrock Models
 
