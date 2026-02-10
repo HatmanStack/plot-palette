@@ -120,3 +120,11 @@ markers = [
     "slow: Slow tests (>10s)",
 ]
 addopts = "-v --strict-markers"
+
+[tool.coverage.run]
+source = ["backend"]
+omit = ["tests/*", "backend/infrastructure/*"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true

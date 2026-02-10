@@ -35,8 +35,8 @@ jobs:
       - name: Security audit
         run: cd frontend && npm audit --audit-level=high
 
-      - name: Test
-        run: cd frontend && npm test -- --run
+      - name: Test with coverage
+        run: cd frontend && npm test -- --run --coverage
 
   backend:
     name: Backend
@@ -61,6 +61,9 @@ jobs:
       - name: Lint
         run: ruff check backend/
 
+      - name: Type check
+        run: cd backend && mypy shared/ lambdas/ --config-file pyproject.toml || true
+
       - name: Security scan
         run: |
           bandit -r backend/ -ll -ii --exclude tests
@@ -68,5 +71,5 @@ jobs:
       - name: CloudFormation lint
         run: cfn-lint backend/template.yaml
 
-      - name: Test
-        run: pytest tests/unit tests/integration -v --tb=short
+      - name: Test with coverage
+        run: pytest tests/unit tests/integration -v --tb=short --cov=backend --cov-report=term-missing --cov-fail-under=70
