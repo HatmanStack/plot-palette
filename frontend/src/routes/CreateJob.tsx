@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createJob, generateUploadUrl } from '../services/api'
+import { estimateCostRange } from '../constants/pricing'
 import axios from 'axios'
 
 interface WizardData {
@@ -242,7 +243,7 @@ export default function CreateJob() {
             </div>
 
             <p className="text-sm text-gray-600">
-              Estimated cost: ${(data.numRecords * 0.01).toFixed(2)} - ${(data.numRecords * 0.05).toFixed(2)}
+              Estimated cost: ${estimateCostRange(data.numRecords).min.toFixed(2)} - ${estimateCostRange(data.numRecords).max.toFixed(2)}
             </p>
           </div>
         )}
