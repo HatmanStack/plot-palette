@@ -8,12 +8,12 @@ interface JobCardProps {
 }
 
 export default function JobCard({ job, onDelete }: JobCardProps) {
-  const progress = job['num-records'] > 0
-    ? (job['records-generated'] / job['num-records']) * 100
+  const progress = job['num_records'] > 0
+    ? (job['records_generated'] / job['num_records']) * 100
     : 0
 
-  const costProgress = job['budget-limit'] > 0
-    ? (job['cost-estimate'] / job['budget-limit']) * 100
+  const costProgress = job['budget_limit'] > 0
+    ? (job['cost_estimate'] / job['budget_limit']) * 100
     : 0
 
   const formatDate = (dateString: string) => {
@@ -31,13 +31,13 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
       <div className="flex justify-between items-start mb-4">
         <div>
           <Link
-            to={`/jobs/${job['job-id']}`}
+            to={`/jobs/${job['job_id']}`}
             className="text-lg font-semibold text-gray-900 hover:text-blue-600"
           >
-            Job {job['job-id'].substring(0, 8)}
+            Job {job['job_id'].substring(0, 8)}
           </Link>
           <p className="text-sm text-gray-500 mt-1">
-            Created {formatDate(job['created-at'])}
+            Created {formatDate(job['created_at'])}
           </p>
         </div>
         <StatusBadge status={job.status} />
@@ -49,7 +49,7 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
           <div className="flex justify-between text-sm text-gray-600 mb-1">
             <span>Progress</span>
             <span>
-              {job['records-generated']} / {job['num-records']} records
+              {job['records_generated']} / {job['num_records']} records
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
@@ -65,7 +65,7 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
           <div className="flex justify-between text-sm text-gray-600 mb-1">
             <span>Cost</span>
             <span>
-              ${job['cost-estimate'].toFixed(2)} / ${job['budget-limit'].toFixed(2)}
+              ${job['cost_estimate'].toFixed(2)} / ${job['budget_limit'].toFixed(2)}
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
@@ -82,7 +82,7 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
       {/* Actions */}
       <div className="mt-4 flex gap-2">
         <Link
-          to={`/jobs/${job['job-id']}`}
+          to={`/jobs/${job['job_id']}`}
           className="flex-1 text-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
         >
           View Details
@@ -91,7 +91,7 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
           <button
             onClick={() => {
               // TODO: Implement download functionality
-              // Should call API endpoint to download generated data for job['job-id']
+              // Should call API endpoint to download generated data for job['job_id']
             }}
             className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
           >
@@ -100,7 +100,7 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
         )}
         {(job.status === 'RUNNING' || job.status === 'QUEUED') && (
           <button
-            onClick={() => onDelete(job['job-id'])}
+            onClick={() => onDelete(job['job_id'])}
             className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
           >
             Cancel
@@ -108,7 +108,7 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
         )}
         {(job.status === 'FAILED' || job.status === 'CANCELLED' || job.status === 'COMPLETED') && (
           <button
-            onClick={() => onDelete(job['job-id'])}
+            onClick={() => onDelete(job['job_id'])}
             className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors text-sm"
           >
             Delete

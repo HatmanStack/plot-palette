@@ -46,12 +46,12 @@ export default function JobDetail() {
     )
   }
 
-  const progress = job['num-records'] > 0
-    ? (job['records-generated'] / job['num-records']) * 100
+  const progress = job['num_records'] > 0
+    ? (job['records_generated'] / job['num_records']) * 100
     : 0
 
-  const costProgress = job['budget-limit'] > 0
-    ? (job['cost-estimate'] / job['budget-limit']) * 100
+  const costProgress = job['budget_limit'] > 0
+    ? (job['cost_estimate'] / job['budget_limit']) * 100
     : 0
 
   const formatDate = (dateString: string) => {
@@ -71,10 +71,10 @@ export default function JobDetail() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">Job {job['job-id'].substring(0, 12)}</h1>
+            <h1 className="text-3xl font-bold">Job {job['job_id'].substring(0, 12)}</h1>
             <StatusBadge status={job.status} />
           </div>
-          <p className="text-gray-500 mt-1">Created {formatDate(job['created-at'])}</p>
+          <p className="text-gray-500 mt-1">Created {formatDate(job['created_at'])}</p>
         </div>
         <Link
           to="/dashboard"
@@ -96,7 +96,7 @@ export default function JobDetail() {
                 <div className="flex justify-between text-sm text-gray-600 mb-2">
                   <span>Records Generated</span>
                   <span className="font-semibold">
-                    {job['records-generated']} / {job['num-records']}
+                    {job['records_generated']} / {job['num_records']}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-4">
@@ -117,7 +117,7 @@ export default function JobDetail() {
                 <div className="flex justify-between text-sm text-gray-600 mb-2">
                   <span>Cost</span>
                   <span className="font-semibold">
-                    ${job['cost-estimate'].toFixed(2)} / ${job['budget-limit'].toFixed(2)}
+                    ${job['cost_estimate'].toFixed(2)} / ${job['budget_limit'].toFixed(2)}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-4">
@@ -134,7 +134,7 @@ export default function JobDetail() {
                 <div className="mt-4 text-sm text-gray-600">
                   <p>Estimated time remaining: Calculating...</p>
                   <p className="mt-1">
-                    Tokens used: {job['tokens-used'].toLocaleString()}
+                    Tokens used: {job['tokens_used'].toLocaleString()}
                   </p>
                 </div>
               )}
@@ -148,19 +148,19 @@ export default function JobDetail() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-500">Job ID</p>
-                <p className="font-mono text-sm">{job['job-id']}</p>
+                <p className="font-mono text-sm">{job['job_id']}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Template ID</p>
-                <p className="font-mono text-sm">{job['template-id']}</p>
+                <p className="font-mono text-sm">{job['template_id']}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Created At</p>
-                <p className="text-sm">{formatDate(job['created-at'])}</p>
+                <p className="text-sm">{formatDate(job['created_at'])}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Last Updated</p>
-                <p className="text-sm">{formatDate(job['updated-at'])}</p>
+                <p className="text-sm">{formatDate(job['updated_at'])}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Output Format</p>
@@ -206,7 +206,7 @@ export default function JobDetail() {
               )}
 
               <Link
-                to={`/templates/${job['template-id']}`}
+                to={`/templates/${job['template_id']}`}
                 className="block w-full px-4 py-2 bg-gray-600 text-white text-center rounded-md hover:bg-gray-700 transition-colors"
               >
                 📝 View Template
@@ -221,20 +221,20 @@ export default function JobDetail() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Current Cost:</span>
-                <span className="font-semibold">${job['cost-estimate'].toFixed(2)}</span>
+                <span className="font-semibold">${job['cost_estimate'].toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Budget Limit:</span>
-                <span className="font-semibold">${job['budget-limit'].toFixed(2)}</span>
+                <span className="font-semibold">${job['budget_limit'].toFixed(2)}</span>
               </div>
               <div className="flex justify-between pt-2 border-t">
                 <span className="text-gray-600">Remaining:</span>
                 <span className={`font-semibold ${
-                  job['budget-limit'] - job['cost-estimate'] < job['budget-limit'] * 0.1
+                  job['budget_limit'] - job['cost_estimate'] < job['budget_limit'] * 0.1
                     ? 'text-orange-600'
                     : 'text-green-600'
                 }`}>
-                  ${(job['budget-limit'] - job['cost-estimate']).toFixed(2)}
+                  ${(job['budget_limit'] - job['cost_estimate']).toFixed(2)}
                 </span>
               </div>
             </div>

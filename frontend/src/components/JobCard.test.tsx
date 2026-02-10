@@ -8,17 +8,17 @@ import type { Job } from '../services/api'
 // Factory to create mock jobs
 function createMockJob(overrides: Partial<Job> = {}): Job {
   return {
-    'job-id': 'test-job-12345678',
-    'user-id': 'user-123',
+    'job_id': 'test-job-12345678',
+    'user_id': 'user-123',
     status: 'RUNNING',
-    'created-at': '2024-01-15T10:30:00Z',
-    'updated-at': '2024-01-15T11:30:00Z',
-    'template-id': 'template-456',
-    'budget-limit': 100,
-    'num-records': 1000,
-    'records-generated': 500,
-    'tokens-used': 25000,
-    'cost-estimate': 0.50,
+    'created_at': '2024-01-15T10:30:00Z',
+    'updated_at': '2024-01-15T11:30:00Z',
+    'template_id': 'template-456',
+    'budget_limit': 100,
+    'num_records': 1000,
+    'records_generated': 500,
+    'tokens_used': 25000,
+    'cost_estimate': 0.50,
     ...overrides,
   }
 }
@@ -40,14 +40,14 @@ describe('JobCard', () => {
 
   describe('Basic rendering', () => {
     it('displays truncated job ID (8 chars)', () => {
-      const job = createMockJob({ 'job-id': 'abcdefghijklmnop' })
+      const job = createMockJob({ 'job_id': 'abcdefghijklmnop' })
       renderJobCard(job)
 
       expect(screen.getByText('Job abcdefgh')).toBeInTheDocument()
     })
 
     it('displays formatted created date', () => {
-      const job = createMockJob({ 'created-at': '2024-01-15T10:30:00Z' })
+      const job = createMockJob({ 'created_at': '2024-01-15T10:30:00Z' })
       renderJobCard(job)
 
       // Date formatting can vary by timezone, so check for key parts
@@ -64,7 +64,7 @@ describe('JobCard', () => {
     })
 
     it('renders View Details link', () => {
-      const job = createMockJob({ 'job-id': 'job-123' })
+      const job = createMockJob({ 'job_id': 'job-123' })
       renderJobCard(job)
 
       const link = screen.getByRole('link', { name: /View Details/i })
@@ -72,7 +72,7 @@ describe('JobCard', () => {
     })
 
     it('renders job link with correct href', () => {
-      const job = createMockJob({ 'job-id': 'my-job-id' })
+      const job = createMockJob({ 'job_id': 'my-job-id' })
       renderJobCard(job)
 
       const link = screen.getByRole('link', { name: /Job my-job-i/i })
@@ -83,8 +83,8 @@ describe('JobCard', () => {
   describe('Progress bar calculations', () => {
     it('calculates 50% progress correctly', () => {
       const job = createMockJob({
-        'num-records': 100,
-        'records-generated': 50,
+        'num_records': 100,
+        'records_generated': 50,
       })
       renderJobCard(job)
 
@@ -93,8 +93,8 @@ describe('JobCard', () => {
 
     it('calculates 0% progress when no records generated', () => {
       const job = createMockJob({
-        'num-records': 100,
-        'records-generated': 0,
+        'num_records': 100,
+        'records_generated': 0,
       })
       renderJobCard(job)
 
@@ -103,8 +103,8 @@ describe('JobCard', () => {
 
     it('calculates 100% progress correctly', () => {
       const job = createMockJob({
-        'num-records': 100,
-        'records-generated': 100,
+        'num_records': 100,
+        'records_generated': 100,
       })
       renderJobCard(job)
 
@@ -113,8 +113,8 @@ describe('JobCard', () => {
 
     it('handles 0 num-records without division error', () => {
       const job = createMockJob({
-        'num-records': 0,
-        'records-generated': 0,
+        'num_records': 0,
+        'records_generated': 0,
       })
 
       // Should not throw
@@ -125,8 +125,8 @@ describe('JobCard', () => {
   describe('Cost progress bar', () => {
     it('displays cost correctly', () => {
       const job = createMockJob({
-        'cost-estimate': 50,
-        'budget-limit': 100,
+        'cost_estimate': 50,
+        'budget_limit': 100,
       })
       renderJobCard(job)
 
@@ -135,8 +135,8 @@ describe('JobCard', () => {
 
     it('handles $0 budget without division error', () => {
       const job = createMockJob({
-        'cost-estimate': 0,
-        'budget-limit': 0,
+        'cost_estimate': 0,
+        'budget_limit': 0,
       })
 
       // Should not throw
@@ -145,8 +145,8 @@ describe('JobCard', () => {
 
     it('displays decimal costs correctly', () => {
       const job = createMockJob({
-        'cost-estimate': 0.25,
-        'budget-limit': 1.50,
+        'cost_estimate': 0.25,
+        'budget_limit': 1.50,
       })
       renderJobCard(job)
 
@@ -204,7 +204,7 @@ describe('JobCard', () => {
   describe('Button callbacks', () => {
     it('calls onDelete with job ID when Cancel clicked', async () => {
       const user = userEvent.setup()
-      const job = createMockJob({ status: 'RUNNING', 'job-id': 'cancel-job-123' })
+      const job = createMockJob({ status: 'RUNNING', 'job_id': 'cancel-job-123' })
       renderJobCard(job)
 
       await user.click(screen.getByRole('button', { name: 'Cancel' }))
@@ -215,7 +215,7 @@ describe('JobCard', () => {
 
     it('calls onDelete with job ID when Delete clicked', async () => {
       const user = userEvent.setup()
-      const job = createMockJob({ status: 'FAILED', 'job-id': 'delete-job-456' })
+      const job = createMockJob({ status: 'FAILED', 'job_id': 'delete-job-456' })
       renderJobCard(job)
 
       await user.click(screen.getByRole('button', { name: 'Delete' }))

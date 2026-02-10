@@ -75,10 +75,10 @@ describe('Test Setup Smoke Tests', () => {
     })
 
     it('supports custom return values', async () => {
-      const customJobs = [{ ...sampleJobs[0], 'job-id': 'custom-job' }]
+      const customJobs = [{ ...sampleJobs[0], 'job_id': 'custom-job' }]
       const mock = createApiMock({ fetchJobsResult: customJobs })
       const jobs = await mock.fetchJobs()
-      expect(jobs[0]['job-id']).toBe('custom-job')
+      expect(jobs[0]['job_id']).toBe('custom-job')
     })
 
     it('supports error scenarios', async () => {

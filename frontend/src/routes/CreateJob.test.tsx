@@ -191,17 +191,17 @@ describe('CreateJob', () => {
         s3_key: 'seed-data/test-file.json',
       })
       mockCreateJob.mockResolvedValueOnce({
-        'job-id': 'new-job-123',
-        'user-id': 'user-1',
+        'job_id': 'new-job-123',
+        'user_id': 'user-1',
         status: 'QUEUED',
-        'created-at': '2024-01-01T00:00:00Z',
-        'updated-at': '2024-01-01T00:00:00Z',
-        'template-id': 'template-1',
-        'budget-limit': 10,
-        'num-records': 100,
-        'records-generated': 0,
-        'tokens-used': 0,
-        'cost-estimate': 0,
+        'created_at': '2024-01-01T00:00:00Z',
+        'updated_at': '2024-01-01T00:00:00Z',
+        'template_id': 'template-1',
+        'budget_limit': 10,
+        'num_records': 100,
+        'records_generated': 0,
+        'tokens_used': 0,
+        'cost_estimate': 0,
       })
 
       renderCreateJob()

@@ -50,14 +50,14 @@ export default function CreateJob() {
 
       // Step 3: Create job with the S3 key (user-id is handled server-side)
       const job = await createJob({
-        'template-id': data.templateId,
-        'seed-data-key': s3_key,
-        'budget-limit': data.budgetLimit,
-        'num-records': data.numRecords,
-        'output-format': data.outputFormat,
+        template_id: data.templateId,
+        seed_data_path: s3_key,
+        budget_limit: data.budgetLimit,
+        num_records: data.numRecords,
+        output_format: data.outputFormat,
       })
 
-      navigate(`/jobs/${job['job-id']}`)
+      navigate(`/jobs/${job.job_id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create job')
     } finally {
