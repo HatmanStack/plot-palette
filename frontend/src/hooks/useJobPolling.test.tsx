@@ -28,17 +28,17 @@ describe('useJobPolling', () => {
   )
 
   const createMockJob = (overrides: Partial<api.Job> = {}): api.Job => ({
-    'job-id': 'job-123',
-    'user-id': 'user-456',
+    'job_id': 'job-123',
+    'user_id': 'user-456',
     status: 'RUNNING',
-    'created-at': '2024-01-01T00:00:00Z',
-    'updated-at': '2024-01-01T01:00:00Z',
-    'template-id': 'template-789',
-    'budget-limit': 100,
-    'num-records': 1000,
-    'records-generated': 500,
-    'tokens-used': 25000,
-    'cost-estimate': 0.25,
+    'created_at': '2024-01-01T00:00:00Z',
+    'updated_at': '2024-01-01T01:00:00Z',
+    'template_id': 'template-789',
+    'budget_limit': 100,
+    'num_records': 1000,
+    'records_generated': 500,
+    'tokens_used': 25000,
+    'cost_estimate': 0.25,
     ...overrides,
   })
 
@@ -81,7 +81,7 @@ describe('useJobPolling', () => {
   it('returns job with COMPLETED status', async () => {
     const mockJob = createMockJob({
       status: 'COMPLETED',
-      'records-generated': 1000,
+      'records_generated': 1000,
     })
     mockFetchJobDetails.mockResolvedValueOnce(mockJob)
 
@@ -91,7 +91,7 @@ describe('useJobPolling', () => {
       expect(result.current.data?.status).toBe('COMPLETED')
     })
 
-    expect(result.current.data?.['records-generated']).toBe(1000)
+    expect(result.current.data?.['records_generated']).toBe(1000)
   })
 
   it('returns job with FAILED status', async () => {

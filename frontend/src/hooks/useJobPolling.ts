@@ -7,12 +7,15 @@ export function useJobPolling(jobId: string) {
     queryKey: ['job', jobId],
     queryFn: () => fetchJobDetails(jobId),
     refetchInterval: (query) => {
-      // Poll every 5 seconds if job is RUNNING or QUEUED
       const status = query.state.data?.status
-      if (status === 'RUNNING' || status === 'QUEUED') {
+      if (status === 'RUNNING') {
         return 5000
+      }
+      if (status === 'QUEUED') {
+        return 15000 // Slower polling for queued jobs
       }
       return false // Don't poll if job is complete
     },
+    refetchIntervalInBackground: false,
   })
 }

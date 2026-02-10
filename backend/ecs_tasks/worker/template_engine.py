@@ -8,15 +8,16 @@ for multi-step synthetic data generation workflows.
 import json
 import logging
 import os
+import re
 import sys
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
 import jinja2
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
-from retry import CircuitBreakerOpen, retry_with_backoff
+from retry import CircuitBreakerOpen, get_circuit_breaker, retry_with_backoff
 from template_filters import CUSTOM_FILTERS
 
 if TYPE_CHECKING:
@@ -49,10 +50,10 @@ class TemplateEngine:
             except Exception as e:
                 logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
 
-        # Create Jinja2 environment with custom loader and autoescape enabled
-        self.env = jinja2.Environment(
+        # Create Jinja2 environment with custom loader (no autoescape — prompts are plain text, not HTML)
+        self.env = jinja2.Environment(  # nosec B701 — LLM prompts are plain text, not HTML
             loader=jinja2.FunctionLoader(self.load_template_string),
-            autoescape=jinja2.select_autoescape(default_for_string=True, default=True),
+            autoescape=False,
             trim_blocks=True,
             lstrip_blocks=True
         )
@@ -111,6 +112,11 @@ class TemplateEngine:
             # Sanitize error to prevent information leakage in rendered output
             return f"<!-- Error loading template {template_name} -->"
 
+    @staticmethod
+    def _find_referenced_steps(prompt_text: str) -> Set[str]:
+        """Parse steps.X.output references from prompt text."""
+        return set(re.findall(r'steps\.(\w+)\.output', prompt_text))
+
     def render_step(self, step_def: Dict[str, Any], context: Dict[str, Any]) -> str:
         """Render a single template step with context."""
         template = self.env.from_string(step_def['prompt'])
@@ -141,8 +147,14 @@ class TemplateEngine:
                 model_id = MODEL_TIERS.get(model_id, model_id)
 
             try:
-                # Render prompt with current context
-                prompt = self.render_step(step, context)
+                # Build a render context with pruned steps (don't mutate original)
+                render_context = dict(context)
+                if 'steps' in context and context['steps']:
+                    referenced = self._find_referenced_steps(step.get('prompt', ''))
+                    render_context['steps'] = {k: v for k, v in context['steps'].items() if k in referenced}
+
+                # Render prompt with pruned context
+                prompt = self.render_step(step, render_context)
 
                 # Call Bedrock
                 logger.info(f"Calling Bedrock for step '{step_id}' with model '{model_id}'")
@@ -184,19 +196,33 @@ class TemplateEngine:
 
         return results
 
-    @retry_with_backoff(
-        max_retries=3,
-        base_delay=1.0,
-        max_delay=30.0,
-        circuit_breaker_name='bedrock'
-    )
     def call_bedrock(self, client, model_id: str, prompt: str) -> str:
         """
         Call AWS Bedrock API with model-specific formatting.
 
-        Uses retry with exponential backoff and circuit breaker pattern
+        Uses retry with exponential backoff and per-model circuit breaker
         to handle transient failures and throttling.
         """
+        cb_name = f'bedrock:{model_id}'
+        cb = get_circuit_breaker(cb_name)
+        if not cb.can_execute():
+            raise CircuitBreakerOpen(f"Circuit breaker '{cb_name}' is open")
+
+        try:
+            result = self._invoke_bedrock(client, model_id, prompt)
+            cb.record_success()
+            return result
+        except Exception:
+            cb.record_failure()
+            raise
+
+    @retry_with_backoff(
+        max_retries=3,
+        base_delay=1.0,
+        max_delay=30.0,
+    )
+    def _invoke_bedrock(self, client, model_id: str, prompt: str) -> str:
+        """Invoke Bedrock model with retry logic (no circuit breaker)."""
         try:
             # Format request based on model family
             if 'claude' in model_id.lower():

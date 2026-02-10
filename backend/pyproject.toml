@@ -25,24 +25,30 @@ classifiers = [
 dependencies = [
     "boto3>=1.34.0",
     "botocore>=1.34.0",
-    "pydantic>=2.0.0",
-    "jinja2>=3.1.0",
+    "pydantic>=2.5.0",
+    "jinja2>=3.1.6",
     "typing-extensions>=4.8.0",
+    "requests>=2.32.4",
+    "python-dotenv>=1.0.0",
+    "jsonschema>=4.20.0",
 ]
 
 [project.optional-dependencies]
 worker = [
-    "pandas>=2.0.0",
-    "pyarrow>=14.0.0",
+    "pandas>=2.1.0",
+    "pyarrow>=14.0.1",
 ]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.12.0",
     "moto[all]>=4.2.0",
-    "mypy>=1.5.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
+    "requests-mock>=1.11.0",
+    "mypy>=1.7.0",
+    "ruff>=0.1.8",
+    "bandit>=1.7.0",
+    "cfn-lint>=1.0.0",
     "boto3-stubs[dynamodb,s3,bedrock-runtime,ecs]>=1.34.0",
 ]
 
@@ -97,12 +103,11 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"lambdas/**/*.py" = ["E402"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["shared", "lambdas", "ecs_tasks"]
-
-[tool.black]
-line-length = 100
-target-version = ["py311"]
 
 [tool.pytest.ini_options]
 testpaths = ["../tests"]
@@ -115,3 +120,5 @@ markers = [
     "slow: Slow tests (>10s)",
 ]
 addopts = "-v --strict-markers"
+
+# Coverage config is in root pyproject.toml (pytest runs from repo root)

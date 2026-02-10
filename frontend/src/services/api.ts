@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { z } from 'zod'
 import { getIdToken } from './auth'
 
 const apiClient = axios.create({
@@ -18,32 +19,47 @@ apiClient.interceptors.request.use(async (config) => {
   return config
 })
 
-export interface Job {
-  job_id: string
-  user_id: string
-  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'BUDGET_EXCEEDED'
-  created_at: string
-  updated_at: string
-  template_id: string
-  budget_limit: number
-  num_records: number
-  records_generated: number
-  tokens_used: number
-  cost_estimate: number
-  config?: {
-    output_format?: string
-    model?: string
+// Redirect to login on auth failures
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
   }
-}
+)
+
+// Runtime validation schema
+export const JobSchema = z.object({
+  job_id: z.string(),
+  user_id: z.string().default(''),
+  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'BUDGET_EXCEEDED']),
+  created_at: z.string().default(''),
+  updated_at: z.string().default(''),
+  template_id: z.string().optional(),
+  budget_limit: z.number().default(0),
+  num_records: z.number().default(0),
+  records_generated: z.number().default(0),
+  tokens_used: z.number().default(0),
+  cost_estimate: z.number().default(0),
+  config: z.object({
+    output_format: z.string().optional(),
+    model: z.string().optional(),
+  }).optional(),
+})
+
+export type Job = z.infer<typeof JobSchema>
 
 export async function fetchJobs(): Promise<Job[]> {
   const { data } = await apiClient.get('/jobs')
-  return data.jobs || []
+  const jobs = data.jobs || []
+  return jobs.map((job: unknown) => JobSchema.parse(job))
 }
 
 export async function fetchJobDetails(jobId: string): Promise<Job> {
   const { data } = await apiClient.get(`/jobs/${jobId}`)
-  return data
+  return JobSchema.parse(data)
 }
 
 export async function createJob(jobData: {
@@ -54,7 +70,7 @@ export async function createJob(jobData: {
   output_format?: string
 }): Promise<Job> {
   const { data } = await apiClient.post('/jobs', jobData)
-  return data
+  return JobSchema.parse(data)
 }
 
 export async function deleteJob(jobId: string): Promise<void> {
@@ -63,6 +79,11 @@ export async function deleteJob(jobId: string): Promise<void> {
 
 export async function cancelJob(jobId: string): Promise<void> {
   await apiClient.delete(`/jobs/${jobId}`)
+}
+
+export async function downloadJobExport(jobId: string): Promise<{ download_url: string; filename: string }> {
+  const { data } = await apiClient.get(`/jobs/${jobId}/download`)
+  return data
 }
 
 export async function generateUploadUrl(filename: string, contentType: string = 'application/json'): Promise<{

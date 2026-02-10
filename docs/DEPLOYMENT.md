@@ -136,7 +136,7 @@ vim infrastructure/parameters/development.json
 - `InitialBudgetLimit` - Default job budget (USD)
 - `LogRetentionDays` - CloudWatch log retention
 
-See [Parameter Reference](./parameter-reference.md) for complete details.
+See the SAM template parameters section in `backend/template.yaml` for complete details.
 
 ### Step 3: Validate Parameters
 
@@ -526,18 +526,11 @@ aws logs delete-log-group --log-group-name /aws/lambda/plot-palette-*
 
 ---
 
-## Troubleshooting
-
-Common issues and solutions: [Troubleshooting Guide](./troubleshooting.md)
-
----
-
 ## Support
 
-- **Documentation:** [Phase 0 Architecture](../plans/Phase-0.md)
-- **Parameter Reference:** [parameter-reference.md](./parameter-reference.md)
-- **Troubleshooting:** [troubleshooting.md](./troubleshooting.md)
-- **GitHub Issues:** https://github.com/your-repo/plot-palette/issues
+- **Architecture:** See [`docs/README.md`](./README.md)
+- **Parameters:** See `backend/template.yaml` for SAM template parameters
+- **GitHub Issues:** https://github.com/HatmanStack/plot-palette/issues
 
 ---
 

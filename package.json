@@ -6,6 +6,7 @@
   "scripts": {
     "test": "cd frontend && npm test -- --passWithNoTests",
     "test:backend": "PYTHONPATH=. pytest tests/unit tests/integration -v --tb=short",
+    "test:e2e": "docker compose up -d --wait && PYTHONPATH=. AWS_ENDPOINT_URL=http://localhost:4566 pytest tests/e2e -v --tb=short; PYTEST_EXIT=$?; docker compose down; exit $PYTEST_EXIT",
     "lint": "cd frontend && npm run lint && npx tsc --noEmit",
     "lint:backend": "cd backend && uvx ruff check .",
     "check": "npm run lint && npm run lint:backend && npm test && npm run test:backend",

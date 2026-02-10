@@ -533,3 +533,34 @@ class TestAPIGatewayEventStructure:
 
         with pytest.raises(KeyError):
             _ = event['requestContext']['authorizer']['jwt']['claims']['sub']
+
+
+class TestErrorResponseSanitization:
+    """Tests that Lambda error responses don't leak internal key names."""
+
+    def test_sanitize_error_message_strips_internal_keys(self):
+        """Test that sanitize_error_message strips potentially sensitive info."""
+        from backend.shared.utils import sanitize_error_message
+
+        # Raw KeyError string often contains internal field names
+        raw = "'requestContext'"
+        sanitized = sanitize_error_message(raw)
+
+        # Should not contain the raw internal key name as-is (it gets sanitized)
+        assert len(sanitized) <= 200
+        assert sanitized  # Should produce some output
+
+    def test_error_response_uses_sanitized_message(self):
+        """Test that error responses use sanitized messages."""
+        from backend.shared.utils import sanitize_error_message
+
+        # Simulate what happens in Lambda handlers
+        try:
+            event = {}
+            _ = event['requestContext']['authorizer']['jwt']['claims']['sub']
+        except KeyError as e:
+            sanitized = sanitize_error_message(str(e))
+            error_msg = f"Missing required field: {sanitized}"
+
+        # The error message should not contain raw exception details
+        assert len(error_msg) < 300

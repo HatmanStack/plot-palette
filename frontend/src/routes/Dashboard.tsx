@@ -26,11 +26,11 @@ export default function Dashboard() {
     const sorted = [...filtered].sort((a, b) => {
       switch (sort) {
         case 'created':
-          return new Date(b['created-at']).getTime() - new Date(a['created-at']).getTime()
+          return new Date(b['created_at']).getTime() - new Date(a['created_at']).getTime()
         case 'status':
           return a.status.localeCompare(b.status)
         case 'cost':
-          return b['cost-estimate'] - a['cost-estimate']
+          return b['cost_estimate'] - a['cost_estimate']
         default:
           return 0
       }
@@ -126,7 +126,7 @@ export default function Dashboard() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredAndSortedJobs.map((job) => (
-            <JobCard key={job['job-id']} job={job} onDelete={handleDelete} />
+            <JobCard key={job['job_id']} job={job} onDelete={handleDelete} />
           ))}
         </div>
       )}

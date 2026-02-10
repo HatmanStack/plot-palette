@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createJob, generateUploadUrl } from '../services/api'
+import { estimateCostRange } from '../constants/pricing'
 import axios from 'axios'
 
 interface WizardData {
@@ -50,14 +51,14 @@ export default function CreateJob() {
 
       // Step 3: Create job with the S3 key (user-id is handled server-side)
       const job = await createJob({
-        'template-id': data.templateId,
-        'seed-data-key': s3_key,
-        'budget-limit': data.budgetLimit,
-        'num-records': data.numRecords,
-        'output-format': data.outputFormat,
+        template_id: data.templateId,
+        seed_data_path: s3_key,
+        budget_limit: data.budgetLimit,
+        num_records: data.numRecords,
+        output_format: data.outputFormat,
       })
 
-      navigate(`/jobs/${job['job-id']}`)
+      navigate(`/jobs/${job.job_id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create job')
     } finally {
@@ -242,7 +243,7 @@ export default function CreateJob() {
             </div>
 
             <p className="text-sm text-gray-600">
-              Estimated cost: ${(data.numRecords * 0.01).toFixed(2)} - ${(data.numRecords * 0.05).toFixed(2)}
+              Estimated cost: ${estimateCostRange(data.numRecords).min.toFixed(2)} - ${estimateCostRange(data.numRecords).max.toFixed(2)}
             </p>
           </div>
         )}

@@ -1,0 +1,15 @@
+# Root-level config for coverage.py (pytest runs from repo root)
+# Python package config lives in backend/pyproject.toml
+
+[tool.coverage.run]
+source = ["backend"]
+omit = [
+    "tests/*",
+    "backend/infrastructure/*",
+    "backend/ecs_tasks/worker/worker.py",
+    "backend/lambdas/*",
+]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true

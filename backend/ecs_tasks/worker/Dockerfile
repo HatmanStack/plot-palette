@@ -23,5 +23,12 @@ COPY backend/shared /app/shared
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
 
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+USER appuser
+
+# Health check (batch process, not HTTP)
+HEALTHCHECK --interval=30s --timeout=5s CMD pgrep -f "python worker" || exit 1
+
 # Set entrypoint
 ENTRYPOINT ["./entrypoint.sh"]

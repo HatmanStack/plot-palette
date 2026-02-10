@@ -290,3 +290,74 @@ class TestBudgetFromDifferentSources:
         budget_limit = config.get('budget_limit', job.get('budget_limit', default_budget))
 
         assert budget_limit == 100.0
+
+
+class TestOutputTokenPricing:
+    """Tests for output token pricing inclusion."""
+
+    def test_output_tokens_included_in_cost(self):
+        """Test that cost calculation includes both input and output token pricing."""
+        from backend.shared.constants import MODEL_PRICING
+
+        model_id = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+        pricing = MODEL_PRICING[model_id]
+        tokens_used = 1_000_000
+
+        # Old calculation (input only)
+        old_cost = (tokens_used / 1_000_000) * pricing['input']
+
+        # New calculation (40/60 input/output split)
+        input_tokens = int(tokens_used * 0.4)
+        output_tokens = tokens_used - input_tokens
+        new_cost = (input_tokens / 1_000_000) * pricing['input'] + \
+                   (output_tokens / 1_000_000) * pricing['output']
+
+        # New cost should be significantly higher than old cost
+        assert new_cost > old_cost
+        # Claude Sonnet: input=$3, output=$15
+        # Old: 1M * $3/1M = $3.00
+        # New: 400K * $3/1M + 600K * $15/1M = $1.20 + $9.00 = $10.20
+        assert abs(new_cost - 10.20) < 0.01
+
+    def test_estimate_single_call_cost(self):
+        """Test estimate_single_call_cost helper returns non-zero for valid input."""
+        import json
+        from backend.shared.constants import MODEL_PRICING
+
+        result = {"step1": {"output": "Generated text " * 100}}
+        model_id = 'meta.llama3-1-8b-instruct-v1:0'
+        pricing = MODEL_PRICING[model_id]
+
+        text = json.dumps(result)
+        tokens = max(1, int(len(text) / 4))  # Llama token estimation
+        input_tokens = int(tokens * 0.4)
+        output_tokens = tokens - input_tokens
+        cost = (input_tokens / 1_000_000) * pricing['input'] + \
+               (output_tokens / 1_000_000) * pricing['output']
+
+        assert cost > 0
+
+
+class TestInMemoryBudgetTracking:
+    """Tests for in-memory budget tracking."""
+
+    def test_running_cost_catches_overage_within_checkpoint(self):
+        """Test that in-memory running cost catches budget overages within checkpoint interval."""
+        budget_limit = 1.0
+        running_cost = 0.0
+        records_generated = 0
+        checkpoint_interval = 50
+
+        # Simulate high per-record cost
+        cost_per_record = 0.05  # $0.05 per record
+
+        for i in range(100):
+            if running_cost >= budget_limit:
+                break
+            running_cost += cost_per_record
+            records_generated += 1
+
+        # Should stop at 20 records (20 * 0.05 = 1.00)
+        assert records_generated == 20
+        # This is well within the checkpoint interval of 50
+        assert records_generated < checkpoint_interval

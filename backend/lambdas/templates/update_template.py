@@ -14,25 +14,27 @@ from typing import Any, Dict, List
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
-import boto3
 import jinja2
 import jinja2.meta
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+from lambda_responses import error_response, success_response
 from template_filters import validate_template_syntax
-from utils import setup_logger
+from utils import sanitize_error_message, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
+from aws_clients import get_dynamodb_resource
+
+dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
 
 
 def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str]:
     """Extract all {{ variable }} references from Jinja2 template."""
-    env = jinja2.Environment()
+    env = jinja2.Environment(autoescape=True)
     all_variables = set()
 
     try:
@@ -49,18 +51,6 @@ def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str
 
     except jinja2.TemplateSyntaxError as e:
         raise ValueError(f"Invalid template syntax: {str(e)}") from e
-
-
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """Generate error response."""
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
 
 
 def get_latest_version(template_id: str) -> int:
@@ -195,27 +185,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "new_version": new_version
         }))
 
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps({
-                "template_id": template_id,
-                "version": new_version,
-                "previous_version": latest_version,
-                "schema_requirements": schema_reqs,
-                "message": "Template updated successfully"
-            })
-        }
+        return success_response(200, {
+            "template_id": template_id,
+            "version": new_version,
+            "previous_version": latest_version,
+            "schema_requirements": schema_reqs,
+            "message": "Template updated successfully"
+        })
 
     except KeyError as e:
         logger.error(json.dumps({
             "event": "missing_field_error",
             "error": str(e)
         }))
-        return error_response(400, f"Missing required field: {str(e)}")
+        return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
         logger.error(json.dumps({

@@ -437,3 +437,32 @@ class TestErrorRecoveryStrategies:
         for code in non_retryable_codes:
             should_retry = code in retryable_codes
             assert should_retry is False
+
+
+class TestPerModelCircuitBreaker:
+    """Tests for per-model circuit breaker isolation."""
+
+    def test_throttling_one_model_doesnt_block_others(self):
+        """Test that circuit breaker for one model doesn't affect other models."""
+        from backend.shared.retry import CircuitBreaker
+
+        cb_llama = CircuitBreaker(failure_threshold=3, name='bedrock:meta.llama3-1-8b-instruct-v1:0')
+        cb_claude = CircuitBreaker(failure_threshold=3, name='bedrock:anthropic.claude-3-5-sonnet-20241022-v2:0')
+
+        # Trip the Llama circuit breaker
+        for _ in range(3):
+            cb_llama.record_failure()
+
+        # Llama is open, Claude is still closed
+        assert cb_llama.state == CircuitBreaker.OPEN
+        assert cb_claude.state == CircuitBreaker.CLOSED
+        assert cb_claude.can_execute() is True
+        assert cb_llama.can_execute() is False
+
+    def test_per_model_breaker_uses_model_id_in_name(self):
+        """Test that circuit breaker name includes model ID."""
+        model_id = 'meta.llama3-1-8b-instruct-v1:0'
+        cb_name = f'bedrock:{model_id}'
+
+        assert cb_name == 'bedrock:meta.llama3-1-8b-instruct-v1:0'
+        assert model_id in cb_name

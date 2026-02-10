@@ -12,6 +12,8 @@ import re
 from collections import Counter
 from typing import Any, List, Tuple
 
+from botocore.exceptions import ClientError
+
 logger = logging.getLogger(__name__)
 
 
@@ -251,7 +253,7 @@ def validate_template_syntax(template_def: dict) -> Tuple[bool, str]:
 
     try:
         env = jinja2.Environment(
-            autoescape=False,
+            autoescape=jinja2.select_autoescape(default_for_string=True, default=True),
             trim_blocks=True,
             lstrip_blocks=True
         )
@@ -277,7 +279,8 @@ def validate_template_syntax(template_def: dict) -> Tuple[bool, str]:
         return False, f"Template syntax error: {str(e)}"
     except Exception as e:
         logger.error(f"Template validation error: {str(e)}", exc_info=True)
-        return False, f"Template validation error: {str(e)}"
+        from .utils import sanitize_error_message
+        return False, f"Template validation error: {sanitize_error_message(str(e))}"
 
 
 def validate_template_includes(template_def: dict, templates_table) -> Tuple[bool, str]:
@@ -292,35 +295,59 @@ def validate_template_includes(template_def: dict, templates_table) -> Tuple[boo
         Tuple[bool, str]: (is_valid, error_message)
     """
     try:
-        missing_includes = []
+        # Collect all include names across all steps
+        all_includes = set()
 
         for step in template_def.get('steps', []):
             prompt = step.get('prompt', '')
 
             # Find all {% include 'template-name' %} references
-            includes = re.findall(r"{%\s*include\s+'([^']+)'\s*%}", prompt)
-            includes.extend(re.findall(r'{%\s*include\s+"([^"]+)"\s*%}', prompt))
+            all_includes.update(re.findall(r"{%\s*include\s+'([^']+)'\s*%}", prompt))
+            all_includes.update(re.findall(r'{%\s*include\s+"([^"]+)"\s*%}', prompt))
 
-            for include_name in includes:
-                # Check if template exists
-                try:
-                    response = templates_table.get_item(
-                        Key={'template_id': include_name, 'version': 1}
+        if not all_includes:
+            return True, "No includes to validate"
+
+        # Batch lookup in chunks of 100 (DynamoDB BatchGetItem limit)
+        found_ids = set()
+        include_list = list(all_includes)
+
+        for i in range(0, len(include_list), 100):
+            chunk = include_list[i:i + 100]
+
+            try:
+                for name in chunk:
+                    resp = templates_table.get_item(
+                        Key={'template_id': name, 'version': 1}
                     )
-                    if 'Item' not in response:
-                        missing_includes.append(include_name)
-                except Exception as e:
-                    logger.error(f"Error checking include {include_name}: {str(e)}")
-                    missing_includes.append(include_name)
+                    if 'Item' in resp:
+                        found_ids.add(name)
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', '')
+                if error_code in ('ThrottlingException', 'InternalServerError',
+                                  'ServiceUnavailable', 'ProvisionedThroughputExceededException'):
+                    raise  # Propagate infrastructure errors
+                logger.error(f"Error checking include: {str(e)}")
 
+        missing_includes = all_includes - found_ids
         if missing_includes:
-            return False, f"Missing included templates: {', '.join(missing_includes)}"
+            return False, f"Missing included templates: {', '.join(sorted(missing_includes))}"
 
         return True, "All includes valid"
 
+    except ClientError as e:
+        # Propagate infrastructure errors (throttling, internal server errors)
+        error_code = e.response.get('Error', {}).get('Code', '')
+        if error_code in ('ThrottlingException', 'InternalServerError',
+                          'ServiceUnavailable', 'ProvisionedThroughputExceededException'):
+            raise
+        logger.error(f"Include validation error: {str(e)}", exc_info=True)
+        from .utils import sanitize_error_message
+        return False, f"Include validation error: {sanitize_error_message(str(e))}"
     except Exception as e:
         logger.error(f"Include validation error: {str(e)}", exc_info=True)
-        return False, f"Include validation error: {str(e)}"
+        from .utils import sanitize_error_message
+        return False, f"Include validation error: {sanitize_error_message(str(e))}"
 
 
 # Register all custom filters

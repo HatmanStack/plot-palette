@@ -14,17 +14,20 @@ from typing import Any, Dict, List
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
 
-import boto3
 import jinja2
 import jinja2.meta
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
-from utils import generate_template_id, setup_logger
+from lambda_responses import error_response, success_response
+from utils import generate_template_id, sanitize_error_message, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
+from aws_clients import get_dynamodb_resource
+
+dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
 
 
@@ -41,7 +44,7 @@ def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str
     Raises:
         ValueError: If template syntax is invalid
     """
-    env = jinja2.Environment()
+    env = jinja2.Environment(autoescape=True)
     all_variables = set()
 
     try:
@@ -60,18 +63,6 @@ def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str
 
     except jinja2.TemplateSyntaxError as e:
         raise ValueError(f"Invalid template syntax: {str(e)}") from e
-
-
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
-    """Generate error response."""
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-        },
-        "body": json.dumps({"error": message})
-    }
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -101,6 +92,33 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             body = json.loads(event['body'])
         except json.JSONDecodeError:
             return error_response(400, "Invalid JSON in request body")
+
+        # Check idempotency token
+        idempotency_token = body.get('idempotency_token')
+        if idempotency_token:
+            try:
+                existing = templates_table.query(
+                    IndexName='user-id-index',
+                    KeyConditionExpression=Key('user_id').eq(user_id),
+                    FilterExpression=Attr('idempotency_token').eq(idempotency_token),
+                )
+                if existing.get('Items'):
+                    item = existing['Items'][0]
+                    logger.info(json.dumps({
+                        "event": "idempotent_template_returned",
+                        "template_id": item['template_id'],
+                        "idempotency_token": idempotency_token,
+                    }))
+                    return success_response(200, {
+                            "template_id": item['template_id'],
+                            "version": item.get('version', 1),
+                            "message": "Existing template returned (idempotent)",
+                        })
+            except ClientError as e:
+                logger.warning(json.dumps({
+                    "event": "idempotency_check_failed",
+                    "error": str(e),
+                }))
 
         # Validate required fields
         if 'name' not in body:
@@ -146,8 +164,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Insert into Templates table
         try:
-            templates_table.put_item(Item=template)
+            if idempotency_token:
+                template['idempotency_token'] = idempotency_token
+            templates_table.put_item(
+                Item=template,
+                ConditionExpression='attribute_not_exists(template_id)',
+            )
         except ClientError as e:
+            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                logger.warning(json.dumps({
+                    "event": "template_id_conflict",
+                    "template_id": template_id,
+                }))
+                return error_response(409, "Template creation conflict, please retry")
             logger.error(json.dumps({
                 "event": "template_insert_error",
                 "error": str(e)
@@ -162,26 +191,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "schema_requirements": schema_reqs
         }))
 
-        return {
-            "statusCode": 201,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            "body": json.dumps({
-                "template_id": template_id,
-                "version": 1,
-                "schema_requirements": schema_reqs,
-                "message": "Template created successfully"
-            })
-        }
+        return success_response(201, {
+            "template_id": template_id,
+            "version": 1,
+            "schema_requirements": schema_reqs,
+            "message": "Template created successfully"
+        })
 
     except KeyError as e:
         logger.error(json.dumps({
             "event": "missing_field_error",
             "error": str(e)
         }))
-        return error_response(400, f"Missing required field: {str(e)}")
+        return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
         logger.error(json.dumps({

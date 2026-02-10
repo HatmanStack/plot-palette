@@ -13,7 +13,16 @@ import TemplateEditor from './routes/TemplateEditor'
 import Settings from './routes/Settings'
 import Layout from './components/Layout'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      retry: 2,
+      refetchOnWindowFocus: false,
+    },
+  },
+})
 
 function App() {
   return (

@@ -6,12 +6,17 @@ and cost tracking using Pydantic for validation and serialization.
 """
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
+from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from pydantic import BaseModel, Field, field_validator
 from typing_extensions import NotRequired, TypedDict
 
 from .constants import JobStatus
+
+_serializer = TypeSerializer()
+_deserializer = TypeDeserializer()
 
 
 # TypedDict definitions for strongly-typed dictionaries
@@ -60,14 +65,14 @@ class JobConfig(BaseModel):
     status: JobStatus = Field(default=JobStatus.QUEUED, description="Current job status")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Job creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
-    config: Dict[str, Any] = Field(..., description="Job configuration dictionary (see JobConfigDict for structure)")
+    config: Dict[str, Any] = Field(..., description="Job configuration dictionary")
     budget_limit: float = Field(..., gt=0, description="Budget limit in USD")
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
     cost_estimate: float = Field(default=0.0, ge=0, description="Estimated cost in USD")
 
     def to_dynamodb(self) -> Dict[str, Any]:
-        """Convert to DynamoDB item format."""
+        """Convert to low-level DynamoDB item format (for client.put_item)."""
         return {
             "job_id": {"S": self.job_id},
             "user_id": {"S": self.user_id},
@@ -81,22 +86,36 @@ class JobConfig(BaseModel):
             "cost_estimate": {"N": str(self.cost_estimate)},
         }
 
+    def to_table_item(self) -> Dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        return {
+            "job_id": self.job_id,
+            "user_id": self.user_id,
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "config": self._convert_floats(self.config),
+            "budget_limit": Decimal(str(self.budget_limit)),
+            "tokens_used": self.tokens_used,
+            "records_generated": self.records_generated,
+            "cost_estimate": Decimal(str(self.cost_estimate)),
+        }
+
+    @staticmethod
+    def _convert_floats(obj: Any) -> Any:
+        """Convert float values to Decimal (required by DynamoDB)."""
+        if isinstance(obj, float):
+            return Decimal(str(obj))
+        if isinstance(obj, dict):
+            return {k: JobConfig._convert_floats(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [JobConfig._convert_floats(i) for i in obj]
+        return obj
+
     @staticmethod
     def _dict_to_dynamodb_map(d: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert Python dict to DynamoDB Map format."""
-        result = {}
-        for key, value in d.items():
-            if isinstance(value, str):
-                result[key] = {"S": value}
-            elif isinstance(value, bool):  # Must check bool before int/float since bool is subclass of int
-                result[key] = {"BOOL": value}
-            elif isinstance(value, (int, float)):
-                result[key] = {"N": str(value)}
-            elif isinstance(value, dict):
-                result[key] = {"M": JobConfig._dict_to_dynamodb_map(value)}
-            elif isinstance(value, list):
-                result[key] = {"L": [JobConfig._dict_to_dynamodb_map({"item": v})["item"] for v in value]}
-        return result
+        """Convert Python dict to DynamoDB Map format using boto3 TypeSerializer."""
+        return {k: _serializer.serialize(JobConfig._convert_floats(v)) for k, v in d.items()}
 
     @classmethod
     def from_dynamodb(cls, item: Dict[str, Any]) -> "JobConfig":
@@ -116,20 +135,17 @@ class JobConfig(BaseModel):
 
     @staticmethod
     def _dynamodb_map_to_dict(m: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert DynamoDB Map to Python dict."""
-        result = {}
-        for key, value in m.items():
-            if "S" in value:
-                result[key] = value["S"]
-            elif "N" in value:
-                result[key] = float(value["N"])
-            elif "BOOL" in value:
-                result[key] = value["BOOL"]
-            elif "M" in value:
-                result[key] = JobConfig._dynamodb_map_to_dict(value["M"])
-            elif "L" in value:
-                result[key] = [JobConfig._dynamodb_map_to_dict({"item": v})["item"] for v in value["L"]]
-        return result
+        """Convert DynamoDB Map to Python dict using boto3 TypeDeserializer."""
+        def _convert_decimals(obj: Any) -> Any:
+            if isinstance(obj, Decimal):
+                return int(obj) if obj == int(obj) else float(obj)
+            if isinstance(obj, dict):
+                return {k: _convert_decimals(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_convert_decimals(i) for i in obj]
+            return obj
+
+        return {k: _convert_decimals(_deserializer.deserialize(v)) for k, v in m.items()}
 
 
 class TemplateStep(BaseModel):
@@ -204,7 +220,7 @@ class CheckpointState(BaseModel):
     last_updated: datetime = Field(default_factory=datetime.utcnow, description="Last checkpoint timestamp")
     resume_state: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Custom state for resuming generation (see ResumeStateDict for structure)",
+        description="Custom state for resuming generation",
     )
     etag: Optional[str] = Field(None, description="S3 ETag for concurrency control")
 
@@ -265,6 +281,30 @@ class CostBreakdown(BaseModel):
         # Add TTL (90 days from now)
         ttl = int((datetime.utcnow().timestamp() + (90 * 24 * 60 * 60)))
         item["ttl"] = {"N": str(ttl)}
+
+        return item
+
+    def to_table_item(self) -> Dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        item: Dict[str, Any] = {
+            "job_id": self.job_id,
+            "timestamp": self.timestamp.isoformat(),
+            "bedrock_tokens": self.bedrock_tokens,
+            "fargate_hours": Decimal(str(self.fargate_hours)),
+            "s3_operations": self.s3_operations,
+            "estimated_cost": {
+                "bedrock": Decimal(str(self.estimated_cost.bedrock)),
+                "fargate": Decimal(str(self.estimated_cost.fargate)),
+                "s3": Decimal(str(self.estimated_cost.s3)),
+                "total": Decimal(str(self.estimated_cost.total)),
+            },
+        }
+        if self.model_id:
+            item["model_id"] = self.model_id
+
+        # Add TTL (90 days from now)
+        ttl = int(datetime.utcnow().timestamp() + (90 * 24 * 60 * 60))
+        item["ttl"] = ttl
 
         return item
 

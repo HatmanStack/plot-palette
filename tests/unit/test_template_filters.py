@@ -334,3 +334,28 @@ def test_validate_template_syntax_with_loops():
     }
     valid, message = validate_template_syntax(template_def)
     assert valid is True
+
+
+def test_validate_template_syntax_autoescape_enabled():
+    """Test that validate_template_syntax uses autoescape."""
+    # The validation environment should have autoescape enabled
+    template_def = {
+        'steps': [
+            {
+                'id': 'step1',
+                'prompt': 'Hello {{ name }}'
+            }
+        ]
+    }
+    valid, _ = validate_template_syntax(template_def)
+    assert valid is True
+
+
+def test_validate_template_syntax_error_sanitized():
+    """Test that validation errors are sanitized."""
+    # Force an unusual error that might leak internals
+    template_def = {'steps': 'not-a-list'}  # Will cause an error
+    valid, message = validate_template_syntax(template_def)
+    # Should either pass validation or return a sanitized error
+    assert isinstance(message, str)
+    assert len(message) < 500

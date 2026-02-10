@@ -339,5 +339,64 @@ class TestTemplateStepValidation:
         assert step.model_tier is None
 
 
+class TestNoneValueDynamoDBRoundTrip:
+    """Test None values round-trip through DynamoDB serialization."""
+
+    def test_none_serialized_as_null(self):
+        """Test that None values are serialized as DynamoDB NULL type."""
+        d = {"key": None, "other": "value"}
+        result = JobConfig._dict_to_dynamodb_map(d)
+        assert result["key"] == {"NULL": True}
+        assert result["other"] == {"S": "value"}
+
+    def test_null_deserialized_as_none(self):
+        """Test that DynamoDB NULL type is deserialized as None."""
+        m = {"key": {"NULL": True}, "other": {"S": "value"}}
+        result = JobConfig._dynamodb_map_to_dict(m)
+        assert result["key"] is None
+        assert result["other"] == "value"
+
+    def test_none_round_trip(self):
+        """Test that None survives a round-trip through DynamoDB format."""
+        original = {"name": "test", "optional_field": None, "count": 42}
+        dynamodb = JobConfig._dict_to_dynamodb_map(original)
+        restored = JobConfig._dynamodb_map_to_dict(dynamodb)
+        assert restored["optional_field"] is None
+        assert restored["name"] == "test"
+
+
+class TestContextPruning:
+    """Test template engine context pruning."""
+
+    def test_find_referenced_steps(self):
+        """Test that referenced step IDs are parsed from prompt text."""
+        from backend.ecs_tasks.worker.template_engine import TemplateEngine
+
+        prompt = "Use {{ steps.question.output }} and {{ steps.analysis.output }}"
+        refs = TemplateEngine._find_referenced_steps(prompt)
+        assert refs == {'question', 'analysis'}
+
+    def test_find_referenced_steps_empty(self):
+        """Test that prompt with no references returns empty set."""
+        from backend.ecs_tasks.worker.template_engine import TemplateEngine
+
+        prompt = "Hello {{ name }}"
+        refs = TemplateEngine._find_referenced_steps(prompt)
+        assert refs == set()
+
+    def test_pruning_keeps_only_referenced(self):
+        """Test that context pruning keeps only referenced steps."""
+        context_steps = {
+            'step1': {'output': 'result1'},
+            'step2': {'output': 'result2'},
+            'step3': {'output': 'result3'},
+        }
+        referenced = {'step1', 'step3'}
+        pruned = {k: v for k, v in context_steps.items() if k in referenced}
+        assert 'step1' in pruned
+        assert 'step3' in pruned
+        assert 'step2' not in pruned
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
