@@ -97,6 +97,9 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"lambdas/**/*.py" = ["E402"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["shared", "lambdas", "ecs_tasks"]
 

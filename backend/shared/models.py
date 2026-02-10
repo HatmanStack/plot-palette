@@ -60,7 +60,7 @@ class JobConfig(BaseModel):
     status: JobStatus = Field(default=JobStatus.QUEUED, description="Current job status")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Job creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
-    config: JobConfigDict = Field(..., description="Job configuration dictionary")
+    config: Dict[str, Any] = Field(..., description="Job configuration dictionary")
     budget_limit: float = Field(..., gt=0, description="Budget limit in USD")
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
@@ -206,7 +206,7 @@ class CheckpointState(BaseModel):
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     cost_accumulated: float = Field(default=0.0, ge=0, description="Cost accumulated in USD")
     last_updated: datetime = Field(default_factory=datetime.utcnow, description="Last checkpoint timestamp")
-    resume_state: ResumeStateDict = Field(
+    resume_state: Dict[str, Any] = Field(
         default_factory=dict,
         description="Custom state for resuming generation",
     )
