@@ -5,11 +5,17 @@ This module provides singleton AWS clients with optimized connection pooling
 and retry configuration for production workloads.
 """
 
+import os
 from functools import lru_cache
 from typing import Optional
 
 import boto3
 from botocore.config import Config
+
+
+def _get_endpoint_url() -> Optional[str]:
+    """Return AWS_ENDPOINT_URL if set (for LocalStack), else None."""
+    return os.environ.get('AWS_ENDPOINT_URL')
 
 # Standard client configuration with connection pooling
 _standard_config = Config(
@@ -48,7 +54,8 @@ def get_dynamodb_resource(region_name: Optional[str] = None):
     return boto3.resource(
         'dynamodb',
         config=_standard_config,
-        region_name=region_name
+        region_name=region_name,
+        endpoint_url=_get_endpoint_url(),
     )
 
 
@@ -68,7 +75,8 @@ def get_dynamodb_client(region_name: Optional[str] = None):
     return boto3.client(
         'dynamodb',
         config=_standard_config,
-        region_name=region_name
+        region_name=region_name,
+        endpoint_url=_get_endpoint_url(),
     )
 
 
@@ -97,7 +105,8 @@ def get_s3_client(region_name: Optional[str] = None):
     return boto3.client(
         's3',
         config=s3_config,
-        region_name=region_name
+        region_name=region_name,
+        endpoint_url=_get_endpoint_url(),
     )
 
 
@@ -118,7 +127,8 @@ def get_bedrock_client(region_name: Optional[str] = None):
     return boto3.client(
         'bedrock-runtime',
         config=_bedrock_config,
-        region_name=region_name
+        region_name=region_name,
+        endpoint_url=_get_endpoint_url(),
     )
 
 
@@ -136,7 +146,8 @@ def get_ecs_client(region_name: Optional[str] = None):
     return boto3.client(
         'ecs',
         config=_standard_config,
-        region_name=region_name
+        region_name=region_name,
+        endpoint_url=_get_endpoint_url(),
     )
 
 
@@ -154,7 +165,8 @@ def get_sts_client(region_name: Optional[str] = None):
     return boto3.client(
         'sts',
         config=_standard_config,
-        region_name=region_name
+        region_name=region_name,
+        endpoint_url=_get_endpoint_url(),
     )
 
 
