@@ -39,11 +39,11 @@ describe('JobCard', () => {
   }
 
   describe('Basic rendering', () => {
-    it('displays truncated job ID (8 chars)', () => {
+    it('displays truncated job ID (12 chars)', () => {
       const job = createMockJob({ 'job_id': 'abcdefghijklmnop' })
       renderJobCard(job)
 
-      expect(screen.getByText('Job abcdefgh')).toBeInTheDocument()
+      expect(screen.getByText('Job abcdefghijkl')).toBeInTheDocument()
     })
 
     it('displays formatted created date', () => {
@@ -75,7 +75,7 @@ describe('JobCard', () => {
       const job = createMockJob({ 'job_id': 'my-job-id' })
       renderJobCard(job)
 
-      const link = screen.getByRole('link', { name: /Job my-job-i/i })
+      const link = screen.getByRole('link', { name: /Job my-job-id/i })
       expect(link).toHaveAttribute('href', '/jobs/my-job-id')
     })
   })

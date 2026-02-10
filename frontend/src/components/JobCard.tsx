@@ -34,7 +34,7 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
             to={`/jobs/${job['job_id']}`}
             className="text-lg font-semibold text-gray-900 hover:text-blue-600"
           >
-            Job {job['job_id'].substring(0, 8)}
+            Job {job['job_id'].substring(0, 12)}
           </Link>
           <p className="text-sm text-gray-500 mt-1">
             Created {formatDate(job['created_at'])}
