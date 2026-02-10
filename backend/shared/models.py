@@ -6,12 +6,17 @@ and cost tracking using Pydantic for validation and serialization.
 """
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
+from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from pydantic import BaseModel, Field, field_validator
 from typing_extensions import NotRequired, TypedDict
 
 from .constants import JobStatus
+
+_serializer = TypeSerializer()
+_deserializer = TypeDeserializer()
 
 
 # TypedDict definitions for strongly-typed dictionaries
@@ -83,22 +88,18 @@ class JobConfig(BaseModel):
 
     @staticmethod
     def _dict_to_dynamodb_map(d: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert Python dict to DynamoDB Map format."""
-        result = {}
-        for key, value in d.items():
-            if value is None:
-                result[key] = {"NULL": True}
-            elif isinstance(value, str):
-                result[key] = {"S": value}
-            elif isinstance(value, bool):  # Must check bool before int/float since bool is subclass of int
-                result[key] = {"BOOL": value}
-            elif isinstance(value, (int, float)):
-                result[key] = {"N": str(value)}
-            elif isinstance(value, dict):
-                result[key] = {"M": JobConfig._dict_to_dynamodb_map(value)}
-            elif isinstance(value, list):
-                result[key] = {"L": [JobConfig._dict_to_dynamodb_map({"item": v})["item"] for v in value]}
-        return result
+        """Convert Python dict to DynamoDB Map format using boto3 TypeSerializer."""
+        def _convert_floats(obj: Any) -> Any:
+            """TypeSerializer requires Decimal instead of float."""
+            if isinstance(obj, float):
+                return Decimal(str(obj))
+            if isinstance(obj, dict):
+                return {k: _convert_floats(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_convert_floats(i) for i in obj]
+            return obj
+
+        return {k: _serializer.serialize(_convert_floats(v)) for k, v in d.items()}
 
     @classmethod
     def from_dynamodb(cls, item: Dict[str, Any]) -> "JobConfig":
@@ -118,22 +119,17 @@ class JobConfig(BaseModel):
 
     @staticmethod
     def _dynamodb_map_to_dict(m: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert DynamoDB Map to Python dict."""
-        result = {}
-        for key, value in m.items():
-            if "NULL" in value:
-                result[key] = None
-            elif "S" in value:
-                result[key] = value["S"]
-            elif "N" in value:
-                result[key] = float(value["N"])
-            elif "BOOL" in value:
-                result[key] = value["BOOL"]
-            elif "M" in value:
-                result[key] = JobConfig._dynamodb_map_to_dict(value["M"])
-            elif "L" in value:
-                result[key] = [JobConfig._dynamodb_map_to_dict({"item": v})["item"] for v in value["L"]]
-        return result
+        """Convert DynamoDB Map to Python dict using boto3 TypeDeserializer."""
+        def _convert_decimals(obj: Any) -> Any:
+            if isinstance(obj, Decimal):
+                return int(obj) if obj == int(obj) else float(obj)
+            if isinstance(obj, dict):
+                return {k: _convert_decimals(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_convert_decimals(i) for i in obj]
+            return obj
+
+        return {k: _convert_decimals(_deserializer.deserialize(v)) for k, v in m.items()}
 
 
 class TemplateStep(BaseModel):
