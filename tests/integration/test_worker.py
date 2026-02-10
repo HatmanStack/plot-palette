@@ -174,13 +174,17 @@ def sample_job(dynamodb_tables):
 class TestWorkerJobProcessing:
     """Test worker job processing logic."""
 
-    @pytest.mark.skip(reason="Worker module requires full env setup; tested via template_engine")
-    def test_worker_initialization(self, mock_aws_env):
-        """Test worker can be initialized."""
-        with patch('backend.ecs_tasks.worker.worker.Worker.__init__', return_value=None):
+    def test_worker_initialization(self, mock_aws_env, monkeypatch):
+        """Test Worker class can be imported and instantiated (bypassing __init__)."""
+        monkeypatch.setenv('JOB_ID', 'test-job-init')
+
+        try:
             from backend.ecs_tasks.worker.worker import Worker
-            worker = Worker.__new__(Worker)
-            assert worker is not None
+        except ImportError as e:
+            pytest.skip(f"Worker dependency not installed: {e}")
+
+        worker = Worker.__new__(Worker)
+        assert worker is not None
 
     def test_get_next_job_from_queue(self, dynamodb_tables, sample_job):
         """Test worker can pull job from queue."""
@@ -302,27 +306,35 @@ class TestWorkerJobProcessing:
 class TestWorkerDataGeneration:
     """Test worker data generation with mocked Bedrock."""
 
-    @pytest.mark.skip(reason="Worker module requires full env setup")
-    @patch('backend.ecs_tasks.worker.worker.bedrock_client')
-    def test_batch_generation(self, mock_bedrock, dynamodb_tables, s3_bucket):
-        """Test generating a batch of records."""
-        # Mock Bedrock responses
+    def test_batch_generation(self, dynamodb_tables, s3_bucket):
+        """Test generating a batch of 10 records via TemplateEngine."""
+        mock_bedrock = Mock()
         mock_bedrock.invoke_model.return_value = {
             'body': Mock(read=lambda: json.dumps({
                 'content': [{'text': 'Generated text'}]
             }).encode())
         }
 
-        # Simulate generating 10 records
+        from backend.ecs_tasks.worker.template_engine import TemplateEngine
+        engine = TemplateEngine()
+
+        template_def = {
+            'steps': [{
+                'id': 'answer',
+                'model': 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+                'prompt': 'Generate answer about {{ topic }}'
+            }]
+        }
+
         records_generated = []
         for i in range(10):
-            records_generated.append({
-                'id': i,
-                'question': f'Question {i}',
-                'answer': 'Generated text'
-            })
+            result = engine.execute_template(
+                template_def, {'topic': f'topic-{i}'}, mock_bedrock
+            )
+            records_generated.append(result)
 
         assert len(records_generated) == 10
+        assert all('answer' in r for r in records_generated)
 
     def test_save_batch_to_s3(self, s3_bucket):
         """Test saving batch file to S3."""
