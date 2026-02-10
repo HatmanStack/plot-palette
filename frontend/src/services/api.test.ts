@@ -16,8 +16,15 @@ vi.mock('axios', () => {
           return 0
         }),
       },
+      response: {
+        use: vi.fn((_onFulfilled, onRejected) => {
+          mockAxios._responseErrorInterceptor = onRejected
+          return 0
+        }),
+      },
     },
     _requestInterceptor: null as ((config: unknown) => Promise<unknown>) | null,
+    _responseErrorInterceptor: null as ((error: unknown) => unknown) | null,
   }
   return { default: mockAxios }
 })
@@ -100,7 +107,7 @@ describe('API Service', () => {
   })
 
   describe('createJob', () => {
-    it('posts job data and returns created job', async () => {
+    it('posts job data and returns Zod-validated job', async () => {
       const jobData = {
         'template_id': 'template-1',
         'seed_data_path': 'seed/file.json',
@@ -110,14 +117,21 @@ describe('API Service', () => {
       const createdJob = {
         'job_id': 'new-job-123',
         status: 'QUEUED',
-        ...jobData,
+        'budget_limit': 100,
+        'num_records': 1000,
       }
       mockAxios.post.mockResolvedValueOnce({ data: createdJob })
 
       const result = await createJob(jobData)
 
       expect(mockAxios.post).toHaveBeenCalledWith('/jobs', jobData)
-      expect(result).toEqual(createdJob)
+      // Zod adds default values for fields not in the response
+      expect(result).toEqual({
+        'job_id': 'new-job-123', status: 'QUEUED',
+        'user_id': '', 'created_at': '', 'updated_at': '',
+        'budget_limit': 100, 'num_records': 1000,
+        'records_generated': 0, 'tokens_used': 0, 'cost_estimate': 0,
+      })
     })
   })
 
@@ -212,6 +226,59 @@ describe('API Service', () => {
       expect((result as { headers: Record<string, string> }).headers.Authorization).toBeUndefined()
 
       consoleSpy.mockRestore()
+    })
+  })
+
+  describe('Response interceptor', () => {
+    it('redirects to /login on 401 response', async () => {
+      const interceptor = mockAxios._responseErrorInterceptor
+      expect(interceptor).not.toBeNull()
+
+      // Mock window.location
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: { ...originalLocation, href: '' },
+      })
+
+      const error = { response: { status: 401 } }
+      await expect(interceptor!(error)).rejects.toEqual(error)
+
+      expect(window.location.href).toBe('/login')
+
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: originalLocation,
+      })
+    })
+
+    it('redirects to /login on 403 response', async () => {
+      const interceptor = mockAxios._responseErrorInterceptor
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: { ...originalLocation, href: '' },
+      })
+
+      const error = { response: { status: 403 } }
+      await expect(interceptor!(error)).rejects.toEqual(error)
+
+      expect(window.location.href).toBe('/login')
+
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: originalLocation,
+      })
+    })
+
+    it('does not redirect on other error codes', async () => {
+      const interceptor = mockAxios._responseErrorInterceptor
+      const originalHref = window.location.href
+
+      const error = { response: { status: 500 } }
+      await expect(interceptor!(error)).rejects.toEqual(error)
+
+      expect(window.location.href).toBe(originalHref)
     })
   })
 })

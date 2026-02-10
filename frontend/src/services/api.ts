@@ -19,6 +19,17 @@ apiClient.interceptors.request.use(async (config) => {
   return config
 })
 
+// Redirect to login on auth failures
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)
+
 // Runtime validation schema
 export const JobSchema = z.object({
   job_id: z.string(),
@@ -59,7 +70,7 @@ export async function createJob(jobData: {
   output_format?: string
 }): Promise<Job> {
   const { data } = await apiClient.post('/jobs', jobData)
-  return data
+  return JobSchema.parse(data)
 }
 
 export async function deleteJob(jobId: string): Promise<void> {
