@@ -205,6 +205,16 @@ Resources:
                 Resource:
                   - !GetAtt ECSTaskRole.Arn
                   - !GetAtt ECSExecutionRole.Arn
+        - PolicyName: StepFunctionsManagement
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                  - states:StopExecution
+                  - states:DescribeExecution
+                Resource: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:plot-palette-*'
       Tags:
         - Key: Name
           Value: !Sub 'plot-palette-lambda-role-${EnvironmentName}'

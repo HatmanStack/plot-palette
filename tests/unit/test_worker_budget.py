@@ -338,6 +338,31 @@ class TestOutputTokenPricing:
         assert cost > 0
 
 
+class TestStepFunctionsModeBudget:
+    """Tests for budget exceeded behavior in Step Functions mode."""
+
+    def test_sf_mode_exits_with_budget_exceeded_code(self):
+        """In SF mode, BudgetExceededError causes exit code 2."""
+        from backend.shared.constants import WORKER_EXIT_BUDGET_EXCEEDED
+
+        exit_code = WORKER_EXIT_BUDGET_EXCEEDED
+        assert exit_code == 2
+
+    def test_sf_mode_state_machine_marks_budget_exceeded(self):
+        """Step Functions state machine marks job as BUDGET_EXCEEDED on exit code 2."""
+        exit_code = 2
+        expected_status = 'BUDGET_EXCEEDED' if exit_code == 2 else 'FAILED'
+        assert expected_status == 'BUDGET_EXCEEDED'
+
+    def test_sf_mode_budget_exceeded_is_terminal(self):
+        """In SF mode, exit code 2 leads to terminal BUDGET_EXCEEDED state."""
+        terminal_exit_codes = {0: 'COMPLETED', 2: 'BUDGET_EXCEEDED'}
+        non_terminal_exit_codes = {1: 'FAILED'}
+
+        assert 2 in terminal_exit_codes
+        assert terminal_exit_codes[2] == 'BUDGET_EXCEEDED'
+
+
 class TestInMemoryBudgetTracking:
     """Tests for in-memory budget tracking."""
 

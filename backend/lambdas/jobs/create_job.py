@@ -2,7 +2,7 @@
 Plot Palette - Create Job Lambda Handler
 
 POST /jobs endpoint that creates new generation jobs with configuration
-validation, budget limits, and queue insertion.
+validation, budget limits, and Step Functions orchestration.
 """
 
 import json
@@ -25,13 +25,12 @@ from utils import generate_job_id, sanitize_error_message, setup_logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-from aws_clients import get_dynamodb_resource, get_ecs_client
+from aws_clients import get_dynamodb_resource, get_sfn_client
 
 dynamodb = get_dynamodb_resource()
-ecs_client = get_ecs_client()
+sfn_client = get_sfn_client()
 
 jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE_NAME', 'plot-palette-Jobs'))
-queue_table = dynamodb.Table(os.environ.get('QUEUE_TABLE_NAME', 'plot-palette-Queue'))
 templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
 
 
@@ -69,77 +68,44 @@ def validate_job_config(config: Dict[str, Any]) -> tuple[bool, str]:
     return True, ""
 
 
-def start_worker_task(job_id: str) -> str:
+def start_job_execution(job_id: str) -> str:
     """
-    Start ECS Fargate task for job processing.
+    Start Step Functions execution for job processing.
 
     Args:
         job_id: Job ID to process
 
     Returns:
-        str: Task ARN
+        str: Execution ARN
 
     Raises:
-        ClientError: If ECS task cannot be started
+        ClientError: If execution cannot be started
     """
-    cluster_name = os.environ.get('ECS_CLUSTER_NAME', '')
-    task_definition = os.environ.get('TASK_DEFINITION_ARN', 'plot-palette-worker')
-    subnet_ids_raw = os.environ.get('SUBNET_IDS', '')
-    security_group_id = os.environ.get('SECURITY_GROUP_ID', '')
+    state_machine_arn = os.environ.get('STATE_MACHINE_ARN', '')
 
-    # Validate required ECS configuration
-    if not cluster_name:
-        raise ValueError("ECS_CLUSTER_NAME environment variable not set")
-    if not subnet_ids_raw:
-        raise ValueError("SUBNET_IDS environment variable not set")
-    if not security_group_id:
-        raise ValueError("SECURITY_GROUP_ID environment variable not set")
-
-    # Parse and filter subnet IDs (remove empty strings)
-    subnet_ids = [s.strip() for s in subnet_ids_raw.split(',') if s.strip()]
-    if not subnet_ids:
-        raise ValueError("SUBNET_IDS contains no valid subnet IDs")
+    if not state_machine_arn:
+        raise ValueError("STATE_MACHINE_ARN environment variable not set")
 
     try:
-        response = ecs_client.run_task(
-            cluster=cluster_name,
-            taskDefinition=task_definition,
-            launchType='FARGATE',
-            networkConfiguration={
-                'awsvpcConfiguration': {
-                    'subnets': subnet_ids,
-                    'securityGroups': [security_group_id],
-                    'assignPublicIp': 'ENABLED'
-                }
-            },
-            capacityProviderStrategy=[{
-                'capacityProvider': 'FARGATE_SPOT',
-                'weight': 1,
-                'base': 0
-            }],
-            enableExecuteCommand=True,  # For debugging
-            tags=[
-                {'key': 'job-id', 'value': job_id},
-                {'key': 'application', 'value': 'plot-palette'}
-            ]
+        response = sfn_client.start_execution(
+            stateMachineArn=state_machine_arn,
+            name=f"job-{job_id}",
+            input=json.dumps({"job_id": job_id, "retry_count": 0}),
         )
 
-        if response['tasks']:
-            task_arn = response['tasks'][0]['taskArn']
-            logger.info(json.dumps({
-                "event": "ecs_task_started",
-                "job_id": job_id,
-                "task_arn": task_arn
-            }))
-            return task_arn
-        else:
-            raise Exception("No tasks returned from run_task")
+        execution_arn = response['executionArn']
+        logger.info(json.dumps({
+            "event": "sfn_execution_started",
+            "job_id": job_id,
+            "execution_arn": execution_arn,
+        }))
+        return execution_arn
 
     except ClientError as e:
         logger.error(json.dumps({
-            "event": "ecs_task_start_error",
+            "event": "sfn_execution_start_error",
             "job_id": job_id,
-            "error": str(e)
+            "error": str(e),
         }))
         raise
 
@@ -148,8 +114,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for POST /jobs endpoint.
 
-    Creates a new generation job with validated configuration and inserts it
-    into the Jobs table and Queue table.
+    Creates a new generation job with validated configuration, inserts it
+    into the Jobs table, and starts a Step Functions execution.
 
     Args:
         event: API Gateway event
@@ -268,29 +234,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }))
             return error_response(500, "Error creating job")
 
-        # Insert into Queue table
-        try:
-            queue_table.put_item(
-                Item={
-                    'status': 'QUEUED',
-                    'job_id_timestamp': f"{job_id}#{now.isoformat()}",
-                    'job_id': job_id,
-                    'priority': body.get('priority', 5),
-                    'timestamp': now.isoformat()
-                }
-            )
-        except ClientError as e:
-            logger.error(json.dumps({
-                "event": "queue_insert_error",
-                "error": str(e)
-            }))
-            # Try to rollback job creation
-            try:
-                jobs_table.delete_item(Key={'job_id': job_id})
-            except ClientError:
-                pass
-            return error_response(500, "Error queuing job")
-
         logger.info(json.dumps({
             "event": "job_created",
             "job_id": job_id,
@@ -299,15 +242,39 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "num_records": body['num_records']
         }))
 
-        # Start ECS worker task to process the job
+        # Start Step Functions execution for the job
         try:
-            start_worker_task(job_id)
+            execution_arn = start_job_execution(job_id)
+            # Store execution ARN on job record
+            jobs_table.update_item(
+                Key={'job_id': job_id},
+                UpdateExpression='SET execution_arn = :arn',
+                ExpressionAttributeValues={':arn': execution_arn},
+            )
         except Exception as e:
             logger.error(json.dumps({
-                "event": "worker_task_start_failed",
+                "event": "sfn_execution_start_failed",
                 "job_id": job_id,
-                "error": str(e)
+                "error": str(e),
             }))
+            # Mark job as failed so it doesn't stay QUEUED with no execution
+            try:
+                jobs_table.update_item(
+                    Key={'job_id': job_id},
+                    UpdateExpression='SET #s = :failed, updated_at = :now, error_message = :err',
+                    ExpressionAttributeNames={'#s': 'status'},
+                    ExpressionAttributeValues={
+                        ':failed': 'FAILED',
+                        ':now': datetime.utcnow().isoformat(),
+                        ':err': 'Failed to start job execution',
+                    },
+                )
+            except ClientError:
+                logger.error(json.dumps({
+                    "event": "sfn_failure_status_update_failed",
+                    "job_id": job_id,
+                }))
+            return error_response(500, "Job created but failed to start execution")
 
         return success_response(201, {
             "job_id": job_id,

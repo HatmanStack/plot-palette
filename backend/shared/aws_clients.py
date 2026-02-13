@@ -152,6 +152,25 @@ def get_ecs_client(region_name: Optional[str] = None):
 
 
 @lru_cache(maxsize=1)
+def get_sfn_client(region_name: Optional[str] = None):
+    """
+    Get cached Step Functions client with connection pooling.
+
+    Args:
+        region_name: Optional AWS region override
+
+    Returns:
+        boto3.client: Step Functions client with optimized config
+    """
+    return boto3.client(
+        'stepfunctions',
+        config=_standard_config,
+        region_name=region_name,
+        endpoint_url=_get_endpoint_url(),
+    )
+
+
+@lru_cache(maxsize=1)
 def get_sts_client(region_name: Optional[str] = None):
     """
     Get cached STS client for identity operations.
@@ -181,4 +200,5 @@ def clear_client_cache():
     get_s3_client.cache_clear()
     get_bedrock_client.cache_clear()
     get_ecs_client.cache_clear()
+    get_sfn_client.cache_clear()
     get_sts_client.cache_clear()

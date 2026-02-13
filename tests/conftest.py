@@ -29,6 +29,7 @@ def test_environment() -> Generator[None, None, None]:
         "TASK_DEFINITION": "test-task-def",
         "SUBNET_ID": "subnet-test123",
         "SECURITY_GROUP_ID": "sg-test123",
+        "STATE_MACHINE_ARN": "arn:aws:states:us-east-1:123456789012:stateMachine:plot-palette-job-lifecycle-test",
         "AWS_ACCESS_KEY_ID": "testing",
         "AWS_SECRET_ACCESS_KEY": "testing",
         "AWS_DEFAULT_REGION": "us-east-1",
@@ -143,6 +144,24 @@ def mock_ecs_client() -> MagicMock:
     client.stop_task.return_value = {}
     client.describe_tasks.return_value = {
         "tasks": [{"lastStatus": "RUNNING", "taskArn": "arn:aws:ecs:test"}]
+    }
+
+    return client
+
+
+@pytest.fixture
+def mock_sfn_client() -> MagicMock:
+    """Create a mock Step Functions client."""
+    client = MagicMock()
+
+    client.start_execution.return_value = {
+        "executionArn": "arn:aws:states:us-east-1:123456789012:execution:plot-palette-job-lifecycle:job-test-123",
+        "startDate": datetime.utcnow(),
+    }
+    client.stop_execution.return_value = {}
+    client.describe_execution.return_value = {
+        "executionArn": "arn:aws:states:us-east-1:123456789012:execution:plot-palette-job-lifecycle:job-test-123",
+        "status": "RUNNING",
     }
 
     return client

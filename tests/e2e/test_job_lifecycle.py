@@ -106,14 +106,6 @@ class TestJobLifecycle:
         get_resp = get_handler(get_event, None)
         assert get_resp['statusCode'] == 200
 
-        # Verify in Queue table
-        queue_table = _get_queue_table()
-        queue_resp = queue_table.query(
-            KeyConditionExpression=boto3.dynamodb.conditions.Key('status').eq('QUEUED'),
-        )
-        queue_job_ids = [item['job_id'] for item in queue_resp['Items']]
-        assert job_id in queue_job_ids
-
     def test_get_job(self):
         """Get job returns details for a directly-inserted job."""
         from lambdas.jobs.get_job import lambda_handler as get_handler

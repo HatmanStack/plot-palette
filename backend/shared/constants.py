@@ -162,6 +162,11 @@ EXPORT_FILE_NAMES = {
     "csv": "dataset.csv",
 }
 
+# Worker Exit Codes (used by Step Functions to determine terminal status)
+WORKER_EXIT_SUCCESS = 0
+WORKER_EXIT_ERROR = 1
+WORKER_EXIT_BUDGET_EXCEEDED = 2
+
 # Spot Interruption Signal
 SPOT_INTERRUPTION_SIGNAL = 15  # SIGTERM (120 seconds before termination)
 
