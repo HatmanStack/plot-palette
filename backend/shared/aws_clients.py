@@ -15,28 +15,23 @@ from botocore.config import Config
 
 def _get_endpoint_url() -> Optional[str]:
     """Return AWS_ENDPOINT_URL if set (for LocalStack), else None."""
-    return os.environ.get('AWS_ENDPOINT_URL')
+    return os.environ.get("AWS_ENDPOINT_URL")
+
 
 # Standard client configuration with connection pooling
 _standard_config = Config(
     max_pool_connections=25,
-    retries={
-        'max_attempts': 3,
-        'mode': 'adaptive'
-    },
+    retries={"max_attempts": 3, "mode": "adaptive"},
     connect_timeout=5,
-    read_timeout=30
+    read_timeout=30,
 )
 
 # Extended timeout config for LLM calls (Bedrock)
 _bedrock_config = Config(
     max_pool_connections=10,
-    retries={
-        'max_attempts': 3,
-        'mode': 'adaptive'
-    },
+    retries={"max_attempts": 3, "mode": "adaptive"},
     connect_timeout=10,
-    read_timeout=120  # LLM responses can take longer
+    read_timeout=120,  # LLM responses can take longer
 )
 
 
@@ -52,7 +47,7 @@ def get_dynamodb_resource(region_name: Optional[str] = None):
         boto3.resource: DynamoDB resource with optimized config
     """
     return boto3.resource(
-        'dynamodb',
+        "dynamodb",
         config=_standard_config,
         region_name=region_name,
         endpoint_url=_get_endpoint_url(),
@@ -73,7 +68,7 @@ def get_dynamodb_client(region_name: Optional[str] = None):
         boto3.client: DynamoDB client with optimized config
     """
     return boto3.client(
-        'dynamodb',
+        "dynamodb",
         config=_standard_config,
         region_name=region_name,
         endpoint_url=_get_endpoint_url(),
@@ -94,16 +89,13 @@ def get_s3_client(region_name: Optional[str] = None):
     # S3 needs signature version for presigned URLs
     s3_config = Config(
         max_pool_connections=25,
-        retries={
-            'max_attempts': 3,
-            'mode': 'adaptive'
-        },
+        retries={"max_attempts": 3, "mode": "adaptive"},
         connect_timeout=5,
         read_timeout=30,
-        signature_version='s3v4'
+        signature_version="s3v4",
     )
     return boto3.client(
-        's3',
+        "s3",
         config=s3_config,
         region_name=region_name,
         endpoint_url=_get_endpoint_url(),
@@ -125,7 +117,7 @@ def get_bedrock_client(region_name: Optional[str] = None):
         boto3.client: Bedrock runtime client with extended timeouts
     """
     return boto3.client(
-        'bedrock-runtime',
+        "bedrock-runtime",
         config=_bedrock_config,
         region_name=region_name,
         endpoint_url=_get_endpoint_url(),
@@ -144,7 +136,7 @@ def get_ecs_client(region_name: Optional[str] = None):
         boto3.client: ECS client with optimized config
     """
     return boto3.client(
-        'ecs',
+        "ecs",
         config=_standard_config,
         region_name=region_name,
         endpoint_url=_get_endpoint_url(),
@@ -163,7 +155,7 @@ def get_sfn_client(region_name: Optional[str] = None):
         boto3.client: Step Functions client with optimized config
     """
     return boto3.client(
-        'stepfunctions',
+        "stepfunctions",
         config=_standard_config,
         region_name=region_name,
         endpoint_url=_get_endpoint_url(),
@@ -182,7 +174,7 @@ def get_sts_client(region_name: Optional[str] = None):
         boto3.client: STS client
     """
     return boto3.client(
-        'sts',
+        "sts",
         config=_standard_config,
         region_name=region_name,
         endpoint_url=_get_endpoint_url(),

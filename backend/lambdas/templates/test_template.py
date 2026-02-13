@@ -11,8 +11,8 @@ import sys
 from typing import Any, Dict
 
 # Add shared library to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../ecs_tasks/worker'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../ecs_tasks/worker"))
 
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
@@ -26,8 +26,7 @@ logger = setup_logger(__name__)
 from aws_clients import get_bedrock_client, get_dynamodb_resource
 
 dynamodb = get_dynamodb_resource()
-templates_table = dynamodb.Table(os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates'))
-
+templates_table = dynamodb.Table(os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates"))
 
 
 def execute_template_mock(template_def: Dict, seed_data: Dict) -> Dict:
@@ -45,9 +44,9 @@ def execute_template_mock(template_def: Dict, seed_data: Dict) -> Dict:
     results = {}
     context = seed_data.copy()
 
-    for step in template_def.get('steps', []):
-        step_id = step['id']
-        model_id = step.get('model', step.get('model_tier', 'tier-1'))
+    for step in template_def.get("steps", []):
+        step_id = step["id"]
+        model_id = step.get("model", step.get("model_tier", "tier-1"))
 
         try:
             # Render prompt with context
@@ -60,28 +59,24 @@ def execute_template_mock(template_def: Dict, seed_data: Dict) -> Dict:
             mock_output += f"\nPrompt preview: {prompt[:200]}..."
 
             results[step_id] = {
-                'prompt': prompt,
-                'output': mock_output,
-                'model': model_id,
-                'mocked': True,
-                'prompt_length': len(prompt),
-                'prompt_tokens_estimate': len(prompt) // 4
+                "prompt": prompt,
+                "output": mock_output,
+                "model": model_id,
+                "mocked": True,
+                "prompt_length": len(prompt),
+                "prompt_tokens_estimate": len(prompt) // 4,
             }
 
             # Add to context for next steps
-            if 'steps' not in context:
-                context['steps'] = {}
-            if step_id not in context['steps']:
-                context['steps'][step_id] = {}
-            context['steps'][step_id]['output'] = mock_output
+            if "steps" not in context:
+                context["steps"] = {}
+            if step_id not in context["steps"]:
+                context["steps"][step_id] = {}
+            context["steps"][step_id]["output"] = mock_output
 
         except Exception as e:
             logger.error(f"Error in mock execution for step '{step_id}': {str(e)}", exc_info=True)
-            results[step_id] = {
-                'error': str(e),
-                'model': model_id,
-                'mocked': True
-            }
+            results[step_id] = {"error": str(e), "model": model_id, "mocked": True}
 
     return results
 
@@ -98,7 +93,7 @@ def execute_template_real(template_def: Dict, seed_data: Dict) -> Dict:
         Dict: Results for each step with real outputs
     """
     # Import TemplateEngine
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../ecs_tasks/worker'))
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../ecs_tasks/worker"))
     from template_engine import TemplateEngine
 
     try:
@@ -108,10 +103,10 @@ def execute_template_real(template_def: Dict, seed_data: Dict) -> Dict:
 
         # Add metadata
         for _step_id, step_result in results.items():
-            step_result['mocked'] = False
-            if 'prompt' in step_result:
-                step_result['prompt_length'] = len(step_result['prompt'])
-                step_result['prompt_tokens_estimate'] = len(step_result['prompt']) // 4
+            step_result["mocked"] = False
+            if "prompt" in step_result:
+                step_result["prompt_length"] = len(step_result["prompt"])
+                step_result["prompt_tokens_estimate"] = len(step_result["prompt"]) // 4
 
         return results
 
@@ -135,44 +130,42 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     try:
         # Extract user ID from JWT claims
-        user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
-        template_id = event['pathParameters']['template_id']
+        user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
+        template_id = event["pathParameters"]["template_id"]
 
-        logger.info(json.dumps({
-            "event": "test_template_request",
-            "user_id": user_id,
-            "template_id": template_id
-        }))
+        logger.info(
+            json.dumps(
+                {"event": "test_template_request", "user_id": user_id, "template_id": template_id}
+            )
+        )
 
         # Parse request body
         try:
-            body = json.loads(event['body'])
+            body = json.loads(event["body"])
         except json.JSONDecodeError:
             return error_response(400, "Invalid JSON in request body")
 
-        sample_data = body.get('sample_data', {})
-        use_mock = body.get('mock', True)  # Default to mock to avoid costs
+        sample_data = body.get("sample_data", {})
+        use_mock = body.get("mock", True)  # Default to mock to avoid costs
 
         # Get template from DynamoDB
         try:
-            response = templates_table.get_item(
-                Key={'template_id': template_id, 'version': 1}
-            )
+            response = templates_table.get_item(Key={"template_id": template_id, "version": 1})
         except ClientError as e:
             logger.error(f"DynamoDB error: {str(e)}")
             return error_response(500, "Error retrieving template")
 
-        if 'Item' not in response:
+        if "Item" not in response:
             return error_response(404, "Template not found")
 
-        template = response['Item']
+        template = response["Item"]
 
         # Check ownership or public access
-        if template['user_id'] != user_id and not template.get('is_public', False):
+        if template["user_id"] != user_id and not template.get("is_public", False):
             return error_response(403, "Access denied to this template")
 
         # Validate sample data has required fields
-        schema_reqs = template.get('schema_requirements', [])
+        schema_reqs = template.get("schema_requirements", [])
         missing_fields = []
 
         for field in schema_reqs:
@@ -182,12 +175,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         if missing_fields:
             return error_response(
-                400,
-                f"Missing required fields in sample_data: {', '.join(missing_fields)}"
+                400, f"Missing required fields in sample_data: {', '.join(missing_fields)}"
             )
 
         # Execute template
-        template_def = template['template_definition']
+        template_def = template["template_definition"]
 
         if use_mock:
             logger.info("Executing template in mock mode")
@@ -196,22 +188,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info("Executing template with real Bedrock calls")
             result = execute_template_real(template_def, sample_data)
 
-        logger.info(json.dumps({
-            "event": "test_template_complete",
-            "template_id": template_id,
-            "steps_executed": len(result),
-            "mock": use_mock
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "test_template_complete",
+                    "template_id": template_id,
+                    "steps_executed": len(result),
+                    "mock": use_mock,
+                }
+            )
+        )
 
-        return success_response(200, {
-            "template_id": template_id,
-            "template_name": template['name'],
-            "sample_data": sample_data,
-            "result": result,
-            "mock": use_mock,
-            "steps_count": len(result),
-            "message": "Template test completed successfully"
-        })
+        return success_response(
+            200,
+            {
+                "template_id": template_id,
+                "template_name": template["name"],
+                "sample_data": sample_data,
+                "result": result,
+                "mock": use_mock,
+                "steps_count": len(result),
+                "message": "Template test completed successfully",
+            },
+        )
 
     except KeyError as e:
         logger.error(f"Missing field: {str(e)}", exc_info=True)

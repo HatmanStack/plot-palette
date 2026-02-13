@@ -50,11 +50,11 @@ def sanitize_filename(filename: str) -> str:
     # Extract basename to prevent path traversal
     basename = os.path.basename(filename)
     # Remove control characters
-    basename = re.sub(r'[\x00-\x1f\x7f]', '', basename)
+    basename = re.sub(r"[\x00-\x1f\x7f]", "", basename)
     # Replace unsafe characters with underscore, keeping only alphanumeric, dot, dash, underscore
-    sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', basename)
+    sanitized = re.sub(r"[^a-zA-Z0-9._-]", "_", basename)
     # Remove leading dots to prevent hidden files or relative paths
-    sanitized = sanitized.lstrip('.')
+    sanitized = sanitized.lstrip(".")
     # Truncate to 255 characters (common filesystem limit)
     sanitized = sanitized[:255]
 
@@ -88,19 +88,19 @@ def sanitize_error_message(error: str, max_length: int = 200) -> str:
         return "An error occurred"
 
     # Remove file paths
-    sanitized = re.sub(r'(?:/[\w.-]+)+(?:\.\w+)?(?::\d+)?', '[path]', error)
+    sanitized = re.sub(r"(?:/[\w.-]+)+(?:\.\w+)?(?::\d+)?", "[path]", error)
     # Remove potential stack traces
-    sanitized = re.sub(r'(?:File|Line|Traceback|at ).*', '', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r"(?:File|Line|Traceback|at ).*", "", sanitized, flags=re.IGNORECASE)
     # Remove AWS resource identifiers (ARNs, account IDs)
-    sanitized = re.sub(r'arn:aws:[a-zA-Z0-9-]+:[a-z0-9-]*:\d{12}:[^\s]+', '[resource]', sanitized)
-    sanitized = re.sub(r'\b\d{12}\b', '[account]', sanitized)
+    sanitized = re.sub(r"arn:aws:[a-zA-Z0-9-]+:[a-z0-9-]*:\d{12}:[^\s]+", "[resource]", sanitized)
+    sanitized = re.sub(r"\b\d{12}\b", "[account]", sanitized)
     # Remove potential secrets/tokens (long alphanumeric strings)
-    sanitized = re.sub(r'\b[A-Za-z0-9+/=]{32,}\b', '[redacted]', sanitized)
+    sanitized = re.sub(r"\b[A-Za-z0-9+/=]{32,}\b", "[redacted]", sanitized)
     # Clean up excessive whitespace
-    sanitized = ' '.join(sanitized.split())
+    sanitized = " ".join(sanitized.split())
     # Truncate
     if len(sanitized) > max_length:
-        sanitized = sanitized[:max_length - 3] + '...'
+        sanitized = sanitized[: max_length - 3] + "..."
 
     return sanitized.strip() or "An error occurred"
 
@@ -132,10 +132,10 @@ def estimate_tokens(text: str, model_id: str = "anthropic.claude-3-5-sonnet-2024
     text_len = len(text)
 
     # Model-specific token estimation
-    if 'claude' in model_id.lower():
+    if "claude" in model_id.lower():
         # Claude: ~3.5 characters per token
         return max(1, int(text_len / 3.5))
-    elif 'llama' in model_id.lower() or 'mistral' in model_id.lower():
+    elif "llama" in model_id.lower() or "mistral" in model_id.lower():
         # Llama/Mistral: ~4 characters per token
         return max(1, int(text_len / 4))
     else:
@@ -294,6 +294,7 @@ def create_presigned_url(
         ClientError: If URL generation fails
     """
     from .aws_clients import get_s3_client
+
     s3_client = get_s3_client()
 
     try:
@@ -381,7 +382,9 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     return logger
 
 
-def validate_seed_data(data: Dict[str, Any], required_fields: list[str]) -> tuple[bool, Optional[str]]:
+def validate_seed_data(
+    data: Dict[str, Any], required_fields: list[str]
+) -> tuple[bool, Optional[str]]:
     """
     Validate that seed data contains all required fields.
 
@@ -470,6 +473,7 @@ def get_aws_account_id() -> str:
         ClientError: If unable to retrieve account ID
     """
     from .aws_clients import get_sts_client
+
     sts_client = get_sts_client()
     return sts_client.get_caller_identity()["Account"]
 

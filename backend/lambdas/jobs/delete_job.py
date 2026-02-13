@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 # Add shared library to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
@@ -28,13 +28,14 @@ logger = setup_logger(__name__)
 from aws_clients import get_dynamodb_resource, get_ecs_client, get_s3_client, get_sfn_client
 
 dynamodb = get_dynamodb_resource()
-jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE_NAME', 'plot-palette-Jobs'))
-cost_tracking_table = dynamodb.Table(os.environ.get('COST_TRACKING_TABLE_NAME', 'plot-palette-CostTracking'))
+jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs"))
+cost_tracking_table = dynamodb.Table(
+    os.environ.get("COST_TRACKING_TABLE_NAME", "plot-palette-CostTracking")
+)
 
 ecs_client = get_ecs_client()
 s3_client = get_s3_client()
 sfn_client = get_sfn_client()
-
 
 
 def delete_s3_job_data(bucket: str, job_id: str) -> None:
@@ -46,28 +47,21 @@ def delete_s3_job_data(bucket: str, job_id: str) -> None:
         job_id: Job identifier
     """
     prefix = f"jobs/{job_id}/"
-    paginator = s3_client.get_paginator('list_objects_v2')
+    paginator = s3_client.get_paginator("list_objects_v2")
 
     try:
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            if 'Contents' in page:
-                objects = [{'Key': obj['Key']} for obj in page['Contents']]
+            if "Contents" in page:
+                objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
                 if objects:
-                    s3_client.delete_objects(
-                        Bucket=bucket,
-                        Delete={'Objects': objects}
+                    s3_client.delete_objects(Bucket=bucket, Delete={"Objects": objects})
+                    logger.info(
+                        json.dumps(
+                            {"event": "s3_objects_deleted", "job_id": job_id, "count": len(objects)}
+                        )
                     )
-                    logger.info(json.dumps({
-                        "event": "s3_objects_deleted",
-                        "job_id": job_id,
-                        "count": len(objects)
-                    }))
     except ClientError as e:
-        logger.error(json.dumps({
-            "event": "s3_delete_error",
-            "job_id": job_id,
-            "error": str(e)
-        }))
+        logger.error(json.dumps({"event": "s3_delete_error", "job_id": job_id, "error": str(e)}))
         # Don't fail the entire operation if S3 delete fails
         pass
 
@@ -85,40 +79,31 @@ def delete_cost_tracking_records(job_id: str) -> None:
 
         # Paginate through all cost tracking records
         while True:
-            query_kwargs = {
-                'KeyConditionExpression': Key('job_id').eq(job_id)
-            }
+            query_kwargs = {"KeyConditionExpression": Key("job_id").eq(job_id)}
             if last_evaluated_key:
-                query_kwargs['ExclusiveStartKey'] = last_evaluated_key
+                query_kwargs["ExclusiveStartKey"] = last_evaluated_key
 
             response = cost_tracking_table.query(**query_kwargs)
 
             # Delete each record in this page
-            for item in response.get('Items', []):
+            for item in response.get("Items", []):
                 cost_tracking_table.delete_item(
-                    Key={
-                        'job_id': job_id,
-                        'timestamp': item['timestamp']
-                    }
+                    Key={"job_id": job_id, "timestamp": item["timestamp"]}
                 )
                 deleted_count += 1
 
-            last_evaluated_key = response.get('LastEvaluatedKey')
+            last_evaluated_key = response.get("LastEvaluatedKey")
             if not last_evaluated_key:
                 break
 
-        logger.info(json.dumps({
-            "event": "cost_tracking_deleted",
-            "job_id": job_id,
-            "count": deleted_count
-        }))
+        logger.info(
+            json.dumps({"event": "cost_tracking_deleted", "job_id": job_id, "count": deleted_count})
+        )
 
     except ClientError as e:
-        logger.error(json.dumps({
-            "event": "cost_tracking_delete_error",
-            "job_id": job_id,
-            "error": str(e)
-        }))
+        logger.error(
+            json.dumps({"event": "cost_tracking_delete_error", "job_id": job_id, "error": str(e)})
+        )
         # Don't fail the entire operation
 
 
@@ -137,141 +122,156 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     try:
         # Extract user ID from JWT claims
-        user_id = event['requestContext']['authorizer']['jwt']['claims']['sub']
+        user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
 
         # Extract job ID from path parameters
-        job_id = event['pathParameters']['job_id']
+        job_id = event["pathParameters"]["job_id"]
 
-        logger.info(json.dumps({
-            "event": "delete_job_request",
-            "user_id": user_id,
-            "job_id": job_id
-        }))
+        logger.info(
+            json.dumps({"event": "delete_job_request", "user_id": user_id, "job_id": job_id})
+        )
 
         # Get current job
         try:
-            response = jobs_table.get_item(Key={'job_id': job_id})
+            response = jobs_table.get_item(Key={"job_id": job_id})
         except ClientError as e:
-            logger.error(json.dumps({
-                "event": "get_job_error",
-                "error": str(e)
-            }))
+            logger.error(json.dumps({"event": "get_job_error", "error": str(e)}))
             return error_response(500, "Error retrieving job")
 
-        if 'Item' not in response:
+        if "Item" not in response:
             return error_response(404, "Job not found")
 
-        job = response['Item']
+        job = response["Item"]
 
         # Authorization check
-        if job['user_id'] != user_id:
-            logger.warning(json.dumps({
-                "event": "unauthorized_delete_attempt",
-                "user_id": user_id,
-                "job_id": job_id
-            }))
+        if job["user_id"] != user_id:
+            logger.warning(
+                json.dumps(
+                    {"event": "unauthorized_delete_attempt", "user_id": user_id, "job_id": job_id}
+                )
+            )
             return error_response(403, "Access denied - you do not own this job")
 
-        status = job['status']
-        bucket = os.environ.get('BUCKET_NAME', f'plot-palette-{os.environ.get("AWS_ACCOUNT_ID", "")}')
+        status = job["status"]
+        bucket = os.environ.get(
+            "BUCKET_NAME", f"plot-palette-{os.environ.get('AWS_ACCOUNT_ID', '')}"
+        )
 
-        if status == 'QUEUED':
+        if status == "QUEUED":
             # Stop Step Functions execution if present
-            execution_arn = job.get('execution_arn')
+            execution_arn = job.get("execution_arn")
             if execution_arn:
                 try:
                     sfn_client.stop_execution(
                         executionArn=execution_arn,
-                        cause='User cancelled job',
+                        cause="User cancelled job",
                     )
-                    logger.info(json.dumps({
-                        "event": "sfn_execution_stopped",
-                        "job_id": job_id,
-                        "execution_arn": execution_arn,
-                    }))
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "sfn_execution_stopped",
+                                "job_id": job_id,
+                                "execution_arn": execution_arn,
+                            }
+                        )
+                    )
                 except ClientError as e:
-                    logger.error(json.dumps({
-                        "event": "sfn_stop_error",
-                        "error": str(e),
-                    }))
+                    logger.error(
+                        json.dumps(
+                            {
+                                "event": "sfn_stop_error",
+                                "error": str(e),
+                            }
+                        )
+                    )
 
             # Update job status to CANCELLED
             try:
                 jobs_table.update_item(
-                    Key={'job_id': job_id},
-                    UpdateExpression='SET #status = :status, updated_at = :now',
-                    ExpressionAttributeNames={'#status': 'status'},
+                    Key={"job_id": job_id},
+                    UpdateExpression="SET #status = :status, updated_at = :now",
+                    ExpressionAttributeNames={"#status": "status"},
                     ExpressionAttributeValues={
-                        ':status': 'CANCELLED',
-                        ':now': datetime.utcnow().isoformat()
-                    }
+                        ":status": "CANCELLED",
+                        ":now": datetime.utcnow().isoformat(),
+                    },
                 )
             except ClientError as e:
-                logger.error(json.dumps({
-                    "event": "job_update_error",
-                    "error": str(e)
-                }))
+                logger.error(json.dumps({"event": "job_update_error", "error": str(e)}))
                 return error_response(500, "Error cancelling job")
 
             message = "Job cancelled successfully"
 
-        elif status == 'RUNNING':
+        elif status == "RUNNING":
             # Stop execution — prefer SFN, fall back to ECS for legacy jobs
-            execution_arn = job.get('execution_arn')
+            execution_arn = job.get("execution_arn")
             if execution_arn:
                 try:
                     sfn_client.stop_execution(
                         executionArn=execution_arn,
-                        cause='User cancelled job',
+                        cause="User cancelled job",
                     )
-                    logger.info(json.dumps({
-                        "event": "sfn_execution_stopped",
-                        "job_id": job_id,
-                        "execution_arn": execution_arn,
-                    }))
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "sfn_execution_stopped",
+                                "job_id": job_id,
+                                "execution_arn": execution_arn,
+                            }
+                        )
+                    )
                 except ClientError as e:
-                    logger.error(json.dumps({
-                        "event": "sfn_stop_error",
-                        "error": str(e),
-                    }))
+                    logger.error(
+                        json.dumps(
+                            {
+                                "event": "sfn_stop_error",
+                                "error": str(e),
+                            }
+                        )
+                    )
             else:
                 # Legacy path: stop ECS task directly
-                task_arn = job.get('task_arn')
-                cluster_name = os.environ.get('ECS_CLUSTER_NAME', 'plot-palette-cluster')
+                task_arn = job.get("task_arn")
+                cluster_name = os.environ.get("ECS_CLUSTER_NAME", "plot-palette-cluster")
                 if task_arn:
                     try:
                         ecs_client.stop_task(
                             cluster=cluster_name,
                             task=task_arn,
-                            reason='User cancelled job',
+                            reason="User cancelled job",
                         )
-                        logger.info(json.dumps({
-                            "event": "ecs_task_stopped",
-                            "job_id": job_id,
-                            "task_arn": task_arn,
-                        }))
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "event": "ecs_task_stopped",
+                                    "job_id": job_id,
+                                    "task_arn": task_arn,
+                                }
+                            )
+                        )
                     except ClientError as e:
-                        logger.error(json.dumps({
-                            "event": "ecs_stop_error",
-                            "error": str(e),
-                        }))
+                        logger.error(
+                            json.dumps(
+                                {
+                                    "event": "ecs_stop_error",
+                                    "error": str(e),
+                                }
+                            )
+                        )
 
             # Update status to CANCELLED in Jobs table
             try:
                 jobs_table.update_item(
-                    Key={'job_id': job_id},
-                    UpdateExpression='SET #status = :status, updated_at = :now',
-                    ExpressionAttributeNames={'#status': 'status'},
+                    Key={"job_id": job_id},
+                    UpdateExpression="SET #status = :status, updated_at = :now",
+                    ExpressionAttributeNames={"#status": "status"},
                     ExpressionAttributeValues={
-                        ':status': 'CANCELLED',
-                        ':now': datetime.utcnow().isoformat()
-                    }
+                        ":status": "CANCELLED",
+                        ":now": datetime.utcnow().isoformat(),
+                    },
                 )
             except ClientError as e:
-                logger.error(json.dumps({
-                    "event": "job_update_error",
-                    "error": str(e)
-                }))
+                logger.error(json.dumps({"event": "job_update_error", "error": str(e)}))
                 return error_response(500, "Error cancelling job")
 
             message = "Job cancellation requested - task will stop shortly"
@@ -285,35 +285,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             # Delete job record
             try:
-                jobs_table.delete_item(Key={'job_id': job_id})
+                jobs_table.delete_item(Key={"job_id": job_id})
             except ClientError as e:
-                logger.error(json.dumps({
-                    "event": "job_delete_error",
-                    "error": str(e)
-                }))
+                logger.error(json.dumps({"event": "job_delete_error", "error": str(e)}))
                 return error_response(500, "Error deleting job")
 
             message = "Job deleted successfully"
 
-        logger.info(json.dumps({
-            "event": "delete_job_success",
-            "job_id": job_id,
-            "previous_status": status,
-            "action": message
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "delete_job_success",
+                    "job_id": job_id,
+                    "previous_status": status,
+                    "action": message,
+                }
+            )
+        )
 
         return success_response(200, {"message": message, "job_id": job_id})
 
     except KeyError as e:
-        logger.error(json.dumps({
-            "event": "missing_field_error",
-            "error": str(e)
-        }))
+        logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))
         return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
-        logger.error(json.dumps({
-            "event": "unexpected_error",
-            "error": str(e)
-        }), exc_info=True)
+        logger.error(json.dumps({"event": "unexpected_error", "error": str(e)}), exc_info=True)
         return error_response(500, "Internal server error")
