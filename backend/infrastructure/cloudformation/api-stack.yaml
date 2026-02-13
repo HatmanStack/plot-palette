@@ -48,6 +48,11 @@ Parameters:
     Description: DynamoDB CostTracking table name
     Default: plot-palette-CostTracking
 
+  StateMachineArn:
+    Type: String
+    Description: Step Functions state machine ARN for job lifecycle
+    Default: ''
+
   AllowedOrigins:
     Type: CommaDelimitedList
     Default: 'https://plot-palette.example.com'
@@ -141,9 +146,9 @@ Resources:
       Environment:
         Variables:
           JOBS_TABLE_NAME: !Ref JobsTableName
-          QUEUE_TABLE_NAME: !Ref QueueTableName
           TEMPLATES_TABLE_NAME: !Ref TemplatesTableName
           BUCKET_NAME: !Ref BucketName
+          STATE_MACHINE_ARN: !Ref StateMachineArn
 
   ListJobsFunction:
     Type: AWS::Lambda::Function
@@ -204,10 +209,10 @@ Resources:
       Environment:
         Variables:
           JOBS_TABLE_NAME: !Ref JobsTableName
-          QUEUE_TABLE_NAME: !Ref QueueTableName
           COST_TRACKING_TABLE_NAME: !Ref CostTrackingTableName
           BUCKET_NAME: !Ref BucketName
           ECS_CLUSTER_NAME: plot-palette-cluster
+          STATE_MACHINE_ARN: !Ref StateMachineArn
 
   # ========================================
   # Templates API Lambda Functions

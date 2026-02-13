@@ -20,6 +20,7 @@ def make_job_item(
     tokens_used: int = 0,
     records_generated: int = 0,
     cost_estimate: float = 0.0,
+    execution_arn: Optional[str] = None,
     created_at: Optional[datetime] = None,
     updated_at: Optional[datetime] = None,
     **overrides: Any,
@@ -67,6 +68,9 @@ def make_job_item(
         "records_generated": {"N": str(records_generated)},
         "cost_estimate": {"N": str(cost_estimate)},
     }
+
+    if execution_arn:
+        item["execution_arn"] = {"S": execution_arn}
 
     # Apply any overrides
     for key, value in overrides.items():

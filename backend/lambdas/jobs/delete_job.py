@@ -25,15 +25,15 @@ from utils import sanitize_error_message, setup_logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-from aws_clients import get_dynamodb_resource, get_ecs_client, get_s3_client
+from aws_clients import get_dynamodb_resource, get_ecs_client, get_s3_client, get_sfn_client
 
 dynamodb = get_dynamodb_resource()
 jobs_table = dynamodb.Table(os.environ.get('JOBS_TABLE_NAME', 'plot-palette-Jobs'))
-queue_table = dynamodb.Table(os.environ.get('QUEUE_TABLE_NAME', 'plot-palette-Queue'))
 cost_tracking_table = dynamodb.Table(os.environ.get('COST_TRACKING_TABLE_NAME', 'plot-palette-CostTracking'))
 
 ecs_client = get_ecs_client()
 s3_client = get_s3_client()
+sfn_client = get_sfn_client()
 
 
 
@@ -176,19 +176,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         bucket = os.environ.get('BUCKET_NAME', f'plot-palette-{os.environ.get("AWS_ACCOUNT_ID", "")}')
 
         if status == 'QUEUED':
-            # Remove from queue
-            try:
-                queue_table.delete_item(
-                    Key={
-                        'status': 'QUEUED',
-                        'job_id_timestamp': f"{job_id}#{job['created_at']}"
-                    }
-                )
-            except ClientError as e:
-                logger.error(json.dumps({
-                    "event": "queue_delete_error",
-                    "error": str(e)
-                }))
+            # Stop Step Functions execution if present
+            execution_arn = job.get('execution_arn')
+            if execution_arn:
+                try:
+                    sfn_client.stop_execution(
+                        executionArn=execution_arn,
+                        cause='User cancelled job',
+                    )
+                    logger.info(json.dumps({
+                        "event": "sfn_execution_stopped",
+                        "job_id": job_id,
+                        "execution_arn": execution_arn,
+                    }))
+                except ClientError as e:
+                    logger.error(json.dumps({
+                        "event": "sfn_stop_error",
+                        "error": str(e),
+                    }))
 
             # Update job status to CANCELLED
             try:
@@ -211,28 +216,45 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             message = "Job cancelled successfully"
 
         elif status == 'RUNNING':
-            # Stop ECS task if it exists
-            task_arn = job.get('task_arn')
-            cluster_name = os.environ.get('ECS_CLUSTER_NAME', 'plot-palette-cluster')
-
-            if task_arn:
+            # Stop execution — prefer SFN, fall back to ECS for legacy jobs
+            execution_arn = job.get('execution_arn')
+            if execution_arn:
                 try:
-                    ecs_client.stop_task(
-                        cluster=cluster_name,
-                        task=task_arn,
-                        reason='User cancelled job'
+                    sfn_client.stop_execution(
+                        executionArn=execution_arn,
+                        cause='User cancelled job',
                     )
                     logger.info(json.dumps({
-                        "event": "ecs_task_stopped",
+                        "event": "sfn_execution_stopped",
                         "job_id": job_id,
-                        "task_arn": task_arn
+                        "execution_arn": execution_arn,
                     }))
                 except ClientError as e:
                     logger.error(json.dumps({
-                        "event": "ecs_stop_error",
-                        "error": str(e)
+                        "event": "sfn_stop_error",
+                        "error": str(e),
                     }))
-                    # Continue even if ECS stop fails
+            else:
+                # Legacy path: stop ECS task directly
+                task_arn = job.get('task_arn')
+                cluster_name = os.environ.get('ECS_CLUSTER_NAME', 'plot-palette-cluster')
+                if task_arn:
+                    try:
+                        ecs_client.stop_task(
+                            cluster=cluster_name,
+                            task=task_arn,
+                            reason='User cancelled job',
+                        )
+                        logger.info(json.dumps({
+                            "event": "ecs_task_stopped",
+                            "job_id": job_id,
+                            "task_arn": task_arn,
+                        }))
+                    except ClientError as e:
+                        logger.error(json.dumps({
+                            "event": "ecs_stop_error",
+                            "error": str(e),
+                        }))
 
             # Update status to CANCELLED in Jobs table
             try:
@@ -251,29 +273,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "error": str(e)
                 }))
                 return error_response(500, "Error cancelling job")
-
-            # Update Queue table - move from RUNNING to CANCELLED
-            try:
-                # First try to delete from RUNNING queue
-                queue_table.delete_item(
-                    Key={
-                        'status': 'RUNNING',
-                        'job_id_timestamp': f"{job_id}#{job.get('started_at', job['created_at'])}"
-                    }
-                )
-                # Add to CANCELLED queue for tracking
-                queue_table.put_item(Item={
-                    'status': 'CANCELLED',
-                    'job_id_timestamp': f"{job_id}#{datetime.utcnow().isoformat()}",
-                    'job_id': job_id,
-                    'cancelled_at': datetime.utcnow().isoformat()
-                })
-            except ClientError as e:
-                logger.error(json.dumps({
-                    "event": "queue_update_error",
-                    "error": str(e)
-                }))
-                # Don't fail the cancellation if queue update fails
 
             message = "Job cancellation requested - task will stop shortly"
 

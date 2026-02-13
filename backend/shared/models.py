@@ -70,10 +70,11 @@ class JobConfig(BaseModel):
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
     cost_estimate: float = Field(default=0.0, ge=0, description="Estimated cost in USD")
+    execution_arn: Optional[str] = Field(None, description="Step Functions execution ARN")
 
     def to_dynamodb(self) -> Dict[str, Any]:
         """Convert to low-level DynamoDB item format (for client.put_item)."""
-        return {
+        item = {
             "job_id": {"S": self.job_id},
             "user_id": {"S": self.user_id},
             "status": {"S": self.status.value},
@@ -85,10 +86,13 @@ class JobConfig(BaseModel):
             "records_generated": {"N": str(self.records_generated)},
             "cost_estimate": {"N": str(self.cost_estimate)},
         }
+        if self.execution_arn:
+            item["execution_arn"] = {"S": self.execution_arn}
+        return item
 
     def to_table_item(self) -> Dict[str, Any]:
         """Convert to high-level DynamoDB item format (for Table.put_item)."""
-        return {
+        item = {
             "job_id": self.job_id,
             "user_id": self.user_id,
             "status": self.status.value,
@@ -100,6 +104,9 @@ class JobConfig(BaseModel):
             "records_generated": self.records_generated,
             "cost_estimate": Decimal(str(self.cost_estimate)),
         }
+        if self.execution_arn:
+            item["execution_arn"] = self.execution_arn
+        return item
 
     @staticmethod
     def _convert_floats(obj: Any) -> Any:
@@ -131,6 +138,7 @@ class JobConfig(BaseModel):
             tokens_used=int(item["tokens_used"]["N"]),
             records_generated=int(item["records_generated"]["N"]),
             cost_estimate=float(item["cost_estimate"]["N"]),
+            execution_arn=item.get("execution_arn", {}).get("S"),
         )
 
     @staticmethod

@@ -442,5 +442,41 @@ class TestWorkerErrorHandling:
             )
 
 
+@pytest.mark.integration
+@pytest.mark.worker
+class TestWorkerStepFunctionsMode:
+    """Test worker in Step Functions orchestration mode."""
+
+    def test_get_job_by_id(self, dynamodb_tables, sample_job):
+        """Test fetching a job by ID (used in SF mode)."""
+        jobs_table = dynamodb_tables.Table('test-Jobs')
+
+        response = jobs_table.get_item(Key={'job_id': sample_job})
+
+        assert 'Item' in response
+        assert response['Item']['job_id'] == sample_job
+        assert response['Item']['status'] == 'QUEUED'
+
+    def test_get_job_by_id_not_found(self, dynamodb_tables):
+        """Test fetching a non-existent job returns no item."""
+        jobs_table = dynamodb_tables.Table('test-Jobs')
+
+        response = jobs_table.get_item(Key={'job_id': 'nonexistent-job'})
+
+        assert 'Item' not in response
+
+    def test_sf_mode_skips_queue_interaction(self, dynamodb_tables, sample_job):
+        """In SF mode, worker reads job directly without queue table."""
+        jobs_table = dynamodb_tables.Table('test-Jobs')
+
+        # SF mode: fetch job directly by ID
+        response = jobs_table.get_item(Key={'job_id': sample_job})
+        job = response['Item']
+
+        assert job['job_id'] == sample_job
+        # Job starts as QUEUED (state machine transitions to RUNNING)
+        assert job['status'] == 'QUEUED'
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--integration"])

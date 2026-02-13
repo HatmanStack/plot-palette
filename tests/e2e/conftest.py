@@ -78,6 +78,8 @@ def localstack_resources():
         'TASK_DEFINITION_ARN': 'e2e-task-def',
         'SUBNET_IDS': 'subnet-e2e001',
         'SECURITY_GROUP_ID': 'sg-e2e001',
+        # Step Functions config (mocked)
+        'STATE_MACHINE_ARN': 'arn:aws:states:us-east-1:000000000000:stateMachine:plot-palette-job-lifecycle-e2e',
     }
     for k, v in env.items():
         os.environ[k] = v
@@ -111,6 +113,19 @@ def mock_ecs():
     }
     mock.stop_task.return_value = {}
     with patch('shared.aws_clients.get_ecs_client', return_value=mock):
+        yield mock
+
+
+@pytest.fixture(autouse=True)
+def mock_sfn():
+    """Mock Step Functions client since LocalStack free doesn't support SFN."""
+    mock = MagicMock()
+    mock.start_execution.return_value = {
+        'executionArn': 'arn:aws:states:us-east-1:000000000000:execution:plot-palette-job-lifecycle-e2e:mock-exec',
+        'startDate': '2025-01-01T00:00:00Z',
+    }
+    mock.stop_execution.return_value = {}
+    with patch('shared.aws_clients.get_sfn_client', return_value=mock):
         yield mock
 
 

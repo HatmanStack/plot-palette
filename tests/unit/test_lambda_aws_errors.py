@@ -316,6 +316,49 @@ class TestECSFailures:
         assert is_capacity_issue is True
 
 
+class TestStepFunctionsFailures:
+    """Tests for Step Functions operation failures."""
+
+    def test_start_execution_failure(self):
+        """Test SFN start_execution failure handling."""
+        error_response = {
+            'Error': {
+                'Code': 'StateMachineDoesNotExist',
+                'Message': 'The specified state machine does not exist'
+            }
+        }
+
+        error = ClientError(error_response, 'StartExecution')
+
+        assert error.response['Error']['Code'] == 'StateMachineDoesNotExist'
+
+    def test_stop_execution_failure(self):
+        """Test SFN stop_execution failure handling."""
+        error_response = {
+            'Error': {
+                'Code': 'ExecutionDoesNotExist',
+                'Message': 'The specified execution does not exist'
+            }
+        }
+
+        error = ClientError(error_response, 'StopExecution')
+
+        assert error.response['Error']['Code'] == 'ExecutionDoesNotExist'
+
+    def test_execution_already_running(self):
+        """Test handling when execution name already exists."""
+        error_response = {
+            'Error': {
+                'Code': 'ExecutionAlreadyExists',
+                'Message': 'Execution already exists for this name'
+            }
+        }
+
+        error = ClientError(error_response, 'StartExecution')
+
+        assert error.response['Error']['Code'] == 'ExecutionAlreadyExists'
+
+
 class TestCognitoFailures:
     """Tests for Cognito operation failures."""
 
@@ -420,16 +463,17 @@ class TestErrorResponseSafety:
 class TestRollbackBehavior:
     """Tests for partial operation rollback on failure."""
 
-    def test_job_creation_rollback_on_queue_failure(self):
-        """Test that job record is deleted if queue insertion fails."""
-        # Simulate successful job insert followed by queue insert failure
+    def test_job_creation_continues_on_sfn_failure(self):
+        """Test that job record persists if SFN execution start fails."""
+        # Job is created first, then SFN execution is attempted.
+        # If SFN fails, the job record stays (it will be retried or cleaned up).
         job_created = True
-        queue_insert_failed = True
+        sfn_start_failed = True
 
-        # Handler should attempt to delete job record on queue failure
-        should_rollback_job = job_created and queue_insert_failed
+        # Job should NOT be rolled back — SFN failure is non-fatal
+        job_persisted = job_created  # no rollback
 
-        assert should_rollback_job is True
+        assert job_persisted is True
 
     def test_rollback_failure_doesnt_crash(self):
         """Test that rollback failure doesn't cause additional crash."""

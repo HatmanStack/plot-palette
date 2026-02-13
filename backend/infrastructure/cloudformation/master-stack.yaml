@@ -182,7 +182,7 @@ Resources:
   # API Stack (HTTP API Gateway + Lambda functions)
   APIStack:
     Type: AWS::CloudFormation::Stack
-    DependsOn: [AuthStack, IAMStack, DatabaseStack, StorageStack]
+    DependsOn: [AuthStack, IAMStack, DatabaseStack, StorageStack, OrchestrationStack]
     Properties:
       TemplateURL: !Sub
         - https://${Bucket}.s3.${AWS::Region}.amazonaws.com/api-stack.yaml
@@ -198,6 +198,7 @@ Resources:
         QueueTableName: !GetAtt DatabaseStack.Outputs.QueueTableName
         TemplatesTableName: !GetAtt DatabaseStack.Outputs.TemplatesTableName
         CostTrackingTableName: !GetAtt DatabaseStack.Outputs.CostTrackingTableName
+        StateMachineArn: !GetAtt OrchestrationStack.Outputs.StateMachineArn
         LogRetentionDays: !Ref LogRetentionDays
       Capabilities: [CAPABILITY_IAM]
       Tags:
@@ -233,6 +234,36 @@ Resources:
           Value: plot-palette
         - Key: Component
           Value: Compute
+        - Key: Environment
+          Value: !Ref EnvironmentName
+      TimeoutInMinutes: 30
+
+  # Orchestration Stack (Step Functions for job lifecycle)
+  OrchestrationStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: [ComputeStack, IAMStack, DatabaseStack, NetworkStack]
+    Properties:
+      TemplateURL: !Sub
+        - https://${Bucket}.s3.${AWS::Region}.amazonaws.com/orchestration-stack.yaml
+        - Bucket: !If [CreateTemplatesBucket, !Ref TemplatesBucket, !Ref TemplatesBucketName]
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        JobsTableName: !GetAtt DatabaseStack.Outputs.JobsTableName
+        JobsTableArn: !GetAtt DatabaseStack.Outputs.JobsTableArn
+        CheckpointMetadataTableName: !GetAtt ComputeStack.Outputs.CheckpointMetadataTableName
+        CheckpointMetadataTableArn: !GetAtt ComputeStack.Outputs.CheckpointMetadataTableArn
+        EcsClusterArn: !GetAtt ComputeStack.Outputs.ClusterArn
+        TaskDefinitionArn: ''  # Populated by deployment script
+        SubnetIds: !GetAtt NetworkStack.Outputs.PublicSubnetIds
+        SecurityGroupId: !GetAtt NetworkStack.Outputs.ECSSecurityGroupId
+        ECSTaskRoleArn: !GetAtt IAMStack.Outputs.ECSTaskRoleArn
+        ECSExecutionRoleArn: !GetAtt IAMStack.Outputs.ECSExecutionRoleArn
+      Capabilities: [CAPABILITY_IAM]
+      Tags:
+        - Key: Project
+          Value: plot-palette
+        - Key: Component
+          Value: Orchestration
         - Key: Environment
           Value: !Ref EnvironmentName
       TimeoutInMinutes: 30
@@ -319,6 +350,12 @@ Outputs:
     Value: !GetAtt DatabaseStack.Outputs.TemplatesTableName
     Export:
       Name: !Sub ${AWS::StackName}-TemplatesTableName
+
+  StateMachineArn:
+    Description: Step Functions state machine ARN
+    Value: !GetAtt OrchestrationStack.Outputs.StateMachineArn
+    Export:
+      Name: !Sub ${AWS::StackName}-StateMachineArn
 
   # Deployment info
   Region:

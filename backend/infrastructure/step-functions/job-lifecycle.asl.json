@@ -1,0 +1,248 @@
+{
+  "Comment": "Plot Palette Job Lifecycle — orchestrates worker ECS task with Spot retry",
+  "StartAt": "MarkJobRunning",
+  "States": {
+    "MarkJobRunning": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${JobsTableName}",
+        "Key": {
+          "job_id": {"S.$": "$.job_id"}
+        },
+        "UpdateExpression": "SET #s = :running, updated_at = :now, execution_arn = :arn",
+        "ConditionExpression": "#s = :queued",
+        "ExpressionAttributeNames": {
+          "#s": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":running": {"S": "RUNNING"},
+          ":queued": {"S": "QUEUED"},
+          ":now": {"S.$": "$$.State.EnteredTime"},
+          ":arn": {"S.$": "$$.Execution.Id"}
+        }
+      },
+      "ResultPath": null,
+      "Next": "RunWorkerTask",
+      "Catch": [
+        {
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "Next": "JobAlreadyClaimed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "JobAlreadyClaimed": {
+      "Type": "Succeed",
+      "Comment": "Another execution already moved this job out of QUEUED"
+    },
+
+    "RunWorkerTask": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${EcsClusterArn}",
+        "TaskDefinition": "${TaskDefinitionArn}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": "${SubnetIds}",
+            "SecurityGroups": ["${SecurityGroupId}"],
+            "AssignPublicIp": "ENABLED"
+          }
+        },
+        "CapacityProviderStrategy": [
+          {
+            "CapacityProvider": "FARGATE_SPOT",
+            "Weight": 1,
+            "Base": 0
+          }
+        ],
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "worker",
+              "Environment": [
+                {"Name": "JOB_ID", "Value.$": "$.job_id"},
+                {"Name": "ORCHESTRATION_MODE", "Value": "step_functions"}
+              ]
+            }
+          ]
+        },
+        "Tags": [
+          {"Key": "job-id", "Value.$": "$.job_id"},
+          {"Key": "application", "Value": "plot-palette"}
+        ]
+      },
+      "ResultPath": "$.taskResult",
+      "TimeoutSeconds": 14400,
+      "Retry": [
+        {
+          "ErrorEquals": ["ECS.AmazonECSException"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Next": "CheckWorkerExitCode",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "Next": "CheckIfSpotInterruption",
+          "ResultPath": "$.taskError"
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkJobFailed",
+          "ResultPath": "$.taskError"
+        }
+      ]
+    },
+
+    "CheckWorkerExitCode": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.taskResult.Containers[0].ExitCode",
+          "NumericEquals": 0,
+          "Next": "MarkJobCompleted"
+        },
+        {
+          "Variable": "$.taskResult.Containers[0].ExitCode",
+          "NumericEquals": 2,
+          "Next": "MarkJobBudgetExceeded"
+        }
+      ],
+      "Default": "MarkJobFailed"
+    },
+
+    "CheckIfSpotInterruption": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Or": [
+            {
+              "Variable": "$.taskError.Cause",
+              "StringMatches": "*CannotPullContainerError*"
+            },
+            {
+              "Variable": "$.taskError.Cause",
+              "StringMatches": "*Host EC2*spot*"
+            },
+            {
+              "Variable": "$.taskError.Cause",
+              "StringMatches": "*Essential container in task exited*"
+            },
+            {
+              "Variable": "$.taskError.Cause",
+              "StringMatches": "*SIGTERM*"
+            }
+          ],
+          "Next": "CheckCheckpointExists"
+        }
+      ],
+      "Default": "MarkJobFailed"
+    },
+
+    "CheckCheckpointExists": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName": "${CheckpointMetadataTableName}",
+        "Key": {
+          "job_id": {"S.$": "$.job_id"}
+        }
+      },
+      "ResultPath": "$.checkpointResult",
+      "Next": "WaitBeforeRetry"
+    },
+
+    "WaitBeforeRetry": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "IncrementRetryCount"
+    },
+
+    "IncrementRetryCount": {
+      "Type": "Pass",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "retry_count.$": "States.MathAdd($.retry_count, 1)"
+      },
+      "Next": "CheckMaxRetries"
+    },
+
+    "CheckMaxRetries": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.retry_count",
+          "NumericGreaterThanEquals": 5,
+          "Next": "MarkJobFailed"
+        }
+      ],
+      "Default": "RunWorkerTask"
+    },
+
+    "MarkJobCompleted": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${JobsTableName}",
+        "Key": {
+          "job_id": {"S.$": "$.job_id"}
+        },
+        "UpdateExpression": "SET #s = :completed, completed_at = :now, updated_at = :now",
+        "ExpressionAttributeNames": {
+          "#s": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":completed": {"S": "COMPLETED"},
+          ":now": {"S.$": "$$.State.EnteredTime"}
+        }
+      },
+      "End": true
+    },
+
+    "MarkJobFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${JobsTableName}",
+        "Key": {
+          "job_id": {"S.$": "$.job_id"}
+        },
+        "UpdateExpression": "SET #s = :failed, updated_at = :now",
+        "ExpressionAttributeNames": {
+          "#s": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":failed": {"S": "FAILED"},
+          ":now": {"S.$": "$$.State.EnteredTime"}
+        }
+      },
+      "End": true
+    },
+
+    "MarkJobBudgetExceeded": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${JobsTableName}",
+        "Key": {
+          "job_id": {"S.$": "$.job_id"}
+        },
+        "UpdateExpression": "SET #s = :budget_exceeded, updated_at = :now",
+        "ExpressionAttributeNames": {
+          "#s": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":budget_exceeded": {"S": "BUDGET_EXCEEDED"},
+          ":now": {"S.$": "$$.State.EnteredTime"}
+        }
+      },
+      "End": true
+    }
+  }
+}

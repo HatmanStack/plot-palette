@@ -24,7 +24,14 @@ from template_engine import TemplateEngine
 
 # Import from shared constants
 sys.path.append('/app')
-from shared.constants import FARGATE_SPOT_PRICING, MODEL_PRICING, S3_PRICING
+from shared.constants import (
+    FARGATE_SPOT_PRICING,
+    MODEL_PRICING,
+    S3_PRICING,
+    WORKER_EXIT_BUDGET_EXCEEDED,
+    WORKER_EXIT_ERROR,
+    WORKER_EXIT_SUCCESS,
+)
 from shared.models import CostBreakdown, CostComponents
 
 # Setup logging
@@ -34,6 +41,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Orchestration mode: 'step_functions' (launched by SFN) or 'standalone' (queue polling)
+ORCHESTRATION_MODE = os.environ.get('ORCHESTRATION_MODE', 'standalone')
+
 # AWS clients
 dynamodb = boto3.resource('dynamodb')
 s3_client = boto3.client('s3')
@@ -42,11 +52,14 @@ bedrock_client = boto3.client('bedrock-runtime')
 # Validate required environment variables
 required_env_vars = {
     'JOBS_TABLE_NAME': 'Jobs table name',
-    'QUEUE_TABLE_NAME': 'Queue table name',
     'TEMPLATES_TABLE_NAME': 'Templates table name',
     'COST_TRACKING_TABLE_NAME': 'Cost tracking table name',
     'CHECKPOINT_METADATA_TABLE_NAME': 'Checkpoint metadata table name',
 }
+
+# QUEUE_TABLE_NAME only required in standalone mode
+if ORCHESTRATION_MODE == 'standalone':
+    required_env_vars['QUEUE_TABLE_NAME'] = 'Queue table name'
 
 for var_name, description in required_env_vars.items():
     if not os.environ.get(var_name):
@@ -54,7 +67,11 @@ for var_name, description in required_env_vars.items():
 
 # DynamoDB tables
 jobs_table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
-queue_table = dynamodb.Table(os.environ['QUEUE_TABLE_NAME'])
+queue_table = (
+    dynamodb.Table(os.environ['QUEUE_TABLE_NAME'])
+    if os.environ.get('QUEUE_TABLE_NAME')
+    else None
+)
 templates_table = dynamodb.Table(os.environ['TEMPLATES_TABLE_NAME'])
 cost_tracking_table = dynamodb.Table(os.environ['COST_TRACKING_TABLE_NAME'])
 checkpoint_metadata_table = dynamodb.Table(os.environ['CHECKPOINT_METADATA_TABLE_NAME'])
@@ -91,8 +108,41 @@ class Worker:
         sys.exit(1)
 
     def run(self):
-        """Main worker loop - process one job then exit."""
-        logger.info("Worker started")
+        """Main worker entry point - process one job then exit."""
+        logger.info(f"Worker started (mode={ORCHESTRATION_MODE})")
+
+        if ORCHESTRATION_MODE == 'step_functions':
+            self._run_step_functions_mode()
+        else:
+            self._run_standalone_mode()
+
+    def _run_step_functions_mode(self):
+        """Step Functions mode: read JOB_ID env var, process, exit with code."""
+        job_id = os.environ.get('JOB_ID', '')
+        if not job_id:
+            logger.error("JOB_ID environment variable not set in step_functions mode")
+            sys.exit(WORKER_EXIT_ERROR)
+
+        try:
+            job = self.get_job_by_id(job_id)
+            if not job:
+                logger.error(f"Job {job_id} not found")
+                sys.exit(WORKER_EXIT_ERROR)
+
+            logger.info(f"Processing job {job_id}")
+            self.process_job(job)
+            logger.info("Worker shutdown complete")
+            sys.exit(WORKER_EXIT_SUCCESS)
+
+        except BudgetExceededError:
+            logger.warning(f"Job {job_id} exceeded budget limit")
+            sys.exit(WORKER_EXIT_BUDGET_EXCEEDED)
+        except Exception as e:
+            logger.error(f"Worker error: {str(e)}", exc_info=True)
+            sys.exit(WORKER_EXIT_ERROR)
+
+    def _run_standalone_mode(self):
+        """Standalone mode: poll queue for next job."""
         try:
             job = self.get_next_job()
 
@@ -109,6 +159,17 @@ class Worker:
         finally:
             logger.info("Worker shutdown complete")
             sys.exit(0)
+
+    def get_job_by_id(self, job_id):
+        """Fetch job directly by ID (used in step_functions mode)."""
+        try:
+            response = jobs_table.get_item(Key={'job_id': job_id})
+            if 'Item' not in response:
+                return None
+            return response['Item']
+        except Exception as e:
+            logger.error(f"Error fetching job {job_id}: {str(e)}", exc_info=True)
+            return None
 
     def get_next_job(self):
         """Pull next job from QUEUED status and move to RUNNING."""
@@ -196,19 +257,19 @@ class Worker:
         """Process a single job end-to-end."""
         job_id = job['job_id']
 
-        try:
-            # Generate data (implemented in Task 4)
+        if ORCHESTRATION_MODE == 'step_functions':
+            # In SF mode, let exceptions propagate so run() sets the exit code.
+            # The state machine handles terminal status transitions.
             self.generate_data(job)
-
-            # Mark job as complete
-            self.mark_job_complete(job_id)
-
-        except BudgetExceededError:
-            self.mark_job_budget_exceeded(job_id)
-
-        except Exception as e:
-            logger.error(f"Error processing job {job_id}: {str(e)}", exc_info=True)
-            self.mark_job_failed(job_id, str(e))
+        else:
+            try:
+                self.generate_data(job)
+                self.mark_job_complete(job_id)
+            except BudgetExceededError:
+                self.mark_job_budget_exceeded(job_id)
+            except Exception as e:
+                logger.error(f"Error processing job {job_id}: {str(e)}", exc_info=True)
+                self.mark_job_failed(job_id, str(e))
 
     def generate_data(self, job):
         """Main data generation loop."""
