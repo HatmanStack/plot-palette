@@ -51,6 +51,14 @@ Parameters:
     Type: String
     Description: ARN of the ECS execution role
 
+  TemplatesBucketName:
+    Type: String
+    Description: S3 bucket containing the ASL definition file
+    Default: ''
+
+Conditions:
+  UseDefaultBucket: !Equals [!Ref TemplatesBucketName, '']
+
 Resources:
   StepFunctionsExecutionRole:
     Type: AWS::IAM::Role
@@ -72,9 +80,16 @@ Resources:
               - Effect: Allow
                 Action:
                   - ecs:RunTask
+                Resource:
+                  - !Ref TaskDefinitionArn
+              - Effect: Allow
+                Action:
                   - ecs:StopTask
                   - ecs:DescribeTasks
                 Resource: '*'
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !Ref EcsClusterArn
               - Effect: Allow
                 Action: iam:PassRole
                 Resource:
@@ -115,16 +130,19 @@ Resources:
       StateMachineName: !Sub 'plot-palette-job-lifecycle-${EnvironmentName}'
       RoleArn: !GetAtt StepFunctionsExecutionRole.Arn
       DefinitionS3Location:
-        Bucket: !Sub 'plot-palette-cfn-${AWS::AccountId}-${AWS::Region}'
+        Bucket: !If
+          - UseDefaultBucket
+          - !Sub 'plot-palette-cfn-${AWS::AccountId}-${AWS::Region}'
+          - !Ref TemplatesBucketName
         Key: step-functions/job-lifecycle.asl.json
       DefinitionSubstitutions:
         JobsTableName: !Ref JobsTableName
         CheckpointMetadataTableName: !Ref CheckpointMetadataTableName
         EcsClusterArn: !Ref EcsClusterArn
         TaskDefinitionArn: !Ref TaskDefinitionArn
-        SubnetIds: !Join
-          - '","'
-          - !Ref SubnetIds
+        SubnetIds: !Sub
+          - '["${JoinedSubnets}"]'
+          - JoinedSubnets: !Join ['","', !Ref SubnetIds]
         SecurityGroupId: !Ref SecurityGroupId
       Tags:
         - Key: Name

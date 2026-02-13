@@ -47,7 +47,7 @@
         "TaskDefinition": "${TaskDefinitionArn}",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
-            "Subnets": "${SubnetIds}",
+            "Subnets": ${SubnetIds},
             "SecurityGroups": ["${SecurityGroupId}"],
             "AssignPublicIp": "ENABLED"
           }

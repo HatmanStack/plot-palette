@@ -258,6 +258,7 @@ Resources:
         SecurityGroupId: !GetAtt NetworkStack.Outputs.ECSSecurityGroupId
         ECSTaskRoleArn: !GetAtt IAMStack.Outputs.ECSTaskRoleArn
         ECSExecutionRoleArn: !GetAtt IAMStack.Outputs.ECSExecutionRoleArn
+        TemplatesBucketName: !If [CreateTemplatesBucket, !Ref TemplatesBucket, !Ref TemplatesBucketName]
       Capabilities: [CAPABILITY_IAM]
       Tags:
         - Key: Project
