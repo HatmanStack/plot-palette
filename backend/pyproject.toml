@@ -53,8 +53,8 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/example/plot-palette"
-"Bug Tracker" = "https://github.com/example/plot-palette/issues"
+"Homepage" = "https://github.com/HatmanStack/plot-palette"
+"Bug Tracker" = "https://github.com/HatmanStack/plot-palette/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

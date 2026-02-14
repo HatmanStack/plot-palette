@@ -73,10 +73,6 @@ cd frontend && npx vitest run src/test/someFile.test.tsx
 5. Push and create a PR — the PR template will guide you
 6. CI must pass before merge
 
-## Architecture
-
-See [`docs/README.md`](docs/README.md) for the full architecture overview and [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for deployment instructions.
-
 ## API Reference
 
 See [`docs/openapi.yaml`](docs/openapi.yaml) for the OpenAPI specification covering all API endpoints.
