@@ -73,7 +73,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         except (ValueError, TypeError):
             return error_response(
                 400,
-                f"Invalid template_version: must be a positive integer, got {template_version_raw}",
+                f"Invalid template_version: must be a positive integer, got "
+                f"{sanitize_error_message(str(template_version_raw))}",
             )
 
         try:
@@ -112,28 +113,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             # Detect if response was truncated by Range header
             content_range = response.get("ContentRange", "")
+            is_truncated = False
+            total_size = None
             if content_range:
                 # ContentRange format: "bytes 0-1048576/TOTAL"
                 parts = content_range.rsplit("/", 1)
                 if len(parts) == 2 and parts[1] != "*":
-                    total_size = int(parts[1])
-                    if total_size > len(data_bytes):
-                        # File is larger than our Range — JSON may be incomplete
-                        try:
-                            data_sample = json.loads(data_bytes)
-                        except json.JSONDecodeError:
-                            return error_response(
-                                400,
-                                f"Seed data file is too large to validate via preview "
-                                f"({total_size} bytes). Upload a file under 1 MB or "
-                                f"ensure the JSON is valid.",
-                            )
-                    else:
-                        data_sample = json.loads(data_bytes)
-                else:
-                    data_sample = json.loads(data_bytes)
-            else:
+                    try:
+                        total_size = int(parts[1])
+                        is_truncated = total_size > len(data_bytes)
+                    except ValueError:
+                        logger.warning(f"Malformed ContentRange total: {parts[1]}")
+
+            # Try parsing JSON — if truncated and invalid, give a size-specific error
+            try:
                 data_sample = json.loads(data_bytes)
+            except json.JSONDecodeError:
+                if is_truncated and total_size is not None:
+                    return error_response(
+                        400,
+                        f"Seed data file is too large to validate via preview "
+                        f"({total_size} bytes). Upload a file under 1 MB or "
+                        f"ensure the JSON is valid.",
+                    )
+                raise
 
         except s3_client.exceptions.NoSuchKey:
             return error_response(404, "Seed data file not found")

@@ -153,9 +153,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return error_response(403, "Access denied - you do not own this job")
 
         status = job["status"]
-        bucket = os.environ.get(
-            "BUCKET_NAME", f"plot-palette-{os.environ.get('AWS_ACCOUNT_ID', '')}"
-        )
+        bucket = os.environ.get("BUCKET_NAME", "")
+        if not bucket:
+            logger.error("BUCKET_NAME environment variable is not set")
+            return error_response(500, "Server configuration error: storage not configured")
 
         if status == "QUEUED":
             # Stop Step Functions execution if present

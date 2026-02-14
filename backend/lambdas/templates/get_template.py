@@ -52,8 +52,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         params = event.get("queryStringParameters") or {}
         try:
             version = int(params.get("version", 1))
+            if version < 1:
+                return error_response(400, "Invalid version parameter: must be a positive integer")
         except (ValueError, TypeError):
-            return error_response(400, "Invalid version parameter: must be an integer")
+            return error_response(400, "Invalid version parameter: must be a positive integer")
 
         logger.info(
             json.dumps(

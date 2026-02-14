@@ -36,20 +36,22 @@ class TemplateEngine:
         Args:
             dynamodb_client: Optional boto3 DynamoDB resource for template loading
         """
-        self.dynamodb = dynamodb_client
         self.templates_table = None
 
-        if self.dynamodb:
-            try:
+        try:
+            if dynamodb_client:
+                self.dynamodb = dynamodb_client
+            else:
                 import boto3
 
-                if not dynamodb_client:
-                    self.dynamodb = boto3.resource("dynamodb")
-                table_name = os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates")
-                self.templates_table = self.dynamodb.Table(table_name)
-                logger.info(f"DynamoDB template loader configured with table: {table_name}")
-            except Exception as e:
-                logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
+                self.dynamodb = boto3.resource("dynamodb")
+
+            table_name = os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates")
+            self.templates_table = self.dynamodb.Table(table_name)
+            logger.info(f"DynamoDB template loader configured with table: {table_name}")
+        except Exception as e:
+            self.dynamodb = None
+            logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
 
         # Create Jinja2 environment with custom loader (no autoescape — prompts are plain text, not HTML)
         self.env = jinja2.Environment(  # nosec B701 — LLM prompts are plain text, not HTML
@@ -122,7 +124,10 @@ class TemplateEngine:
 
     def render_step(self, step_def: Dict[str, Any], context: Dict[str, Any]) -> str:
         """Render a single template step with context."""
-        template = self.env.from_string(step_def["prompt"])
+        prompt = step_def.get("prompt", "")
+        if not prompt:
+            logger.warning(f"Step '{step_def.get('id', 'unknown')}' has empty or missing prompt")
+        template = self.env.from_string(prompt)
         return template.render(**context)
 
     def execute_template(

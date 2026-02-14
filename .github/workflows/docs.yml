@@ -20,7 +20,7 @@ jobs:
           globs: '**/*.md #node_modules #.pytest_cache'
 
       - name: Check links
-        uses: lychee-action/lychee-action@v2
+        uses: lycheeverse/lychee-action@v2
         with:
           args: '--no-progress --exclude-path node_modules --exclude-path .pytest_cache **/*.md'
           fail: true

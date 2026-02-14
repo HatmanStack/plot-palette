@@ -117,9 +117,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 )
             else:
                 logger.warning(
-                    json.dumps(
-                        {"event": "template_usage_check_failed", "template_id": template_id}
-                    )
+                    json.dumps({"event": "template_usage_check_failed", "template_id": template_id})
                 )
                 return error_response(409, "Cannot delete template - it is currently in use")
 
