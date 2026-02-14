@@ -13,15 +13,28 @@
 <p>Generate synthetic training data at scale using AWS Bedrock foundation models. Leverage ECS Fargate Spot instances for up to 70% cost savings with automatic checkpoint recovery. Configure jobs, upload seed data, and monitor progress through a modern React web interface.</p>
 </div>
 
-** THIS REPO IS IN ACTIVE DEVELOPMENT AND WILL CHANGE OFTEN **
+> This repo is in active development and will change often.
 
-## Structure
+## Architecture
+
+```mermaid
+graph LR
+    UI[React SPA] --> GW[API Gateway]
+    GW --> Auth[Cognito]
+    GW --> L[Lambda x16]
+    L --> DB[(DynamoDB)]
+    L --> S3[(S3)]
+    L --> SF[Step Functions]
+    SF --> ECS[ECS Fargate Spot]
+    ECS --> Bedrock[AWS Bedrock LLMs]
+    ECS --> S3
+    ECS --> DB
+```
 
 ```text
-├── frontend/   # React web application
-├── backend/    # Lambda functions + ECS workers
-├── docs/       # Documentation
-└── tests/      # Centralized test suites
+├── frontend/   # React 19 SPA
+├── backend/    # Lambda functions, ECS worker, infrastructure
+└── tests/      # Backend test suites (unit, integration, e2e)
 ```
 
 ## Prerequisites
@@ -48,11 +61,11 @@ npm run deploy
 
 The deploy script prompts for configuration:
 
-| Prompt | Description |
-|--------|-------------|
-| Stack Name | CloudFormation stack name (default: plot-palette) |
-| AWS Region | Deployment region (default: us-east-1) |
-| Environment | development or production |
+| Prompt      | Description                                       |
+| ----------- | ------------------------------------------------- |
+| Stack Name  | CloudFormation stack name (default: plot-palette)  |
+| AWS Region  | Deployment region (default: us-east-1)             |
+| Environment | development or production                          |
 
 Defaults are saved to `.env.deploy` and shown in brackets on subsequent runs.
 

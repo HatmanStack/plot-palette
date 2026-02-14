@@ -14,6 +14,7 @@ pre-commit install                                       # Hooks: ruff, ruff-for
 ## Build & Development Commands
 
 ### Frontend (React 19 + Vite + TypeScript)
+
 ```bash
 npm run dev                              # Start Vite dev server
 npm run build                            # TypeScript compile + Vite build
@@ -24,6 +25,7 @@ cd frontend && npx vitest --watch        # Watch mode
 ```
 
 ### Backend (Python 3.13)
+
 ```bash
 npm run lint:backend                     # Ruff lint (runs from backend/)
 npm run test:backend                     # Pytest unit + integration tests
@@ -32,17 +34,21 @@ PYTHONPATH=. pytest tests/unit/test_specific.py::test_fn # Single test function
 ```
 
 ### E2E Tests (requires Docker)
+
 ```bash
 npm run test:e2e                         # Spins up LocalStack, runs tests, tears down
 ```
 
 ### Full Check
+
 ```bash
 npm run check                            # All linting + all tests (frontend + backend)
 ```
 
 ### CI-Equivalent Local Commands
+
 CI runs additional checks not covered by `npm run check`:
+
 ```bash
 cd backend && mypy shared/ lambdas/ --config-file pyproject.toml  # Type check (non-blocking in CI)
 bandit -r backend/ -ll -ii --exclude tests                        # Security scan
@@ -60,6 +66,7 @@ Serverless synthetic data generation platform using AWS Bedrock LLMs to generate
 **Lambda functions** (`backend/lambdas/`) — 16 API handlers for CRUD on jobs, templates, seed data, and dashboard stats. Each Lambda is a standalone handler file. All share the common modules below. Lambda files have an E402 ruff exemption (imports after sys.path manipulation).
 
 **Shared modules** (`backend/shared/`) — The core business logic layer:
+
 - `models.py` — Pydantic models (`JobConfig`, `TemplateDefinition`, `CheckpointState`, `CostBreakdown`, `QueueItem`) with DynamoDB serialization
 - `constants.py` — Enums (`JobStatus`, `ExportFormat`), model pricing tables, Fargate Spot pricing, tier-to-model mapping (tier-1=cheap/Llama 8B, tier-2=balanced/Llama 70B, tier-3=premium/Claude 3.5 Sonnet)
 - `utils.py` — Cost calculation, token estimation, S3 helpers, validation

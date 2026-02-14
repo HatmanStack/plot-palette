@@ -54,12 +54,14 @@ cd frontend && npx vitest run src/test/someFile.test.tsx
 ## Code Style
 
 ### Python (backend)
+
 - **Linter**: ruff (E, W, F, I, B, C4 rules)
 - **Type checker**: mypy (strict mode)
 - **Line length**: 100 characters
 - **Formatter**: ruff format
 
 ### TypeScript (frontend)
+
 - **Linter**: ESLint with typescript-eslint
 - **Type checker**: tsc --noEmit
 - **Test framework**: Vitest + Testing Library
