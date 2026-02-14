@@ -23,21 +23,22 @@ RETRYABLE_EXCEPTIONS: Tuple[Type[Exception], ...] = (
 
 # AWS error codes that are retryable
 RETRYABLE_ERROR_CODES: Set[str] = {
-    'ThrottlingException',
-    'Throttling',
-    'RequestLimitExceeded',
-    'ProvisionedThroughputExceededException',
-    'ServiceUnavailable',
-    'ServiceException',
-    'InternalServerError',
-    'TransientError',
-    'ModelStreamErrorException',  # Bedrock specific
-    'ModelTimeoutException',  # Bedrock specific
+    "ThrottlingException",
+    "Throttling",
+    "RequestLimitExceeded",
+    "ProvisionedThroughputExceededException",
+    "ServiceUnavailable",
+    "ServiceException",
+    "InternalServerError",
+    "TransientError",
+    "ModelStreamErrorException",  # Bedrock specific
+    "ModelTimeoutException",  # Bedrock specific
 }
 
 
 class CircuitBreakerOpen(Exception):
     """Raised when circuit breaker is open and calls are rejected."""
+
     pass
 
 
@@ -56,15 +57,12 @@ class CircuitBreaker:
         name: Optional name for logging
     """
 
-    CLOSED = 'CLOSED'
-    OPEN = 'OPEN'
-    HALF_OPEN = 'HALF_OPEN'
+    CLOSED = "CLOSED"
+    OPEN = "OPEN"
+    HALF_OPEN = "HALF_OPEN"
 
     def __init__(
-        self,
-        failure_threshold: int = 5,
-        recovery_timeout: float = 30.0,
-        name: str = 'default'
+        self, failure_threshold: int = 5, recovery_timeout: float = 30.0, name: str = "default"
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -158,7 +156,7 @@ def is_retryable_error(exception: Exception) -> bool:
         True if the error is retryable
     """
     if isinstance(exception, ClientError):
-        error_code = exception.response.get('Error', {}).get('Code', '')
+        error_code = exception.response.get("Error", {}).get("Code", "")
         return error_code in RETRYABLE_ERROR_CODES
     return False
 
@@ -190,6 +188,7 @@ def retry_with_backoff(
         def call_bedrock(client, prompt):
             return client.invoke_model(...)
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -197,9 +196,7 @@ def retry_with_backoff(
             if circuit_breaker_name:
                 cb = get_circuit_breaker(circuit_breaker_name)
                 if not cb.can_execute():
-                    raise CircuitBreakerOpen(
-                        f"Circuit breaker '{circuit_breaker_name}' is open"
-                    )
+                    raise CircuitBreakerOpen(f"Circuit breaker '{circuit_breaker_name}' is open")
 
             exceptions_to_catch = retryable_exceptions or RETRYABLE_EXCEPTIONS
             last_exception = None
@@ -222,10 +219,7 @@ def retry_with_backoff(
                         raise
 
                     if attempt < max_retries:
-                        delay = min(
-                            base_delay * (exponential_base ** attempt),
-                            max_delay
-                        )
+                        delay = min(base_delay * (exponential_base**attempt), max_delay)
                         logger.warning(
                             f"Retry {attempt + 1}/{max_retries} for {func.__name__} "
                             f"after {delay:.1f}s delay. Error: {str(e)[:100]}"
@@ -244,4 +238,5 @@ def retry_with_backoff(
                 raise last_exception
 
         return wrapper
+
     return decorator

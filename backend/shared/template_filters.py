@@ -30,7 +30,7 @@ def random_sentence(text: str) -> str:
     if not text:
         return ""
 
-    sentences = re.split(r'[.!?]+', text)
+    sentences = re.split(r"[.!?]+", text)
     sentences = [s.strip() for s in sentences if s.strip()]
 
     return random.choice(sentences) if sentences else text
@@ -58,7 +58,7 @@ def random_word(text: str, count: int = 1) -> str:
         return random.choice(words)
     else:
         selected = random.sample(words, min(count, len(words)))
-        return ' '.join(selected)
+        return " ".join(selected)
 
 
 def writing_style(biography: str) -> str:
@@ -72,24 +72,24 @@ def writing_style(biography: str) -> str:
         str: Comma-separated style keywords
     """
     if not biography:
-        return 'general'
+        return "general"
 
     style_keywords = []
 
     style_patterns = {
-        'poetic': r'\b(poet|poetry|verse|lyrical)\b',
-        'narrative': r'\b(story|narrative|tale|chronicle)\b',
-        'descriptive': r'\b(describe|vivid|detailed)\b',
-        'minimalist': r'\b(minimal|sparse|concise|brief)\b',
-        'verbose': r'\b(elaborate|detailed|extensive)\b',
-        'dramatic': r'\b(drama|theatrical|intense)\b'
+        "poetic": r"\b(poet|poetry|verse|lyrical)\b",
+        "narrative": r"\b(story|narrative|tale|chronicle)\b",
+        "descriptive": r"\b(describe|vivid|detailed)\b",
+        "minimalist": r"\b(minimal|sparse|concise|brief)\b",
+        "verbose": r"\b(elaborate|detailed|extensive)\b",
+        "dramatic": r"\b(drama|theatrical|intense)\b",
     }
 
     for style, pattern in style_patterns.items():
         if re.search(pattern, biography, re.IGNORECASE):
             style_keywords.append(style)
 
-    return ', '.join(style_keywords) if style_keywords else 'general'
+    return ", ".join(style_keywords) if style_keywords else "general"
 
 
 def truncate_tokens(text: str, max_tokens: int) -> str:
@@ -114,11 +114,11 @@ def truncate_tokens(text: str, max_tokens: int) -> str:
 
     # Truncate at word boundary
     truncated = text[:max_chars]
-    last_space = truncated.rfind(' ')
+    last_space = truncated.rfind(" ")
     if last_space > 0:
         truncated = truncated[:last_space]
 
-    return truncated + '...'
+    return truncated + "..."
 
 
 def extract_keywords(text: str, count: int = 5) -> List[str]:
@@ -137,15 +137,50 @@ def extract_keywords(text: str, count: int = 5) -> List[str]:
 
     # Common stop words to filter out
     stop_words = {
-        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to',
-        'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are',
-        'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does',
-        'did', 'will', 'would', 'should', 'could', 'may', 'might',
-        'this', 'that', 'these', 'those', 'it', 'its'
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "is",
+        "was",
+        "are",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "should",
+        "could",
+        "may",
+        "might",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
     }
 
     # Extract words
-    words = re.findall(r'\b\w+\b', text.lower())
+    words = re.findall(r"\b\w+\b", text.lower())
     words = [w for w in words if w not in stop_words and len(w) > 3]
 
     # Count frequency
@@ -169,13 +204,13 @@ def summarize_text(text: str, max_sentences: int = 3) -> str:
     if not text:
         return ""
 
-    sentences = re.split(r'[.!?]+', text)
+    sentences = re.split(r"[.!?]+", text)
     sentences = [s.strip() for s in sentences if s.strip()]
 
     if not sentences:
         return text
 
-    return '. '.join(sentences[:max_sentences]) + '.'
+    return ". ".join(sentences[:max_sentences]) + "."
 
 
 def capitalize_first(text: str) -> str:
@@ -191,7 +226,7 @@ def capitalize_first(text: str) -> str:
     if not text:
         return ""
 
-    return '. '.join(s.strip().capitalize() for s in text.split('. '))
+    return ". ".join(s.strip().capitalize() for s in text.split(". "))
 
 
 def remove_markdown(text: str) -> str:
@@ -208,17 +243,17 @@ def remove_markdown(text: str) -> str:
         return ""
 
     # Remove headers
-    text = re.sub(r'#+\s+', '', text)
+    text = re.sub(r"#+\s+", "", text)
     # Remove bold
-    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
     # Remove italic
-    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    text = re.sub(r"\*(.*?)\*", r"\1", text)
     # Remove links
-    text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
+    text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)
     # Remove code blocks
-    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
     # Remove inline code
-    text = re.sub(r'`(.*?)`', r'\1', text)
+    text = re.sub(r"`(.*?)`", r"\1", text)
 
     return text
 
@@ -255,15 +290,15 @@ def validate_template_syntax(template_def: dict) -> Tuple[bool, str]:
         env = jinja2.Environment(
             autoescape=jinja2.select_autoescape(default_for_string=True, default=True),
             trim_blocks=True,
-            lstrip_blocks=True
+            lstrip_blocks=True,
         )
 
         # Register custom filters for validation
         env.filters.update(CUSTOM_FILTERS)
 
         # Validate each step's prompt
-        for step in template_def.get('steps', []):
-            prompt = step.get('prompt', '')
+        for step in template_def.get("steps", []):
+            prompt = step.get("prompt", "")
             if not prompt:
                 return False, f"Step '{step.get('id', 'unknown')}' has empty prompt"
 
@@ -271,7 +306,10 @@ def validate_template_syntax(template_def: dict) -> Tuple[bool, str]:
             try:
                 env.from_string(prompt)
             except jinja2.TemplateSyntaxError as e:
-                return False, f"Template syntax error in step '{step.get('id', 'unknown')}': {str(e)}"
+                return (
+                    False,
+                    f"Template syntax error in step '{step.get('id', 'unknown')}': {str(e)}",
+                )
 
         return True, "Valid template syntax"
 
@@ -280,6 +318,7 @@ def validate_template_syntax(template_def: dict) -> Tuple[bool, str]:
     except Exception as e:
         logger.error(f"Template validation error: {str(e)}", exc_info=True)
         from .utils import sanitize_error_message
+
         return False, f"Template validation error: {sanitize_error_message(str(e))}"
 
 
@@ -298,8 +337,8 @@ def validate_template_includes(template_def: dict, templates_table) -> Tuple[boo
         # Collect all include names across all steps
         all_includes = set()
 
-        for step in template_def.get('steps', []):
-            prompt = step.get('prompt', '')
+        for step in template_def.get("steps", []):
+            prompt = step.get("prompt", "")
 
             # Find all {% include 'template-name' %} references
             all_includes.update(re.findall(r"{%\s*include\s+'([^']+)'\s*%}", prompt))
@@ -313,19 +352,21 @@ def validate_template_includes(template_def: dict, templates_table) -> Tuple[boo
         include_list = list(all_includes)
 
         for i in range(0, len(include_list), 100):
-            chunk = include_list[i:i + 100]
+            chunk = include_list[i : i + 100]
 
             try:
                 for name in chunk:
-                    resp = templates_table.get_item(
-                        Key={'template_id': name, 'version': 1}
-                    )
-                    if 'Item' in resp:
+                    resp = templates_table.get_item(Key={"template_id": name, "version": 1})
+                    if "Item" in resp:
                         found_ids.add(name)
             except ClientError as e:
-                error_code = e.response.get('Error', {}).get('Code', '')
-                if error_code in ('ThrottlingException', 'InternalServerError',
-                                  'ServiceUnavailable', 'ProvisionedThroughputExceededException'):
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code in (
+                    "ThrottlingException",
+                    "InternalServerError",
+                    "ServiceUnavailable",
+                    "ProvisionedThroughputExceededException",
+                ):
                     raise  # Propagate infrastructure errors
                 logger.error(f"Error checking include: {str(e)}")
 
@@ -337,28 +378,34 @@ def validate_template_includes(template_def: dict, templates_table) -> Tuple[boo
 
     except ClientError as e:
         # Propagate infrastructure errors (throttling, internal server errors)
-        error_code = e.response.get('Error', {}).get('Code', '')
-        if error_code in ('ThrottlingException', 'InternalServerError',
-                          'ServiceUnavailable', 'ProvisionedThroughputExceededException'):
+        error_code = e.response.get("Error", {}).get("Code", "")
+        if error_code in (
+            "ThrottlingException",
+            "InternalServerError",
+            "ServiceUnavailable",
+            "ProvisionedThroughputExceededException",
+        ):
             raise
         logger.error(f"Include validation error: {str(e)}", exc_info=True)
         from .utils import sanitize_error_message
+
         return False, f"Include validation error: {sanitize_error_message(str(e))}"
     except Exception as e:
         logger.error(f"Include validation error: {str(e)}", exc_info=True)
         from .utils import sanitize_error_message
+
         return False, f"Include validation error: {sanitize_error_message(str(e))}"
 
 
 # Register all custom filters
 CUSTOM_FILTERS = {
-    'random_sentence': random_sentence,
-    'random_word': random_word,
-    'writing_style': writing_style,
-    'truncate_tokens': truncate_tokens,
-    'extract_keywords': extract_keywords,
-    'summarize_text': summarize_text,
-    'capitalize_first': capitalize_first,
-    'remove_markdown': remove_markdown,
-    'json_safe': json_safe
+    "random_sentence": random_sentence,
+    "random_word": random_word,
+    "writing_style": writing_style,
+    "truncate_tokens": truncate_tokens,
+    "extract_keywords": extract_keywords,
+    "summarize_text": summarize_text,
+    "capitalize_first": capitalize_first,
+    "remove_markdown": remove_markdown,
+    "json_safe": json_safe,
 }

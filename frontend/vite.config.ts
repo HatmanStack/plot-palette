@@ -13,7 +13,7 @@ export default defineConfig({
       reporter: ['text', 'text-summary'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/test/**', 'src/**/*.d.ts'],
-      thresholds: { statements: 60 },
+      thresholds: { statements: 70 },
     },
   },
 })

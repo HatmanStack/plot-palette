@@ -54,12 +54,14 @@ cd frontend && npx vitest run src/test/someFile.test.tsx
 ## Code Style
 
 ### Python (backend)
+
 - **Linter**: ruff (E, W, F, I, B, C4 rules)
 - **Type checker**: mypy (strict mode)
 - **Line length**: 100 characters
 - **Formatter**: ruff format
 
 ### TypeScript (frontend)
+
 - **Linter**: ESLint with typescript-eslint
 - **Type checker**: tsc --noEmit
 - **Test framework**: Vitest + Testing Library
@@ -72,10 +74,6 @@ cd frontend && npx vitest run src/test/someFile.test.tsx
 4. Run `npm run test:e2e` if you modified backend code
 5. Push and create a PR — the PR template will guide you
 6. CI must pass before merge
-
-## Architecture
-
-See [`docs/README.md`](docs/README.md) for the full architecture overview and [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for deployment instructions.
 
 ## API Reference
 

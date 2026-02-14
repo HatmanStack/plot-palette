@@ -22,6 +22,7 @@ _deserializer = TypeDeserializer()
 # TypedDict definitions for strongly-typed dictionaries
 class TemplateStepDict(TypedDict):
     """Type definition for a template step configuration."""
+
     id: str
     prompt: str
     model: NotRequired[str]
@@ -30,6 +31,7 @@ class TemplateStepDict(TypedDict):
 
 class TemplateDefinitionDict(TypedDict):
     """Type definition for a complete template definition."""
+
     steps: List[TemplateStepDict]
 
 
@@ -40,6 +42,7 @@ class JobConfigDict(TypedDict, total=False):
     All fields are optional to maintain backward compatibility with
     existing tests and code that may pass partial configs.
     """
+
     template_id: str
     seed_data_path: str
     budget_limit: float
@@ -52,6 +55,7 @@ class JobConfigDict(TypedDict, total=False):
 
 class ResumeStateDict(TypedDict, total=False):
     """Type definition for checkpoint resume state."""
+
     last_seed_index: int
     partial_results: Dict[str, Any]
     step_outputs: Dict[str, str]
@@ -63,8 +67,12 @@ class JobConfig(BaseModel):
     job_id: str = Field(..., description="Unique job identifier (UUID)")
     user_id: str = Field(..., description="User who created the job")
     status: JobStatus = Field(default=JobStatus.QUEUED, description="Current job status")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Job creation timestamp")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow, description="Job creation timestamp"
+    )
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow, description="Last update timestamp"
+    )
     config: Dict[str, Any] = Field(..., description="Job configuration dictionary")
     budget_limit: float = Field(..., gt=0, description="Budget limit in USD")
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
@@ -144,6 +152,7 @@ class JobConfig(BaseModel):
     @staticmethod
     def _dynamodb_map_to_dict(m: Dict[str, Any]) -> Dict[str, Any]:
         """Convert DynamoDB Map to Python dict using boto3 TypeDeserializer."""
+
         def _convert_decimals(obj: Any) -> Any:
             if isinstance(obj, Decimal):
                 return int(obj) if obj == int(obj) else float(obj)
@@ -168,7 +177,14 @@ class TemplateStep(BaseModel):
     @classmethod
     def validate_model_tier(cls, v):
         """Validate model tier if provided."""
-        if v is not None and v not in ["tier-1", "tier-2", "tier-3", "cheap", "balanced", "premium"]:
+        if v is not None and v not in [
+            "tier-1",
+            "tier-2",
+            "tier-3",
+            "cheap",
+            "balanced",
+            "premium",
+        ]:
             raise ValueError(f"Invalid model tier: {v}")
         return v
 
@@ -211,7 +227,9 @@ class TemplateDefinition(BaseModel):
         template_data.version = int(item["version"]["N"])
         template_data.name = item["name"]["S"]
         template_data.user_id = item["user_id"]["S"]
-        template_data.schema_requirements = [req["S"] for req in item.get("schema_requirements", {}).get("L", [])]
+        template_data.schema_requirements = [
+            req["S"] for req in item.get("schema_requirements", {}).get("L", [])
+        ]
         template_data.is_public = item.get("is_public", {}).get("BOOL", False)
         template_data.created_at = datetime.fromisoformat(item["created_at"]["S"])
         return template_data
@@ -225,7 +243,9 @@ class CheckpointState(BaseModel):
     current_batch: int = Field(default=0, ge=0, description="Current batch number")
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     cost_accumulated: float = Field(default=0.0, ge=0, description="Cost accumulated in USD")
-    last_updated: datetime = Field(default_factory=datetime.utcnow, description="Last checkpoint timestamp")
+    last_updated: datetime = Field(
+        default_factory=datetime.utcnow, description="Last checkpoint timestamp"
+    )
     resume_state: Dict[str, Any] = Field(
         default_factory=dict,
         description="Custom state for resuming generation",
@@ -257,7 +277,9 @@ class CostBreakdown(BaseModel):
     """Cost breakdown for a specific time period."""
 
     job_id: str = Field(..., description="Job identifier")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Measurement timestamp")
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow, description="Measurement timestamp"
+    )
     bedrock_tokens: int = Field(default=0, ge=0, description="Tokens consumed by Bedrock")
     fargate_hours: float = Field(default=0.0, ge=0, description="Fargate compute hours")
     s3_operations: int = Field(default=0, ge=0, description="S3 API operation count")
@@ -341,7 +363,9 @@ class QueueItem(BaseModel):
 
     status: JobStatus = Field(..., description="Queue status (QUEUED, RUNNING, COMPLETED)")
     job_id: str = Field(..., description="Job identifier")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Queue entry timestamp")
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow, description="Queue entry timestamp"
+    )
     priority: int = Field(default=0, description="Priority (higher = more urgent)")
     task_arn: Optional[str] = Field(None, description="ECS task ARN when running")
 

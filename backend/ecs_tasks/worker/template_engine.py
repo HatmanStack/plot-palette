@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 import jinja2
 
 # Add shared library to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../shared'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from retry import CircuitBreakerOpen, get_circuit_breaker, retry_with_backoff
 from template_filters import CUSTOM_FILTERS
@@ -36,32 +36,37 @@ class TemplateEngine:
         Args:
             dynamodb_client: Optional boto3 DynamoDB resource for template loading
         """
-        self.dynamodb = dynamodb_client
         self.templates_table = None
 
-        if self.dynamodb:
-            try:
+        try:
+            if dynamodb_client:
+                self.dynamodb = dynamodb_client
+            else:
                 import boto3
-                if not dynamodb_client:
-                    self.dynamodb = boto3.resource('dynamodb')
-                table_name = os.environ.get('TEMPLATES_TABLE_NAME', 'plot-palette-Templates')
-                self.templates_table = self.dynamodb.Table(table_name)
-                logger.info(f"DynamoDB template loader configured with table: {table_name}")
-            except Exception as e:
-                logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
+
+                self.dynamodb = boto3.resource("dynamodb")
+
+            table_name = os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates")
+            self.templates_table = self.dynamodb.Table(table_name)
+            logger.info(f"DynamoDB template loader configured with table: {table_name}")
+        except Exception as e:
+            self.dynamodb = None
+            logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
 
         # Create Jinja2 environment with custom loader (no autoescape — prompts are plain text, not HTML)
         self.env = jinja2.Environment(  # nosec B701 — LLM prompts are plain text, not HTML
             loader=jinja2.FunctionLoader(self.load_template_string),
             autoescape=False,
             trim_blocks=True,
-            lstrip_blocks=True
+            lstrip_blocks=True,
         )
 
         # Register custom filters
         self.env.filters.update(CUSTOM_FILTERS)
 
-        logger.info("TemplateEngine initialized with custom filters and template composition support")
+        logger.info(
+            "TemplateEngine initialized with custom filters and template composition support"
+        )
 
     def load_template_string(self, template_name: str) -> Optional[str]:
         """
@@ -81,15 +86,15 @@ class TemplateEngine:
 
         try:
             response = self.templates_table.get_item(
-                Key={'template_id': template_name, 'version': 1}
+                Key={"template_id": template_name, "version": 1}
             )
 
-            if 'Item' not in response:
+            if "Item" not in response:
                 logger.warning(f"Template not found for include: {template_name}")
                 return f"<!-- Template not found: {template_name} -->"
 
-            template_item = response['Item']
-            steps = template_item.get('template_definition', {}).get('steps', [])
+            template_item = response["Item"]
+            steps = template_item.get("template_definition", {}).get("steps", [])
 
             if not steps:
                 logger.warning(f"Template {template_name} has no steps")
@@ -99,11 +104,11 @@ class TemplateEngine:
             # This allows reusable fragments to be composed
             prompt_parts = []
             for step in steps:
-                prompt = step.get('prompt', '')
+                prompt = step.get("prompt", "")
                 if prompt:
                     prompt_parts.append(prompt)
 
-            result = '\n\n'.join(prompt_parts)
+            result = "\n\n".join(prompt_parts)
             logger.info(f"Loaded template for include: {template_name}")
             return result
 
@@ -115,43 +120,49 @@ class TemplateEngine:
     @staticmethod
     def _find_referenced_steps(prompt_text: str) -> Set[str]:
         """Parse steps.X.output references from prompt text."""
-        return set(re.findall(r'steps\.(\w+)\.output', prompt_text))
+        return set(re.findall(r"steps\.(\w+)\.output", prompt_text))
 
     def render_step(self, step_def: Dict[str, Any], context: Dict[str, Any]) -> str:
         """Render a single template step with context."""
-        template = self.env.from_string(step_def['prompt'])
+        prompt = step_def.get("prompt", "")
+        if not prompt:
+            logger.warning(f"Step '{step_def.get('id', 'unknown')}' has empty or missing prompt")
+        template = self.env.from_string(prompt)
         return template.render(**context)
 
     def execute_template(
         self,
         template_def: Dict[str, Any],
         seed_data: Dict[str, Any],
-        bedrock_client: "BedrockRuntimeClient"
+        bedrock_client: "BedrockRuntimeClient",
     ) -> Dict[str, Any]:
         """Execute multi-step template with Bedrock calls."""
         context = seed_data.copy()
         results = {}
 
-        steps = template_def.get('steps', [])
+        steps = template_def.get("steps", [])
         if not steps:
             logger.warning("Template has no steps")
             return results
 
         for step in steps:
-            step_id = step['id']
-            model_id = step.get('model', step.get('model_tier', 'tier-1'))
+            step_id = step["id"]
+            model_id = step.get("model", step.get("model_tier", "tier-1"))
 
             # Resolve model tier alias if needed
-            if model_id.startswith('tier-') or model_id in ['cheap', 'balanced', 'premium']:
+            if model_id.startswith("tier-") or model_id in ["cheap", "balanced", "premium"]:
                 from constants import MODEL_TIERS
+
                 model_id = MODEL_TIERS.get(model_id, model_id)
 
             try:
                 # Build a render context with pruned steps (don't mutate original)
                 render_context = dict(context)
-                if 'steps' in context and context['steps']:
-                    referenced = self._find_referenced_steps(step.get('prompt', ''))
-                    render_context['steps'] = {k: v for k, v in context['steps'].items() if k in referenced}
+                if "steps" in context and context["steps"]:
+                    referenced = self._find_referenced_steps(step.get("prompt", ""))
+                    render_context["steps"] = {
+                        k: v for k, v in context["steps"].items() if k in referenced
+                    }
 
                 # Render prompt with pruned context
                 prompt = self.render_step(step, render_context)
@@ -161,18 +172,14 @@ class TemplateEngine:
                 response = self.call_bedrock(bedrock_client, model_id, prompt)
 
                 # Store step result
-                results[step_id] = {
-                    'prompt': prompt,
-                    'output': response,
-                    'model': model_id
-                }
+                results[step_id] = {"prompt": prompt, "output": response, "model": model_id}
 
                 # Add to context for next steps
-                if 'steps' not in context:
-                    context['steps'] = {}
-                if step_id not in context['steps']:
-                    context['steps'][step_id] = {}
-                context['steps'][step_id]['output'] = response
+                if "steps" not in context:
+                    context["steps"] = {}
+                if step_id not in context["steps"]:
+                    context["steps"][step_id] = {}
+                context["steps"][step_id]["output"] = response
 
                 logger.info(f"Step '{step_id}' completed successfully")
 
@@ -180,8 +187,8 @@ class TemplateEngine:
                 logger.error(f"Circuit breaker open for step '{step_id}': {str(e)}")
                 # Circuit breaker open - fail fast, don't continue
                 results[step_id] = {
-                    'error': 'Service temporarily unavailable (circuit breaker open)',
-                    'model': model_id
+                    "error": "Service temporarily unavailable (circuit breaker open)",
+                    "model": model_id,
                 }
                 # Don't continue with remaining steps if circuit is open
                 break
@@ -189,10 +196,7 @@ class TemplateEngine:
             except Exception as e:
                 logger.error(f"Error executing step '{step_id}': {str(e)}", exc_info=True)
                 # Store error but continue with other steps
-                results[step_id] = {
-                    'error': str(e),
-                    'model': model_id
-                }
+                results[step_id] = {"error": str(e), "model": model_id}
 
         return results
 
@@ -203,7 +207,7 @@ class TemplateEngine:
         Uses retry with exponential backoff and per-model circuit breaker
         to handle transient failures and throttling.
         """
-        cb_name = f'bedrock:{model_id}'
+        cb_name = f"bedrock:{model_id}"
         cb = get_circuit_breaker(cb_name)
         if not cb.can_execute():
             raise CircuitBreakerOpen(f"Circuit breaker '{cb_name}' is open")
@@ -225,62 +229,59 @@ class TemplateEngine:
         """Invoke Bedrock model with retry logic (no circuit breaker)."""
         try:
             # Format request based on model family
-            if 'claude' in model_id.lower():
+            if "claude" in model_id.lower():
                 # Claude models use Messages API format with content array
                 request_body = {
                     "anthropic_version": "bedrock-2023-05-31",
                     "max_tokens": 2000,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [{"type": "text", "text": prompt}]
-                        }
-                    ],
+                    "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
                     "temperature": 0.7,
                     "top_k": 250,
-                    "top_p": 0.999
+                    "top_p": 0.999,
                 }
-            elif 'llama' in model_id.lower():
+            elif "llama" in model_id.lower():
                 # Llama models use generation format
                 request_body = {
                     "prompt": prompt,
                     "max_gen_len": 2000,
                     "temperature": 0.7,
-                    "top_p": 0.9
+                    "top_p": 0.9,
                 }
-            elif 'mistral' in model_id.lower():
+            elif "mistral" in model_id.lower():
                 # Mistral models
-                request_body = {
-                    "prompt": prompt,
-                    "max_tokens": 2000,
-                    "temperature": 0.7
-                }
+                request_body = {"prompt": prompt, "max_tokens": 2000, "temperature": 0.7}
             else:
                 # Generic format
-                request_body = {
-                    "prompt": prompt,
-                    "max_tokens": 2000
-                }
+                request_body = {"prompt": prompt, "max_tokens": 2000}
 
             # Invoke model
-            response = client.invoke_model(
-                modelId=model_id,
-                body=json.dumps(request_body)
-            )
+            response = client.invoke_model(modelId=model_id, body=json.dumps(request_body))
 
             # Parse response
-            response_body = json.loads(response['body'].read())
+            response_body = json.loads(response["body"].read())
 
             # Extract text based on model family
-            if 'claude' in model_id.lower():
+            if "claude" in model_id.lower():
                 # Claude returns content array
-                return response_body['content'][0]['text']
-            elif 'llama' in model_id.lower():
-                return response_body.get('generation', '')
-            elif 'mistral' in model_id.lower():
-                return response_body.get('outputs', [{}])[0].get('text', '')
+                content = response_body.get("content")
+                if isinstance(content, list) and len(content) > 0:
+                    return next(
+                        (c.get("text", "") for c in content if isinstance(c, dict)),
+                        "",
+                    )
+                return response_body.get("completion", "")
+            elif "llama" in model_id.lower():
+                return response_body.get("generation", "")
+            elif "mistral" in model_id.lower():
+                outputs = response_body.get("outputs")
+                if isinstance(outputs, list) and len(outputs) > 0:
+                    return next(
+                        (o.get("text", "") for o in outputs if isinstance(o, dict)),
+                        "",
+                    )
+                return ""
             else:
-                return response_body.get('text', response_body.get('completion', ''))
+                return response_body.get("text", response_body.get("completion", ""))
 
         except Exception as e:
             logger.error(f"Bedrock API error for model {model_id}: {str(e)}", exc_info=True)

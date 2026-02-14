@@ -53,8 +53,8 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/example/plot-palette"
-"Bug Tracker" = "https://github.com/example/plot-palette/issues"
+"Homepage" = "https://github.com/HatmanStack/plot-palette"
+"Bug Tracker" = "https://github.com/HatmanStack/plot-palette/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -82,6 +82,21 @@ module = [
     "moto.*",
     "pandas.*",
     "pyarrow.*",
+    "jinja2.*",
+    "yaml.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "aws_clients",
+    "constants",
+    "lambda_responses",
+    "models",
+    "retry",
+    "utils",
+    "template_filters",
+    "template_engine",
 ]
 ignore_missing_imports = true
 

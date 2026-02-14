@@ -23,7 +23,7 @@ from botocore.exceptions import ClientError
 from template_engine import TemplateEngine
 
 # Import from shared constants
-sys.path.append('/app')
+sys.path.append("/app")
 from shared.constants import (
     FARGATE_SPOT_PRICING,
     MODEL_PRICING,
@@ -36,49 +36,48 @@ from shared.models import CostBreakdown, CostComponents
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 # Orchestration mode: 'step_functions' (launched by SFN) or 'standalone' (queue polling)
-ORCHESTRATION_MODE = os.environ.get('ORCHESTRATION_MODE', 'standalone')
+ORCHESTRATION_MODE = os.environ.get("ORCHESTRATION_MODE", "standalone")
 
 # AWS clients
-dynamodb = boto3.resource('dynamodb')
-s3_client = boto3.client('s3')
-bedrock_client = boto3.client('bedrock-runtime')
+dynamodb = boto3.resource("dynamodb")
+s3_client = boto3.client("s3")
+bedrock_client = boto3.client("bedrock-runtime")
 
 # Validate required environment variables
 required_env_vars = {
-    'JOBS_TABLE_NAME': 'Jobs table name',
-    'TEMPLATES_TABLE_NAME': 'Templates table name',
-    'COST_TRACKING_TABLE_NAME': 'Cost tracking table name',
-    'CHECKPOINT_METADATA_TABLE_NAME': 'Checkpoint metadata table name',
+    "JOBS_TABLE_NAME": "Jobs table name",
+    "TEMPLATES_TABLE_NAME": "Templates table name",
+    "COST_TRACKING_TABLE_NAME": "Cost tracking table name",
+    "CHECKPOINT_METADATA_TABLE_NAME": "Checkpoint metadata table name",
+    "BUCKET_NAME": "S3 bucket name",
 }
 
 # QUEUE_TABLE_NAME only required in standalone mode
-if ORCHESTRATION_MODE == 'standalone':
-    required_env_vars['QUEUE_TABLE_NAME'] = 'Queue table name'
+if ORCHESTRATION_MODE == "standalone":
+    required_env_vars["QUEUE_TABLE_NAME"] = "Queue table name"
 
 for var_name, description in required_env_vars.items():
     if not os.environ.get(var_name):
         raise ValueError(f"Missing required environment variable: {var_name} ({description})")
 
 # DynamoDB tables
-jobs_table = dynamodb.Table(os.environ['JOBS_TABLE_NAME'])
+jobs_table = dynamodb.Table(os.environ["JOBS_TABLE_NAME"])
 queue_table = (
-    dynamodb.Table(os.environ['QUEUE_TABLE_NAME'])
-    if os.environ.get('QUEUE_TABLE_NAME')
-    else None
+    dynamodb.Table(os.environ["QUEUE_TABLE_NAME"]) if os.environ.get("QUEUE_TABLE_NAME") else None
 )
-templates_table = dynamodb.Table(os.environ['TEMPLATES_TABLE_NAME'])
-cost_tracking_table = dynamodb.Table(os.environ['COST_TRACKING_TABLE_NAME'])
-checkpoint_metadata_table = dynamodb.Table(os.environ['CHECKPOINT_METADATA_TABLE_NAME'])
+templates_table = dynamodb.Table(os.environ["TEMPLATES_TABLE_NAME"])
+cost_tracking_table = dynamodb.Table(os.environ["COST_TRACKING_TABLE_NAME"])
+checkpoint_metadata_table = dynamodb.Table(os.environ["CHECKPOINT_METADATA_TABLE_NAME"])
 
 
 class BudgetExceededError(Exception):
     """Raised when job exceeds budget limit."""
+
     pass
 
 
@@ -86,7 +85,7 @@ class Worker:
     """ECS Fargate worker for data generation."""
 
     # Checkpoint every N records
-    CHECKPOINT_INTERVAL = int(os.environ.get('CHECKPOINT_INTERVAL', '50'))
+    CHECKPOINT_INTERVAL = int(os.environ.get("CHECKPOINT_INTERVAL", "50"))
 
     def __init__(self):
         self.shutdown_requested = False
@@ -111,14 +110,14 @@ class Worker:
         """Main worker entry point - process one job then exit."""
         logger.info(f"Worker started (mode={ORCHESTRATION_MODE})")
 
-        if ORCHESTRATION_MODE == 'step_functions':
+        if ORCHESTRATION_MODE == "step_functions":
             self._run_step_functions_mode()
         else:
             self._run_standalone_mode()
 
     def _run_step_functions_mode(self):
         """Step Functions mode: read JOB_ID env var, process, exit with code."""
-        job_id = os.environ.get('JOB_ID', '')
+        job_id = os.environ.get("JOB_ID", "")
         if not job_id:
             logger.error("JOB_ID environment variable not set in step_functions mode")
             sys.exit(WORKER_EXIT_ERROR)
@@ -163,10 +162,10 @@ class Worker:
     def get_job_by_id(self, job_id):
         """Fetch job directly by ID (used in step_functions mode)."""
         try:
-            response = jobs_table.get_item(Key={'job_id': job_id})
-            if 'Item' not in response:
+            response = jobs_table.get_item(Key={"job_id": job_id})
+            if "Item" not in response:
                 return None
-            return response['Item']
+            return response["Item"]
         except Exception as e:
             logger.error(f"Error fetching job {job_id}: {str(e)}", exc_info=True)
             return None
@@ -176,75 +175,71 @@ class Worker:
         try:
             # Query for QUEUED jobs (oldest first)
             response = queue_table.query(
-                KeyConditionExpression='#status = :queued',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={':queued': 'QUEUED'},
+                KeyConditionExpression="#status = :queued",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={":queued": "QUEUED"},
                 Limit=1,
-                ScanIndexForward=True  # Oldest first (FIFO)
+                ScanIndexForward=True,  # Oldest first (FIFO)
             )
 
-            if not response['Items']:
+            if not response["Items"]:
                 logger.info("No jobs in queue")
                 return None
 
-            job_item = response['Items'][0]
-            job_id = job_item['job_id']
+            job_item = response["Items"][0]
+            job_id = job_item["job_id"]
 
             # Get full job details from Jobs table
-            job_response = jobs_table.get_item(Key={'job_id': job_id})
-            if 'Item' not in job_response:
+            job_response = jobs_table.get_item(Key={"job_id": job_id})
+            if "Item" not in job_response:
                 logger.error(f"Job {job_id} in queue but not in Jobs table")
                 # Remove from queue
                 queue_table.delete_item(
-                    Key={
-                        'status': 'QUEUED',
-                        'job_id_timestamp': job_item['job_id_timestamp']
-                    }
+                    Key={"status": "QUEUED", "job_id_timestamp": job_item["job_id_timestamp"]}
                 )
                 return None
 
-            job = job_response['Item']
+            job = job_response["Item"]
 
             # Atomically move from QUEUED to RUNNING
             try:
                 # Delete from QUEUED queue
                 queue_table.delete_item(
-                    Key={
-                        'status': 'QUEUED',
-                        'job_id_timestamp': job_item['job_id_timestamp']
-                    },
-                    ConditionExpression='attribute_exists(#status)',
-                    ExpressionAttributeNames={'#status': 'status'}
+                    Key={"status": "QUEUED", "job_id_timestamp": job_item["job_id_timestamp"]},
+                    ConditionExpression="attribute_exists(#status)",
+                    ExpressionAttributeNames={"#status": "status"},
                 )
 
                 # Add to RUNNING queue
-                queue_table.put_item(Item={
-                    'status': 'RUNNING',
-                    'job_id_timestamp': job_item['job_id_timestamp'],
-                    'job_id': job_id,
-                    'task_arn': os.environ.get('ECS_TASK_ARN', 'local'),
-                    'started_at': datetime.utcnow().isoformat()
-                })
+                queue_table.put_item(
+                    Item={
+                        "status": "RUNNING",
+                        "job_id_timestamp": job_item["job_id_timestamp"],
+                        "job_id": job_id,
+                        "task_arn": os.environ.get("ECS_TASK_ARN", "local"),
+                        "started_at": datetime.utcnow().isoformat(),
+                    }
+                )
 
                 # Update job status in Jobs table
                 jobs_table.update_item(
-                    Key={'job_id': job_id},
-                    UpdateExpression='SET #status = :running, started_at = :now, task_arn = :task, updated_at = :now',
-                    ConditionExpression='#status = :queued',
-                    ExpressionAttributeNames={'#status': 'status'},
+                    Key={"job_id": job_id},
+                    UpdateExpression="SET #status = :running, started_at = :now, task_arn = :task, updated_at = :now",
+                    ConditionExpression="#status = :queued",
+                    ExpressionAttributeNames={"#status": "status"},
                     ExpressionAttributeValues={
-                        ':running': 'RUNNING',
-                        ':queued': 'QUEUED',
-                        ':now': datetime.utcnow().isoformat(),
-                        ':task': os.environ.get('ECS_TASK_ARN', 'local')
-                    }
+                        ":running": "RUNNING",
+                        ":queued": "QUEUED",
+                        ":now": datetime.utcnow().isoformat(),
+                        ":task": os.environ.get("ECS_TASK_ARN", "local"),
+                    },
                 )
 
                 logger.info(f"Claimed job {job_id} and moved to RUNNING")
                 return job
 
             except ClientError as e:
-                if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                     logger.warning(f"Job {job_id} already claimed by another worker")
                     return None
                 raise
@@ -255,9 +250,9 @@ class Worker:
 
     def process_job(self, job):
         """Process a single job end-to-end."""
-        job_id = job['job_id']
+        job_id = job["job_id"]
 
-        if ORCHESTRATION_MODE == 'step_functions':
+        if ORCHESTRATION_MODE == "step_functions":
             # In SF mode, let exceptions propagate so run() sets the exit code.
             # The state machine handles terminal status transitions.
             self.generate_data(job)
@@ -273,11 +268,11 @@ class Worker:
 
     def generate_data(self, job):
         """Main data generation loop."""
-        job_id = job['job_id']
-        config = job['config']
+        job_id = job["job_id"]
+        config = job["config"]
 
         # Budget limit may be stored as string in DynamoDB, normalize to float
-        budget_limit_raw = config.get('budget_limit', job.get('budget_limit', 100.0))
+        budget_limit_raw = config.get("budget_limit", job.get("budget_limit", 100.0))
         try:
             budget_limit = float(budget_limit_raw)
         except (TypeError, ValueError):
@@ -285,26 +280,28 @@ class Worker:
             budget_limit = 100.0
 
         # Load template from DynamoDB
-        template = self.load_template(config['template_id'])
+        template = self.load_template(config["template_id"])
 
         # Load seed data from S3
-        seed_data_list = self.load_seed_data(config['seed_data_path'])
+        seed_data_list = self.load_seed_data(config["seed_data_path"])
 
         # Load or create checkpoint
         checkpoint = self.load_checkpoint(job_id)
-        start_index = checkpoint.get('records_generated', 0)
+        start_index = checkpoint.get("records_generated", 0)
 
         # Store job start time in checkpoint if not already there
-        if 'started_at' not in checkpoint:
-            checkpoint['started_at'] = datetime.utcnow().isoformat()
+        if "started_at" not in checkpoint:
+            checkpoint["started_at"] = datetime.utcnow().isoformat()
 
-        target_records = config['num_records']
+        target_records = config["num_records"]
 
-        logger.info(f"Generating {target_records} records for job {job_id}, starting at {start_index}")
+        logger.info(
+            f"Generating {target_records} records for job {job_id}, starting at {start_index}"
+        )
 
         batch_records = []
-        batch_number = checkpoint.get('current_batch', 1)
-        running_cost = checkpoint.get('cost_accumulated', 0.0)
+        batch_number = checkpoint.get("current_batch", 1)
+        running_cost = checkpoint.get("cost_accumulated", 0.0)
 
         for i in range(start_index, target_records):
             if self.shutdown_requested:
@@ -324,33 +321,33 @@ class Worker:
             # Generate record using template
             try:
                 result = self.template_engine.execute_template(
-                    template['template_definition'],
-                    seed_data,
-                    bedrock_client
+                    template["template_definition"], seed_data, bedrock_client
                 )
 
                 record = {
-                    'id': f"{job_id}-{i}",
-                    'job_id': job_id,
-                    'timestamp': datetime.utcnow().isoformat(),
-                    'seed_data_id': seed_data.get('_id', 'unknown'),
-                    'generation_result': result
+                    "id": f"{job_id}-{i}",
+                    "job_id": job_id,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "seed_data_id": seed_data.get("_id", "unknown"),
+                    "generation_result": result,
                 }
 
                 batch_records.append(record)
 
                 # Determine model_id for cost tracking
-                step_model_id = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+                step_model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
                 if isinstance(result, dict):
                     for step_result in result.values():
-                        if isinstance(step_result, dict) and 'model' in step_result:
-                            step_model_id = step_result['model']
+                        if isinstance(step_result, dict) and "model" in step_result:
+                            step_model_id = step_result["model"]
                             break
 
                 # Update checkpoint counters
-                checkpoint['records_generated'] = i + 1
-                checkpoint['tokens_used'] = checkpoint.get('tokens_used', 0) + self.estimate_tokens(result, step_model_id)
-                checkpoint['model_id'] = step_model_id
+                checkpoint["records_generated"] = i + 1
+                checkpoint["tokens_used"] = checkpoint.get("tokens_used", 0) + self.estimate_tokens(
+                    result, step_model_id
+                )
+                checkpoint["model_id"] = step_model_id
 
                 # Update in-memory running cost after every Bedrock call
                 running_cost += self.estimate_single_call_cost(result, step_model_id)
@@ -360,13 +357,13 @@ class Worker:
                     self.save_batch(job_id, batch_number, batch_records)
                     # Calculate and store cost in checkpoint
                     total_cost = self.update_cost_tracking(job_id, checkpoint)
-                    checkpoint['cost_accumulated'] = total_cost
+                    checkpoint["cost_accumulated"] = total_cost
                     self.save_checkpoint(job_id, checkpoint)
                     self.update_job_progress(job_id, checkpoint)
 
                     batch_records = []
                     batch_number += 1
-                    checkpoint['current_batch'] = batch_number
+                    checkpoint["current_batch"] = batch_number
 
             except Exception as e:
                 logger.error(f"Error generating record {i}: {str(e)}")
@@ -378,9 +375,9 @@ class Worker:
             self.save_batch(job_id, batch_number, batch_records)
 
         # Final checkpoint with cost update
-        checkpoint['completed'] = True
+        checkpoint["completed"] = True
         total_cost = self.update_cost_tracking(job_id, checkpoint)
-        checkpoint['cost_accumulated'] = total_cost
+        checkpoint["cost_accumulated"] = total_cost
         self.save_checkpoint(job_id, checkpoint)
         self.update_job_progress(job_id, checkpoint)
 
@@ -392,14 +389,12 @@ class Worker:
     def load_template(self, template_id):
         """Load template from DynamoDB."""
         try:
-            response = templates_table.get_item(
-                Key={'template_id': template_id, 'version': 1}
-            )
-            if 'Item' not in response:
+            response = templates_table.get_item(Key={"template_id": template_id, "version": 1})
+            if "Item" not in response:
                 raise ValueError(f"Template {template_id} not found")
 
             logger.info(f"Loaded template {template_id}")
-            return response['Item']
+            return response["Item"]
 
         except Exception as e:
             logger.error(f"Error loading template {template_id}: {str(e)}", exc_info=True)
@@ -408,11 +403,11 @@ class Worker:
     def load_seed_data(self, s3_path):
         """Load seed data from S3."""
         try:
-            bucket = os.environ.get('BUCKET_NAME', '')
+            bucket = os.environ.get("BUCKET_NAME", "")
             # s3_path format: "seed-data/user-123/data.json"
 
             response = s3_client.get_object(Bucket=bucket, Key=s3_path)
-            data = json.loads(response['Body'].read())
+            data = json.loads(response["Body"].read())
 
             # Support both single dict and list of dicts
             if isinstance(data, list):
@@ -441,58 +436,58 @@ class Worker:
         text = json.dumps(result)
         # Use model-specific token estimation
         # Claude: ~3.5 chars/token, Llama/Mistral: ~4 chars/token
-        if 'claude' in model_id.lower():
+        if "claude" in model_id.lower():
             return max(1, int(len(text) / 3.5))
         else:
             return max(1, int(len(text) / 4))
 
     def load_checkpoint(self, job_id):
         """Load checkpoint from S3 with version from DynamoDB."""
-        bucket = os.environ.get('BUCKET_NAME', '')
+        bucket = os.environ.get("BUCKET_NAME", "")
         key = f"jobs/{job_id}/checkpoint.json"
 
         try:
             # Load checkpoint blob from S3
             response = s3_client.get_object(Bucket=bucket, Key=key)
-            checkpoint_data = json.loads(response['Body'].read())
+            checkpoint_data = json.loads(response["Body"].read())
 
             # Capture S3 ETag for conditional writes
-            checkpoint_data['_etag'] = response.get('ETag', '')
+            checkpoint_data["_etag"] = response.get("ETag", "")
 
             # Load version from DynamoDB
-            metadata_response = checkpoint_metadata_table.get_item(
-                Key={'job_id': job_id}
-            )
-            if 'Item' in metadata_response:
-                checkpoint_data['_version'] = metadata_response['Item'].get('version', 0)
+            metadata_response = checkpoint_metadata_table.get_item(Key={"job_id": job_id})
+            if "Item" in metadata_response:
+                checkpoint_data["_version"] = metadata_response["Item"].get("version", 0)
             else:
-                checkpoint_data['_version'] = 0
+                checkpoint_data["_version"] = 0
 
-            logger.info(f"Loaded checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {checkpoint_data['_version']})")
+            logger.info(
+                f"Loaded checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {checkpoint_data['_version']})"
+            )
             return checkpoint_data
 
         except s3_client.exceptions.NoSuchKey:
             logger.info(f"No checkpoint found for job {job_id}, starting fresh")
             return {
-                'job_id': job_id,
-                'records_generated': 0,
-                'current_batch': 1,
-                'tokens_used': 0,
-                'cost_accumulated': 0.0,
-                'last_updated': datetime.utcnow().isoformat(),
-                '_version': 0
+                "job_id": job_id,
+                "records_generated": 0,
+                "current_batch": 1,
+                "tokens_used": 0,
+                "cost_accumulated": 0.0,
+                "last_updated": datetime.utcnow().isoformat(),
+                "_version": 0,
             }
         except Exception as e:
             logger.error(f"Error loading checkpoint: {str(e)}", exc_info=True)
             # Return empty checkpoint on error
             return {
-                'job_id': job_id,
-                'records_generated': 0,
-                'current_batch': 1,
-                'tokens_used': 0,
-                'cost_accumulated': 0.0,
-                'last_updated': datetime.utcnow().isoformat(),
-                '_version': 0
+                "job_id": job_id,
+                "records_generated": 0,
+                "current_batch": 1,
+                "tokens_used": 0,
+                "cost_accumulated": 0.0,
+                "last_updated": datetime.utcnow().isoformat(),
+                "_version": 0,
             }
 
     def save_checkpoint(self, job_id, checkpoint_data, retry_count=0):
@@ -501,71 +496,79 @@ class Worker:
 
         if retry_count >= MAX_RETRIES:
             logger.error(f"Max checkpoint retries ({MAX_RETRIES}) exceeded for job {job_id}")
-            raise Exception(f"Failed to save checkpoint after {MAX_RETRIES} retries due to persistent conflicts")
+            raise Exception(
+                f"Failed to save checkpoint after {MAX_RETRIES} retries due to persistent conflicts"
+            )
 
-        bucket = os.environ.get('BUCKET_NAME', '')
+        bucket = os.environ.get("BUCKET_NAME", "")
         s3_key = f"jobs/{job_id}/checkpoint.json"
 
-        checkpoint_data['last_updated'] = datetime.utcnow().isoformat()
+        checkpoint_data["last_updated"] = datetime.utcnow().isoformat()
 
         # Get current version from checkpoint_data (or 0 for first write)
-        current_version = checkpoint_data.get('_version', 0)
+        current_version = checkpoint_data.get("_version", 0)
         new_version = current_version + 1
 
         # Build serializable dict excluding internal metadata keys
-        serializable_data = {k: v for k, v in checkpoint_data.items() if k not in ('_version', '_etag')}
+        serializable_data = {
+            k: v for k, v in checkpoint_data.items() if k not in ("_version", "_etag")
+        }
         checkpoint_json = json.dumps(serializable_data, indent=2)
 
         # First, try to claim write permission via DynamoDB conditional update
         try:
             checkpoint_metadata_table.update_item(
-                Key={'job_id': job_id},
-                UpdateExpression='SET #version = :new_version, records_generated = :records, last_updated = :now',
-                ConditionExpression='attribute_not_exists(#version) OR #version = :current_version',
-                ExpressionAttributeNames={'#version': 'version'},
+                Key={"job_id": job_id},
+                UpdateExpression="SET #version = :new_version, records_generated = :records, last_updated = :now",
+                ConditionExpression="attribute_not_exists(#version) OR #version = :current_version",
+                ExpressionAttributeNames={"#version": "version"},
                 ExpressionAttributeValues={
-                    ':new_version': new_version,
-                    ':current_version': current_version,
-                    ':records': checkpoint_data['records_generated'],
-                    ':now': datetime.utcnow().isoformat()
-                }
+                    ":new_version": new_version,
+                    ":current_version": current_version,
+                    ":records": checkpoint_data["records_generated"],
+                    ":now": datetime.utcnow().isoformat(),
+                },
             )
 
             # Successfully claimed write permission - now write to S3 with ETag condition
             put_kwargs = {
-                'Bucket': bucket,
-                'Key': s3_key,
-                'Body': checkpoint_json.encode('utf-8'),
-                'ContentType': 'application/json',
+                "Bucket": bucket,
+                "Key": s3_key,
+                "Body": checkpoint_json.encode("utf-8"),
+                "ContentType": "application/json",
             }
-            stored_etag = checkpoint_data.get('_etag')
+            stored_etag = checkpoint_data.get("_etag")
             if stored_etag:
-                put_kwargs['IfMatch'] = stored_etag
+                put_kwargs["IfMatch"] = stored_etag
 
             s3_response = s3_client.put_object(**put_kwargs)
 
             # Store the new version and ETag for next write
-            checkpoint_data['_version'] = new_version
-            checkpoint_data['_etag'] = s3_response.get('ETag', '')
+            checkpoint_data["_version"] = new_version
+            checkpoint_data["_etag"] = s3_response.get("ETag", "")
 
-            logger.info(f"Saved checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {new_version})")
+            logger.info(
+                f"Saved checkpoint for job {job_id}: {checkpoint_data['records_generated']} records (version {new_version})"
+            )
 
         except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code in ('ConditionalCheckFailedException', 'PreconditionFailed', '412'):
-                logger.warning(f"Checkpoint conflict ({error_code}) for job {job_id} (retry {retry_count + 1}/{MAX_RETRIES}), reloading and merging")
+            error_code = e.response["Error"]["Code"]
+            if error_code in ("ConditionalCheckFailedException", "PreconditionFailed", "412"):
+                logger.warning(
+                    f"Checkpoint conflict ({error_code}) for job {job_id} (retry {retry_count + 1}/{MAX_RETRIES}), reloading and merging"
+                )
 
                 # Another task updated checkpoint - reload and merge
                 current_checkpoint = self.load_checkpoint(job_id)
 
                 # Merge strategy: take maximum records_generated
-                if checkpoint_data['records_generated'] > current_checkpoint['records_generated']:
+                if checkpoint_data["records_generated"] > current_checkpoint["records_generated"]:
                     # Brief exponential backoff before retry
-                    backoff_ms = (2 ** retry_count) * 100  # 100ms, 200ms, 400ms
+                    backoff_ms = (2**retry_count) * 100  # 100ms, 200ms, 400ms
                     time.sleep(backoff_ms / 1000.0)
 
                     # Retry save with new version
-                    checkpoint_data['_version'] = current_checkpoint['_version']
+                    checkpoint_data["_version"] = current_checkpoint["_version"]
                     self.save_checkpoint(job_id, checkpoint_data, retry_count + 1)
                 else:
                     logger.info("Current checkpoint is already ahead, skipping save")
@@ -581,17 +584,17 @@ class Worker:
         if not records:
             return
 
-        bucket = os.environ.get('BUCKET_NAME', '')
+        bucket = os.environ.get("BUCKET_NAME", "")
         key = f"jobs/{job_id}/outputs/batch-{batch_number:04d}.jsonl"
 
         # Write as JSONL (one JSON object per line)
-        jsonl_content = '\n'.join([json.dumps(record) for record in records])
+        jsonl_content = "\n".join([json.dumps(record) for record in records])
 
         s3_client.put_object(
             Bucket=bucket,
             Key=key,
-            Body=jsonl_content.encode('utf-8'),
-            ContentType='application/x-ndjson'
+            Body=jsonl_content.encode("utf-8"),
+            ContentType="application/x-ndjson",
         )
 
         logger.info(f"Saved batch {batch_number} for job {job_id}: {len(records)} records")
@@ -600,21 +603,21 @@ class Worker:
         """Query cost tracking table and return latest total cost."""
         try:
             response = cost_tracking_table.query(
-                KeyConditionExpression='job_id = :jid',
-                ExpressionAttributeValues={':jid': job_id},
+                KeyConditionExpression="job_id = :jid",
+                ExpressionAttributeValues={":jid": job_id},
                 ScanIndexForward=False,  # Descending order (most recent first)
-                Limit=1
+                Limit=1,
             )
 
-            if response['Items']:
+            if response["Items"]:
                 # Access nested DynamoDB structure: estimated_cost.M.total.N
-                cost_map = response['Items'][0].get('estimated_cost', {})
-                if isinstance(cost_map, dict) and 'M' in cost_map:
+                cost_map = response["Items"][0].get("estimated_cost", {})
+                if isinstance(cost_map, dict) and "M" in cost_map:
                     # New typed format
-                    total_value = cost_map['M'].get('total', {}).get('N', '0.0')
+                    total_value = cost_map["M"].get("total", {}).get("N", "0.0")
                 else:
                     # Fallback for old flat format
-                    total_value = cost_map.get('N', '0.0')
+                    total_value = cost_map.get("N", "0.0")
                 return float(total_value)
             else:
                 return 0.0
@@ -626,11 +629,14 @@ class Worker:
 
     def _calculate_bedrock_cost(self, tokens, model_id):
         """Calculate Bedrock cost for a token count assuming 40/60 input/output split."""
-        pricing = MODEL_PRICING.get(model_id, MODEL_PRICING['anthropic.claude-3-5-sonnet-20241022-v2:0'])
+        pricing = MODEL_PRICING.get(
+            model_id, MODEL_PRICING["anthropic.claude-3-5-sonnet-20241022-v2:0"]
+        )
         input_tokens = int(tokens * 0.4)
         output_tokens = tokens - input_tokens
-        return (input_tokens / 1_000_000) * pricing['input'] + \
-               (output_tokens / 1_000_000) * pricing['output']
+        return (input_tokens / 1_000_000) * pricing["input"] + (
+            output_tokens / 1_000_000
+        ) * pricing["output"]
 
     def estimate_single_call_cost(self, result, model_id):
         """Estimate cost of a single Bedrock call including input and output tokens."""
@@ -639,13 +645,13 @@ class Worker:
 
     def update_cost_tracking(self, job_id, checkpoint):
         """Write cost tracking record to DynamoDB with 90-day TTL."""
-        tokens_used = checkpoint.get('tokens_used', 0)
-        model_id = checkpoint.get('model_id', 'anthropic.claude-3-5-sonnet-20241022-v2:0')
+        tokens_used = checkpoint.get("tokens_used", 0)
+        model_id = checkpoint.get("model_id", "anthropic.claude-3-5-sonnet-20241022-v2:0")
 
         bedrock_cost = self._calculate_bedrock_cost(tokens_used, model_id)
 
         # Calculate Fargate cost (elapsed time)
-        started_at_str = checkpoint.get('started_at')
+        started_at_str = checkpoint.get("started_at")
         if started_at_str:
             try:
                 started_at = datetime.fromisoformat(started_at_str)
@@ -658,13 +664,14 @@ class Worker:
         elapsed_seconds = (datetime.utcnow() - started_at).total_seconds()
         fargate_hours = elapsed_seconds / 3600
         # Assume 0.5 vCPU, 1 GB memory
-        fargate_cost = (fargate_hours * FARGATE_SPOT_PRICING['vcpu'] * 0.5) + \
-                       (fargate_hours * FARGATE_SPOT_PRICING['memory'] * 1.0)
+        fargate_cost = (fargate_hours * FARGATE_SPOT_PRICING["vcpu"] * 0.5) + (
+            fargate_hours * FARGATE_SPOT_PRICING["memory"] * 1.0
+        )
 
         # Calculate S3 cost (batch uploads + checkpoint saves)
-        batch_count = checkpoint.get('current_batch', 1)
-        s3_puts = batch_count + (checkpoint['records_generated'] // self.CHECKPOINT_INTERVAL)
-        s3_cost = (s3_puts / 1000) * S3_PRICING['PUT']
+        batch_count = checkpoint.get("current_batch", 1)
+        s3_puts = batch_count + (checkpoint["records_generated"] // self.CHECKPOINT_INTERVAL)
+        s3_cost = (s3_puts / 1000) * S3_PRICING["PUT"]
 
         total_cost = bedrock_cost + fargate_cost + s3_cost
 
@@ -679,8 +686,8 @@ class Worker:
                 bedrock=round(bedrock_cost, 4),
                 fargate=round(fargate_cost, 4),
                 s3=round(s3_cost, 6),
-                total=round(total_cost, 4)
-            )
+                total=round(total_cost, 4),
+            ),
         )
 
         try:
@@ -696,19 +703,19 @@ class Worker:
         """Update job record with current progress."""
         try:
             jobs_table.update_item(
-                Key={'job_id': job_id},
-                UpdateExpression='''
+                Key={"job_id": job_id},
+                UpdateExpression="""
                     SET records_generated = :records,
                         tokens_used = :tokens,
                         cost_estimate = :cost,
                         updated_at = :now
-                ''',
+                """,
                 ExpressionAttributeValues={
-                    ':records': checkpoint['records_generated'],
-                    ':tokens': checkpoint.get('tokens_used', 0),
-                    ':cost': checkpoint.get('cost_accumulated', 0.0),
-                    ':now': datetime.utcnow().isoformat()
-                }
+                    ":records": checkpoint["records_generated"],
+                    ":tokens": checkpoint.get("tokens_used", 0),
+                    ":cost": checkpoint.get("cost_accumulated", 0.0),
+                    ":now": datetime.utcnow().isoformat(),
+                },
             )
 
         except Exception as e:
@@ -718,10 +725,10 @@ class Worker:
         """Export batch files to final formats (JSONL, Parquet, CSV)."""
         logger.info(f"Exporting data for job {job_id}")
 
-        output_format = config.get('output_format', 'JSONL')
-        partition_strategy = config.get('partition_strategy', 'none')
+        output_format = config.get("output_format", "JSONL")
+        partition_strategy = config.get("partition_strategy", "none")
 
-        bucket = os.environ.get('BUCKET_NAME', '')
+        bucket = os.environ.get("BUCKET_NAME", "")
 
         # Normalize output_format to set for consistent checking
         if isinstance(output_format, str):
@@ -729,43 +736,55 @@ class Worker:
         elif isinstance(output_format, list):
             formats = set(output_format)
         else:
-            formats = {'JSONL'}
+            formats = {"JSONL"}
 
         # Each format gets its own generator (generators can't be reused)
         # S3 reads are cheap; memory is not
         record_count = 0
 
-        if 'JSONL' in formats:
-            record_count = self.export_jsonl(job_id, self.load_all_batches(job_id), partition_strategy, bucket)
+        if "JSONL" in formats:
+            record_count = self.export_jsonl(
+                job_id, self.load_all_batches(job_id), partition_strategy, bucket
+            )
 
-        if 'PARQUET' in formats:
-            record_count = self.export_parquet(job_id, self.load_all_batches(job_id), partition_strategy, bucket)
+        if "PARQUET" in formats:
+            record_count = self.export_parquet(
+                job_id, self.load_all_batches(job_id), partition_strategy, bucket
+            )
 
-        if 'CSV' in formats:
-            record_count = self.export_csv(job_id, self.load_all_batches(job_id), partition_strategy, bucket)
+        if "CSV" in formats:
+            record_count = self.export_csv(
+                job_id, self.load_all_batches(job_id), partition_strategy, bucket
+            )
 
-        logger.info(f"Export complete for job {job_id}: {record_count} records in {len(formats)} format(s)")
+        logger.info(
+            f"Export complete for job {job_id}: {record_count} records in {len(formats)} format(s)"
+        )
 
     def load_all_batches(self, job_id):
         """Load all batch files from S3 as a generator to avoid OOM."""
-        bucket = os.environ.get('BUCKET_NAME', '')
+        bucket = os.environ.get("BUCKET_NAME", "")
         prefix = f"jobs/{job_id}/outputs/"
 
         try:
-            paginator = s3_client.get_paginator('list_objects_v2')
+            paginator = s3_client.get_paginator("list_objects_v2")
             for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-                if 'Contents' not in page:
+                if "Contents" not in page:
                     continue
 
-                for obj in page['Contents']:
-                    key = obj['Key']
-                    if not key.endswith('.jsonl'):
+                for obj in page["Contents"]:
+                    key = obj["Key"]
+                    if not key.endswith(".jsonl"):
                         continue
 
                     # Stream batch file line by line
                     response = s3_client.get_object(Bucket=bucket, Key=key)
-                    for line in response['Body'].iter_lines():
-                        decoded = line.decode('utf-8').strip() if isinstance(line, bytes) else line.strip()
+                    for line in response["Body"].iter_lines():
+                        decoded = (
+                            line.decode("utf-8").strip()
+                            if isinstance(line, bytes)
+                            else line.strip()
+                        )
                         if decoded:
                             yield json.loads(decoded)
 
@@ -779,9 +798,9 @@ class Worker:
 
         # Start multipart upload
         mpu = s3_client.create_multipart_upload(
-            Bucket=bucket, Key=key, ContentType='application/x-ndjson'
+            Bucket=bucket, Key=key, ContentType="application/x-ndjson"
         )
-        upload_id = mpu['UploadId']
+        upload_id = mpu["UploadId"]
         parts = []
         buffer = io.BytesIO()
         part_number = 1
@@ -789,17 +808,20 @@ class Worker:
 
         try:
             for record in records:
-                line = json.dumps(record) + '\n'
-                buffer.write(line.encode('utf-8'))
+                line = json.dumps(record) + "\n"
+                buffer.write(line.encode("utf-8"))
                 record_count += 1
 
                 if buffer.tell() >= PART_SIZE:
                     buffer.seek(0)
                     response = s3_client.upload_part(
-                        Bucket=bucket, Key=key, UploadId=upload_id,
-                        PartNumber=part_number, Body=buffer.read()
+                        Bucket=bucket,
+                        Key=key,
+                        UploadId=upload_id,
+                        PartNumber=part_number,
+                        Body=buffer.read(),
                     )
-                    parts.append({'PartNumber': part_number, 'ETag': response['ETag']})
+                    parts.append({"PartNumber": part_number, "ETag": response["ETag"]})
                     part_number += 1
                     buffer = io.BytesIO()
 
@@ -808,42 +830,40 @@ class Worker:
                 buffer.seek(0)
                 if not parts:
                     # Less than one part — abort multipart and use simple put
-                    s3_client.abort_multipart_upload(
-                        Bucket=bucket, Key=key, UploadId=upload_id
-                    )
+                    s3_client.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
                     s3_client.put_object(
-                        Bucket=bucket, Key=key,
-                        Body=buffer.read(), ContentType='application/x-ndjson'
+                        Bucket=bucket,
+                        Key=key,
+                        Body=buffer.read(),
+                        ContentType="application/x-ndjson",
                     )
                     logger.info(f"Exported JSONL: {key} ({record_count} records)")
                     return record_count
                 else:
                     response = s3_client.upload_part(
-                        Bucket=bucket, Key=key, UploadId=upload_id,
-                        PartNumber=part_number, Body=buffer.read()
+                        Bucket=bucket,
+                        Key=key,
+                        UploadId=upload_id,
+                        PartNumber=part_number,
+                        Body=buffer.read(),
                     )
-                    parts.append({'PartNumber': part_number, 'ETag': response['ETag']})
+                    parts.append({"PartNumber": part_number, "ETag": response["ETag"]})
 
             if parts:
                 s3_client.complete_multipart_upload(
-                    Bucket=bucket, Key=key, UploadId=upload_id,
-                    MultipartUpload={'Parts': parts}
+                    Bucket=bucket, Key=key, UploadId=upload_id, MultipartUpload={"Parts": parts}
                 )
             else:
                 # No records at all
-                s3_client.abort_multipart_upload(
-                    Bucket=bucket, Key=key, UploadId=upload_id
-                )
+                s3_client.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
                 s3_client.put_object(
-                    Bucket=bucket, Key=key, Body=b'', ContentType='application/x-ndjson'
+                    Bucket=bucket, Key=key, Body=b"", ContentType="application/x-ndjson"
                 )
 
             logger.info(f"Exported JSONL: {key} ({record_count} records)")
 
         except Exception:
-            s3_client.abort_multipart_upload(
-                Bucket=bucket, Key=key, UploadId=upload_id
-            )
+            s3_client.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
             raise
 
         return record_count
@@ -852,8 +872,10 @@ class Worker:
         """Export as Parquet format using chunked writes."""
         CHUNK_SIZE = 10_000
 
-        if partition_strategy != 'none':
-            logger.warning(f"Parquet export does not support partition_strategy='{partition_strategy}', falling back to single file")
+        if partition_strategy != "none":
+            logger.warning(
+                f"Parquet export does not support partition_strategy='{partition_strategy}', falling back to single file"
+            )
 
         key = f"jobs/{job_id}/exports/dataset.parquet"
         buffer = io.BytesIO()
@@ -863,11 +885,11 @@ class Worker:
         chunk = []
         for record in records:
             flat = {
-                'id': record['id'],
-                'job_id': record['job_id'],
-                'timestamp': record['timestamp'],
-                'seed_data_id': record.get('seed_data_id', 'unknown'),
-                'generation_result': json.dumps(record['generation_result'])
+                "id": record["id"],
+                "job_id": record["job_id"],
+                "timestamp": record["timestamp"],
+                "seed_data_id": record.get("seed_data_id", "unknown"),
+                "generation_result": json.dumps(record["generation_result"]),
             }
             chunk.append(flat)
             record_count += 1
@@ -892,8 +914,7 @@ class Worker:
         # Upload to S3
         buffer.seek(0)
         s3_client.put_object(
-            Bucket=bucket, Key=key,
-            Body=buffer.read(), ContentType='application/octet-stream'
+            Bucket=bucket, Key=key, Body=buffer.read(), ContentType="application/octet-stream"
         )
 
         logger.info(f"Exported Parquet: {key} ({record_count} records)")
@@ -903,8 +924,10 @@ class Worker:
         """Export as CSV format using chunked writes."""
         CHUNK_SIZE = 10_000
 
-        if partition_strategy != 'none':
-            logger.warning(f"CSV export does not support partition_strategy='{partition_strategy}', falling back to single file")
+        if partition_strategy != "none":
+            logger.warning(
+                f"CSV export does not support partition_strategy='{partition_strategy}', falling back to single file"
+            )
 
         key = f"jobs/{job_id}/exports/dataset.csv"
         buffer = io.StringIO()
@@ -914,11 +937,11 @@ class Worker:
         chunk = []
         for record in records:
             flat = {
-                'id': record['id'],
-                'job_id': record['job_id'],
-                'timestamp': record['timestamp'],
-                'seed_data_id': record.get('seed_data_id', 'unknown'),
-                'generation_result': json.dumps(record['generation_result'])
+                "id": record["id"],
+                "job_id": record["job_id"],
+                "timestamp": record["timestamp"],
+                "seed_data_id": record.get("seed_data_id", "unknown"),
+                "generation_result": json.dumps(record["generation_result"]),
             }
             chunk.append(flat)
             record_count += 1
@@ -935,8 +958,7 @@ class Worker:
             buffer.write(df.to_csv(index=False, header=not header_written))
 
         s3_client.put_object(
-            Bucket=bucket, Key=key,
-            Body=buffer.getvalue().encode('utf-8'), ContentType='text/csv'
+            Bucket=bucket, Key=key, Body=buffer.getvalue().encode("utf-8"), ContentType="text/csv"
         )
 
         logger.info(f"Exported CSV: {key} ({record_count} records)")
@@ -948,46 +970,39 @@ class Worker:
 
         # Update Jobs table
         jobs_table.update_item(
-            Key={'job_id': job_id},
-            UpdateExpression='SET #status = :status, completed_at = :now, updated_at = :now',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={
-                ':status': 'COMPLETED',
-                ':now': now
-            }
+            Key={"job_id": job_id},
+            UpdateExpression="SET #status = :status, completed_at = :now, updated_at = :now",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":status": "COMPLETED", ":now": now},
         )
 
         # Find and move queue item from RUNNING to COMPLETED
         try:
             # Query for this job in RUNNING queue
             response = queue_table.query(
-                KeyConditionExpression='#status = :running',
-                FilterExpression='job_id = :job_id',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':running': 'RUNNING',
-                    ':job_id': job_id
-                }
+                KeyConditionExpression="#status = :running",
+                FilterExpression="job_id = :job_id",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={":running": "RUNNING", ":job_id": job_id},
             )
 
-            if response['Items']:
-                item = response['Items'][0]
+            if response["Items"]:
+                item = response["Items"][0]
 
                 # Delete from RUNNING
                 queue_table.delete_item(
-                    Key={
-                        'status': 'RUNNING',
-                        'job_id_timestamp': item['job_id_timestamp']
-                    }
+                    Key={"status": "RUNNING", "job_id_timestamp": item["job_id_timestamp"]}
                 )
 
                 # Add to COMPLETED
-                queue_table.put_item(Item={
-                    'status': 'COMPLETED',
-                    'job_id_timestamp': item['job_id_timestamp'],
-                    'job_id': job_id,
-                    'completed_at': now
-                })
+                queue_table.put_item(
+                    Item={
+                        "status": "COMPLETED",
+                        "job_id_timestamp": item["job_id_timestamp"],
+                        "job_id": job_id,
+                        "completed_at": now,
+                    }
+                )
 
         except Exception as e:
             logger.warning(f"Error updating queue for completed job {job_id}: {str(e)}")
@@ -1000,45 +1015,41 @@ class Worker:
 
         # Update Jobs table
         jobs_table.update_item(
-            Key={'job_id': job_id},
-            UpdateExpression='SET #status = :status, error_message = :error, updated_at = :now',
-            ExpressionAttributeNames={'#status': 'status'},
+            Key={"job_id": job_id},
+            UpdateExpression="SET #status = :status, error_message = :error, updated_at = :now",
+            ExpressionAttributeNames={"#status": "status"},
             ExpressionAttributeValues={
-                ':status': 'FAILED',
-                ':error': error_message[:1000],  # Limit error message length
-                ':now': now
-            }
+                ":status": "FAILED",
+                ":error": error_message[:1000],  # Limit error message length
+                ":now": now,
+            },
         )
 
         # Move queue item from RUNNING to FAILED
         try:
             response = queue_table.query(
-                KeyConditionExpression='#status = :running',
-                FilterExpression='job_id = :job_id',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':running': 'RUNNING',
-                    ':job_id': job_id
-                }
+                KeyConditionExpression="#status = :running",
+                FilterExpression="job_id = :job_id",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={":running": "RUNNING", ":job_id": job_id},
             )
 
-            if response['Items']:
-                item = response['Items'][0]
+            if response["Items"]:
+                item = response["Items"][0]
 
                 queue_table.delete_item(
-                    Key={
-                        'status': 'RUNNING',
-                        'job_id_timestamp': item['job_id_timestamp']
-                    }
+                    Key={"status": "RUNNING", "job_id_timestamp": item["job_id_timestamp"]}
                 )
 
-                queue_table.put_item(Item={
-                    'status': 'FAILED',
-                    'job_id_timestamp': item['job_id_timestamp'],
-                    'job_id': job_id,
-                    'failed_at': now,
-                    'error_message': error_message[:1000]
-                })
+                queue_table.put_item(
+                    Item={
+                        "status": "FAILED",
+                        "job_id_timestamp": item["job_id_timestamp"],
+                        "job_id": job_id,
+                        "failed_at": now,
+                        "error_message": error_message[:1000],
+                    }
+                )
 
         except Exception as e:
             logger.warning(f"Error updating queue for failed job {job_id}: {str(e)}")
@@ -1051,43 +1062,36 @@ class Worker:
 
         # Update Jobs table
         jobs_table.update_item(
-            Key={'job_id': job_id},
-            UpdateExpression='SET #status = :status, updated_at = :now',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={
-                ':status': 'BUDGET_EXCEEDED',
-                ':now': now
-            }
+            Key={"job_id": job_id},
+            UpdateExpression="SET #status = :status, updated_at = :now",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":status": "BUDGET_EXCEEDED", ":now": now},
         )
 
         # Move queue item
         try:
             response = queue_table.query(
-                KeyConditionExpression='#status = :running',
-                FilterExpression='job_id = :job_id',
-                ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={
-                    ':running': 'RUNNING',
-                    ':job_id': job_id
-                }
+                KeyConditionExpression="#status = :running",
+                FilterExpression="job_id = :job_id",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={":running": "RUNNING", ":job_id": job_id},
             )
 
-            if response['Items']:
-                item = response['Items'][0]
+            if response["Items"]:
+                item = response["Items"][0]
 
                 queue_table.delete_item(
-                    Key={
-                        'status': 'RUNNING',
-                        'job_id_timestamp': item['job_id_timestamp']
-                    }
+                    Key={"status": "RUNNING", "job_id_timestamp": item["job_id_timestamp"]}
                 )
 
-                queue_table.put_item(Item={
-                    'status': 'BUDGET_EXCEEDED',
-                    'job_id_timestamp': item['job_id_timestamp'],
-                    'job_id': job_id,
-                    'stopped_at': now
-                })
+                queue_table.put_item(
+                    Item={
+                        "status": "BUDGET_EXCEEDED",
+                        "job_id_timestamp": item["job_id_timestamp"],
+                        "job_id": job_id,
+                        "stopped_at": now,
+                    }
+                )
 
         except Exception as e:
             logger.warning(f"Error updating queue for budget exceeded job {job_id}: {str(e)}")
