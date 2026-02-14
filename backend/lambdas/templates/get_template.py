@@ -50,7 +50,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Parse query parameters
         params = event.get("queryStringParameters") or {}
-        version = int(params.get("version", 1))
+        try:
+            version = int(params.get("version", 1))
+        except (ValueError, TypeError):
+            return error_response(400, "Invalid version parameter: must be an integer")
 
         logger.info(
             json.dumps(

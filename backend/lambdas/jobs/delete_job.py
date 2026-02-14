@@ -10,7 +10,7 @@ DELETE /jobs/{job_id} endpoint that cancels or deletes jobs based on their statu
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict
 
 # Add shared library to Python path
@@ -193,7 +193,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     ExpressionAttributeNames={"#status": "status"},
                     ExpressionAttributeValues={
                         ":status": "CANCELLED",
-                        ":now": datetime.utcnow().isoformat(),
+                        ":now": datetime.now(UTC).isoformat(),
                     },
                 )
             except ClientError as e:
@@ -267,7 +267,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     ExpressionAttributeNames={"#status": "status"},
                     ExpressionAttributeValues={
                         ":status": "CANCELLED",
-                        ":now": datetime.utcnow().isoformat(),
+                        ":now": datetime.now(UTC).isoformat(),
                     },
                 )
             except ClientError as e:

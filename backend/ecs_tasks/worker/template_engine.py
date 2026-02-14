@@ -258,11 +258,23 @@ class TemplateEngine:
             # Extract text based on model family
             if "claude" in model_id.lower():
                 # Claude returns content array
-                return response_body["content"][0]["text"]
+                content = response_body.get("content")
+                if isinstance(content, list) and len(content) > 0:
+                    return next(
+                        (c.get("text", "") for c in content if isinstance(c, dict)),
+                        "",
+                    )
+                return response_body.get("completion", "")
             elif "llama" in model_id.lower():
                 return response_body.get("generation", "")
             elif "mistral" in model_id.lower():
-                return response_body.get("outputs", [{}])[0].get("text", "")
+                outputs = response_body.get("outputs")
+                if isinstance(outputs, list) and len(outputs) > 0:
+                    return next(
+                        (o.get("text", "") for o in outputs if isinstance(o, dict)),
+                        "",
+                    )
+                return ""
             else:
                 return response_body.get("text", response_body.get("completion", ""))
 

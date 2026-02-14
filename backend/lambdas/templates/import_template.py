@@ -86,21 +86,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             }
                         )
                     )
-                    return {
-                        "statusCode": 200,
-                        "headers": {
-                            "Content-Type": "application/json",
-                            "Access-Control-Allow-Origin": "*",
+                    return success_response(
+                        200,
+                        {
+                            "template_id": item["template_id"],
+                            "version": item.get("version", 1),
+                            "name": item.get("name", ""),
+                            "message": "Existing template returned (idempotent)",
                         },
-                        "body": json.dumps(
-                            {
-                                "template_id": item["template_id"],
-                                "version": item.get("version", 1),
-                                "name": item.get("name", ""),
-                                "message": "Existing template returned (idempotent)",
-                            }
-                        ),
-                    }
+                    )
             except ClientError as e:
                 logger.warning(
                     json.dumps(

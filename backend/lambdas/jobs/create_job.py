@@ -199,7 +199,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Validate template exists
         template_id = body["template_id"]
-        template_version = body.get("template_version", 1)
+        template_version_raw = body.get("template_version", 1)
+        try:
+            template_version = int(template_version_raw)
+            if template_version < 1:
+                return error_response(400, "template_version must be a positive integer")
+        except (ValueError, TypeError):
+            return error_response(400, "template_version must be a positive integer")
 
         try:
             template_response = templates_table.get_item(

@@ -111,9 +111,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         in_use, job_count = template_in_use(template_id)
 
         if in_use:
-            return error_response(
-                409, f"Cannot delete template - it is currently used by {job_count} job(s)"
-            )
+            if job_count >= 0:
+                return error_response(
+                    409, f"Cannot delete template - it is currently used by {job_count} job(s)"
+                )
+            else:
+                logger.warning(
+                    json.dumps(
+                        {"event": "template_usage_check_failed", "template_id": template_id}
+                    )
+                )
+                return error_response(409, "Cannot delete template - it is currently in use")
 
         # Delete all versions
         try:

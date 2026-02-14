@@ -50,7 +50,7 @@ npm run check                            # All linting + all tests (frontend + b
 CI runs additional checks not covered by `npm run check`:
 
 ```bash
-cd backend && mypy shared/ lambdas/ --config-file pyproject.toml  # Type check (non-blocking in CI)
+cd backend && mypy shared/ lambdas/ ecs_tasks/ --config-file pyproject.toml  # Type check (continue-on-error in CI)
 bandit -r backend/ -ll -ii --exclude tests                        # Security scan
 cfn-lint backend/template.yaml                                    # CloudFormation lint
 ```
@@ -93,7 +93,7 @@ Backend tests live at the repo root in `tests/` (not inside `backend/`). Uses `m
 
 Test fixtures are layered: `tests/conftest.py` (mock AWS clients, env vars) > `tests/unit/conftest.py` (sample models) > `tests/integration/conftest.py` (Cognito, real boto3) > `tests/e2e/conftest.py` (LocalStack provisioning, Lambda import shims).
 
-Coverage requirement: 70% (backend via pytest-cov, frontend via vitest/v8).
+Coverage requirement: 70% (backend via pytest-cov, frontend via vitest/v8 at 70% statements).
 
 ## Code Style
 

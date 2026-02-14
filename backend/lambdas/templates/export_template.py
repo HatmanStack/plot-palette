@@ -12,6 +12,7 @@ from typing import Any, Dict
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 try:
@@ -62,17 +63,37 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             )
         )
 
-        # Get template from DynamoDB
+        # Parse optional version query parameter
+        params = event.get("queryStringParameters") or {}
+        version_raw = params.get("version")
+
         try:
-            response = templates_table.get_item(Key={"template_id": template_id, "version": 1})
+            if version_raw is not None:
+                version = int(version_raw)
+                if version < 1:
+                    return error_response(400, "version must be a positive integer")
+                response = templates_table.get_item(
+                    Key={"template_id": template_id, "version": version}
+                )
+                if "Item" not in response:
+                    return error_response(404, "Template not found")
+                template = response["Item"]
+            else:
+                # Fetch latest version
+                response = templates_table.query(
+                    KeyConditionExpression=Key("template_id").eq(template_id),
+                    ScanIndexForward=False,
+                    Limit=1,
+                )
+                items = response.get("Items", [])
+                if not items:
+                    return error_response(404, "Template not found")
+                template = items[0]
+        except (ValueError, TypeError):
+            return error_response(400, "version must be a positive integer")
         except ClientError as e:
             logger.error(f"DynamoDB error: {str(e)}")
             return error_response(500, "Error retrieving template")
-
-        if "Item" not in response:
-            return error_response(404, "Template not found")
-
-        template = response["Item"]
 
         # Check ownership or public access
         if template["user_id"] != user_id and not template.get("is_public", False):

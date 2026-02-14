@@ -14,7 +14,7 @@ from typing import Any, Dict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from botocore.exceptions import ClientError
-from lambda_responses import error_response, success_response
+from lambda_responses import CORS_HEADERS, error_response, success_response
 from utils import sanitize_error_message, setup_logger, validate_seed_data
 
 # Initialize logger
@@ -109,7 +109,31 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             response = s3_client.get_object(Bucket=bucket, Key=s3_key, Range="bytes=0-1048576")
 
             data_bytes = response["Body"].read()
-            data_sample = json.loads(data_bytes)
+
+            # Detect if response was truncated by Range header
+            content_range = response.get("ContentRange", "")
+            if content_range:
+                # ContentRange format: "bytes 0-1048576/TOTAL"
+                parts = content_range.rsplit("/", 1)
+                if len(parts) == 2 and parts[1] != "*":
+                    total_size = int(parts[1])
+                    if total_size > len(data_bytes):
+                        # File is larger than our Range — JSON may be incomplete
+                        try:
+                            data_sample = json.loads(data_bytes)
+                        except json.JSONDecodeError:
+                            return error_response(
+                                400,
+                                f"Seed data file is too large to validate via preview "
+                                f"({total_size} bytes). Upload a file under 1 MB or "
+                                f"ensure the JSON is valid.",
+                            )
+                    else:
+                        data_sample = json.loads(data_bytes)
+                else:
+                    data_sample = json.loads(data_bytes)
+            else:
+                data_sample = json.loads(data_bytes)
 
         except s3_client.exceptions.NoSuchKey:
             return error_response(404, "Seed data file not found")
@@ -141,7 +165,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             return {
                 "statusCode": 400,
-                "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+                "headers": CORS_HEADERS,
                 "body": json.dumps(
                     {"valid": False, "error": error_msg, "schema_requirements": schema_requirements}
                 ),

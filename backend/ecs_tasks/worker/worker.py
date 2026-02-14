@@ -54,6 +54,7 @@ required_env_vars = {
     "TEMPLATES_TABLE_NAME": "Templates table name",
     "COST_TRACKING_TABLE_NAME": "Cost tracking table name",
     "CHECKPOINT_METADATA_TABLE_NAME": "Checkpoint metadata table name",
+    "BUCKET_NAME": "S3 bucket name",
 }
 
 # QUEUE_TABLE_NAME only required in standalone mode
