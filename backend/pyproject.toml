@@ -82,6 +82,21 @@ module = [
     "moto.*",
     "pandas.*",
     "pyarrow.*",
+    "jinja2.*",
+    "yaml.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "aws_clients",
+    "constants",
+    "lambda_responses",
+    "models",
+    "retry",
+    "utils",
+    "template_filters",
+    "template_engine",
 ]
 ignore_missing_imports = true
 

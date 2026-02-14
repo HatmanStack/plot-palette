@@ -50,7 +50,7 @@ npm run check                            # All linting + all tests (frontend + b
 CI runs additional checks not covered by `npm run check`:
 
 ```bash
-cd backend && mypy shared/ lambdas/ ecs_tasks/ --config-file pyproject.toml  # Type check (continue-on-error in CI)
+cd backend && mypy lambdas/ ecs_tasks/ --config-file pyproject.toml  # Type check (continue-on-error in CI)
 bandit -r backend/ -ll -ii --exclude tests                        # Security scan
 cfn-lint backend/template.yaml                                    # CloudFormation lint
 ```

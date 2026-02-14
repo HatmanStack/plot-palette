@@ -60,6 +60,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not s3_key:
             return error_response(400, "Missing required field: s3_key")
 
+        # Validate s3_key is scoped to the authenticated user
+        expected_prefix = f"seed-data/{user_id}/"
+        if not s3_key.startswith(expected_prefix):
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "s3_key_scope_violation",
+                        "user_id": user_id,
+                        "s3_key": s3_key,
+                    }
+                )
+            )
+            return error_response(403, "Forbidden: s3_key not in user scope")
+
         if not template_id:
             return error_response(400, "Missing required field: template_id")
 

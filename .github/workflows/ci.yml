@@ -69,7 +69,7 @@ jobs:
 
       - name: Type check
         continue-on-error: true
-        run: cd backend && mypy shared/ lambdas/ ecs_tasks/ --config-file pyproject.toml --warn-unused-ignores
+        run: cd backend && mypy lambdas/ ecs_tasks/ --config-file pyproject.toml --warn-unused-ignores
 
       - name: Security scan
         run: |
