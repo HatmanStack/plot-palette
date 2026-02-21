@@ -2,7 +2,7 @@
  * Model tier pricing mirroring backend/shared/constants.py MODEL_PRICING.
  * Prices are per 1M tokens.
  */
-export const MODEL_TIERS = {
+const MODEL_TIERS = {
   'tier-1': { input: 0.30, output: 0.60, name: 'Llama 3.1 8B' },
   'tier-2': { input: 0.99, output: 0.99, name: 'Llama 3.1 70B' },
   'tier-3': { input: 3.00, output: 15.00, name: 'Claude 3.5 Sonnet' },
