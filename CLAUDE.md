@@ -97,7 +97,7 @@ Coverage requirement: 70% (backend via pytest-cov, frontend via vitest/v8 at 70%
 
 ## Code Style
 
-- **Python:** Ruff linter + formatter (E, W, F, I, B, C4 rules), 100-char line length, target py311. Known first-party imports: `shared`, `lambdas`, `ecs_tasks`. Mypy strict mode configured.
+- **Python:** Ruff linter + formatter (E, W, F, I, B, C4, UP rules), 100-char line length, target py311. Known first-party imports: `shared`, `lambdas`, `ecs_tasks`. Mypy strict mode configured.
 - **TypeScript:** ESLint 9 flat config with typescript-eslint, React hooks plugin. ESLint enforces `--max-warnings=0` (warnings are errors). Vitest + Testing Library for tests.
 - **Commits:** Pre-commit hooks enforce [conventional commits](https://www.conventionalcommits.org/). Valid types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `perf`, `build`.
 - **Python packaging:** Always use `uv pip install` / `uvx` (never bare `pip`).
