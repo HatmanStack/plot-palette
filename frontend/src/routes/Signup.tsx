@@ -14,13 +14,13 @@ export default function Signup() {
 
   // Handle redirect after successful signup with cleanup
   useEffect(() => {
-    if (success) {
-      const timeoutId = setTimeout(() => {
-        navigate('/login')
-      }, 3000)
+    if (!success) return
 
-      return () => clearTimeout(timeoutId)
-    }
+    const timeoutId = setTimeout(() => {
+      navigate('/login')
+    }, 3000)
+
+    return () => clearTimeout(timeoutId)
   }, [success, navigate])
 
   async function handleSubmit(e: React.FormEvent) {

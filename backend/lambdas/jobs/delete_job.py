@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from datetime import UTC, datetime
-from typing import Any, Dict
+from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -107,7 +107,7 @@ def delete_cost_tracking_records(job_id: str) -> None:
         # Don't fail the entire operation
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for DELETE /jobs/{job_id} endpoint.
 

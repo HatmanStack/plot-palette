@@ -10,7 +10,7 @@ import logging
 import os
 import re
 import sys
-from typing import TYPE_CHECKING, Any, Dict, Optional, Set
+from typing import TYPE_CHECKING, Any
 
 import jinja2
 
@@ -68,7 +68,7 @@ class TemplateEngine:
             "TemplateEngine initialized with custom filters and template composition support"
         )
 
-    def load_template_string(self, template_name: str) -> Optional[str]:
+    def load_template_string(self, template_name: str) -> str | None:
         """
         Load template string from DynamoDB for Jinja2 includes.
 
@@ -118,11 +118,11 @@ class TemplateEngine:
             return f"<!-- Error loading template {template_name} -->"
 
     @staticmethod
-    def _find_referenced_steps(prompt_text: str) -> Set[str]:
+    def _find_referenced_steps(prompt_text: str) -> set[str]:
         """Parse steps.X.output references from prompt text."""
         return set(re.findall(r"steps\.(\w+)\.output", prompt_text))
 
-    def render_step(self, step_def: Dict[str, Any], context: Dict[str, Any]) -> str:
+    def render_step(self, step_def: dict[str, Any], context: dict[str, Any]) -> str:
         """Render a single template step with context."""
         prompt = step_def.get("prompt", "")
         if not prompt:
@@ -132,10 +132,10 @@ class TemplateEngine:
 
     def execute_template(
         self,
-        template_def: Dict[str, Any],
-        seed_data: Dict[str, Any],
+        template_def: dict[str, Any],
+        seed_data: dict[str, Any],
         bedrock_client: "BedrockRuntimeClient",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute multi-step template with Bedrock calls."""
         context = seed_data.copy()
         results = {}

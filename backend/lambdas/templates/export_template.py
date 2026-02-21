@@ -7,7 +7,7 @@ GET /templates/{template_id}/export endpoint that exports templates as YAML file
 import json
 import os
 import sys
-from typing import Any, Dict
+from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -34,7 +34,7 @@ dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates"))
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for GET /templates/{template_id}/export endpoint.
 

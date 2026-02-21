@@ -7,11 +7,11 @@ and cost tracking using Pydantic for validation and serialization.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, NotRequired
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from pydantic import BaseModel, Field, field_validator
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import TypedDict
 
 from .constants import JobStatus
 
@@ -32,7 +32,7 @@ class TemplateStepDict(TypedDict):
 class TemplateDefinitionDict(TypedDict):
     """Type definition for a complete template definition."""
 
-    steps: List[TemplateStepDict]
+    steps: list[TemplateStepDict]
 
 
 class JobConfigDict(TypedDict, total=False):
@@ -57,8 +57,8 @@ class ResumeStateDict(TypedDict, total=False):
     """Type definition for checkpoint resume state."""
 
     last_seed_index: int
-    partial_results: Dict[str, Any]
-    step_outputs: Dict[str, str]
+    partial_results: dict[str, Any]
+    step_outputs: dict[str, str]
 
 
 class JobConfig(BaseModel):
@@ -73,14 +73,14 @@ class JobConfig(BaseModel):
     updated_at: datetime = Field(
         default_factory=datetime.utcnow, description="Last update timestamp"
     )
-    config: Dict[str, Any] = Field(..., description="Job configuration dictionary")
+    config: dict[str, Any] = Field(..., description="Job configuration dictionary")
     budget_limit: float = Field(..., gt=0, description="Budget limit in USD")
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
     cost_estimate: float = Field(default=0.0, ge=0, description="Estimated cost in USD")
-    execution_arn: Optional[str] = Field(None, description="Step Functions execution ARN")
+    execution_arn: str | None = Field(None, description="Step Functions execution ARN")
 
-    def to_dynamodb(self) -> Dict[str, Any]:
+    def to_dynamodb(self) -> dict[str, Any]:
         """Convert to low-level DynamoDB item format (for client.put_item)."""
         item = {
             "job_id": {"S": self.job_id},
@@ -98,7 +98,7 @@ class JobConfig(BaseModel):
             item["execution_arn"] = {"S": self.execution_arn}
         return item
 
-    def to_table_item(self) -> Dict[str, Any]:
+    def to_table_item(self) -> dict[str, Any]:
         """Convert to high-level DynamoDB item format (for Table.put_item)."""
         item = {
             "job_id": self.job_id,
@@ -128,12 +128,12 @@ class JobConfig(BaseModel):
         return obj
 
     @staticmethod
-    def _dict_to_dynamodb_map(d: Dict[str, Any]) -> Dict[str, Any]:
+    def _dict_to_dynamodb_map(d: dict[str, Any]) -> dict[str, Any]:
         """Convert Python dict to DynamoDB Map format using boto3 TypeSerializer."""
         return {k: _serializer.serialize(JobConfig._convert_floats(v)) for k, v in d.items()}
 
     @classmethod
-    def from_dynamodb(cls, item: Dict[str, Any]) -> "JobConfig":
+    def from_dynamodb(cls, item: dict[str, Any]) -> "JobConfig":
         """Create JobConfig from DynamoDB item."""
         return cls(
             job_id=item["job_id"]["S"],
@@ -150,7 +150,7 @@ class JobConfig(BaseModel):
         )
 
     @staticmethod
-    def _dynamodb_map_to_dict(m: Dict[str, Any]) -> Dict[str, Any]:
+    def _dynamodb_map_to_dict(m: dict[str, Any]) -> dict[str, Any]:
         """Convert DynamoDB Map to Python dict using boto3 TypeDeserializer."""
 
         def _convert_decimals(obj: Any) -> Any:
@@ -169,8 +169,8 @@ class TemplateStep(BaseModel):
     """Single step in a multi-step template."""
 
     id: str = Field(..., description="Step identifier")
-    model: Optional[str] = Field(None, description="Specific model ID to use")
-    model_tier: Optional[str] = Field(None, description="Model tier (tier-1, tier-2, tier-3)")
+    model: str | None = Field(None, description="Specific model ID to use")
+    model_tier: str | None = Field(None, description="Model tier (tier-1, tier-2, tier-3)")
     prompt: str = Field(..., description="Jinja2 prompt template")
 
     @field_validator("model_tier")
@@ -196,15 +196,15 @@ class TemplateDefinition(BaseModel):
     version: int = Field(default=1, ge=1, description="Template version number")
     name: str = Field(..., min_length=1, max_length=200, description="Template display name")
     user_id: str = Field(..., description="User who created the template")
-    schema_requirements: List[str] = Field(
+    schema_requirements: list[str] = Field(
         default_factory=list,
         description="Required fields in seed data (e.g., ['author.biography', 'poem.text'])",
     )
-    steps: List[TemplateStep] = Field(..., min_length=1, description="Generation steps")
+    steps: list[TemplateStep] = Field(..., min_length=1, description="Generation steps")
     is_public: bool = Field(default=False, description="Whether template is shareable")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
 
-    def to_dynamodb(self) -> Dict[str, Any]:
+    def to_dynamodb(self) -> dict[str, Any]:
         """Convert to DynamoDB item format."""
         return {
             "template_id": {"S": self.template_id},
@@ -218,7 +218,7 @@ class TemplateDefinition(BaseModel):
         }
 
     @classmethod
-    def from_dynamodb(cls, item: Dict[str, Any]) -> "TemplateDefinition":
+    def from_dynamodb(cls, item: dict[str, Any]) -> "TemplateDefinition":
         """Create TemplateDefinition from DynamoDB item."""
         # Parse the full template from the stored JSON
         template_data = cls.model_validate_json(item["steps"]["S"])
@@ -246,18 +246,18 @@ class CheckpointState(BaseModel):
     last_updated: datetime = Field(
         default_factory=datetime.utcnow, description="Last checkpoint timestamp"
     )
-    resume_state: Dict[str, Any] = Field(
+    resume_state: dict[str, Any] = Field(
         default_factory=dict,
         description="Custom state for resuming generation",
     )
-    etag: Optional[str] = Field(None, description="S3 ETag for concurrency control")
+    etag: str | None = Field(None, description="S3 ETag for concurrency control")
 
     def to_json(self) -> str:
         """Serialize to JSON for S3 storage."""
         return self.model_dump_json(indent=2)
 
     @classmethod
-    def from_json(cls, json_str: str, etag: Optional[str] = None) -> "CheckpointState":
+    def from_json(cls, json_str: str, etag: str | None = None) -> "CheckpointState":
         """Deserialize from JSON."""
         checkpoint = cls.model_validate_json(json_str)
         checkpoint.etag = etag
@@ -286,9 +286,9 @@ class CostBreakdown(BaseModel):
     estimated_cost: CostComponents = Field(
         default_factory=CostComponents, description="Cost breakdown by service"
     )
-    model_id: Optional[str] = Field(None, description="Model used for this period")
+    model_id: str | None = Field(None, description="Model used for this period")
 
-    def to_dynamodb(self) -> Dict[str, Any]:
+    def to_dynamodb(self) -> dict[str, Any]:
         """Convert to DynamoDB item format."""
         item = {
             "job_id": {"S": self.job_id},
@@ -309,14 +309,14 @@ class CostBreakdown(BaseModel):
             item["model_id"] = {"S": self.model_id}
 
         # Add TTL (90 days from now)
-        ttl = int((datetime.utcnow().timestamp() + (90 * 24 * 60 * 60)))
+        ttl = int(datetime.utcnow().timestamp() + (90 * 24 * 60 * 60))
         item["ttl"] = {"N": str(ttl)}
 
         return item
 
-    def to_table_item(self) -> Dict[str, Any]:
+    def to_table_item(self) -> dict[str, Any]:
         """Convert to high-level DynamoDB item format (for Table.put_item)."""
-        item: Dict[str, Any] = {
+        item: dict[str, Any] = {
             "job_id": self.job_id,
             "timestamp": self.timestamp.isoformat(),
             "bedrock_tokens": self.bedrock_tokens,
@@ -339,7 +339,7 @@ class CostBreakdown(BaseModel):
         return item
 
     @classmethod
-    def from_dynamodb(cls, item: Dict[str, Any]) -> "CostBreakdown":
+    def from_dynamodb(cls, item: dict[str, Any]) -> "CostBreakdown":
         """Create CostBreakdown from DynamoDB item."""
         cost_map = item.get("estimated_cost", {}).get("M", {})
         return cls(
@@ -367,14 +367,14 @@ class QueueItem(BaseModel):
         default_factory=datetime.utcnow, description="Queue entry timestamp"
     )
     priority: int = Field(default=0, description="Priority (higher = more urgent)")
-    task_arn: Optional[str] = Field(None, description="ECS task ARN when running")
+    task_arn: str | None = Field(None, description="ECS task ARN when running")
 
     @property
     def job_id_timestamp(self) -> str:
         """Composite sort key for DynamoDB."""
         return f"{self.job_id}#{self.timestamp.isoformat()}"
 
-    def to_dynamodb(self) -> Dict[str, Any]:
+    def to_dynamodb(self) -> dict[str, Any]:
         """Convert to DynamoDB item format."""
         item = {
             "status": {"S": self.status.value},
@@ -387,7 +387,7 @@ class QueueItem(BaseModel):
         return item
 
     @classmethod
-    def from_dynamodb(cls, item: Dict[str, Any]) -> "QueueItem":
+    def from_dynamodb(cls, item: dict[str, Any]) -> "QueueItem":
         """Create QueueItem from DynamoDB item."""
         # Extract timestamp from composite key
         job_id_timestamp = item["job_id_timestamp"]["S"]

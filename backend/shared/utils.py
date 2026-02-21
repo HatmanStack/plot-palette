@@ -12,7 +12,7 @@ import sys
 import uuid
 from datetime import datetime
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -218,7 +218,7 @@ def calculate_s3_cost(puts: int = 0, gets: int = 0) -> float:
     return put_cost + get_cost
 
 
-def get_nested_field(data: Dict[str, Any], field_path: str) -> Any:
+def get_nested_field(data: dict[str, Any], field_path: str) -> Any:
     """
     Get value from nested dictionary using dot notation.
 
@@ -246,7 +246,7 @@ def get_nested_field(data: Dict[str, Any], field_path: str) -> Any:
     return current
 
 
-def set_nested_field(data: Dict[str, Any], field_path: str, value: Any) -> None:
+def set_nested_field(data: dict[str, Any], field_path: str, value: Any) -> None:
     """
     Set value in nested dictionary using dot notation.
 
@@ -383,8 +383,8 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
 
 
 def validate_seed_data(
-    data: Dict[str, Any], required_fields: list[str]
-) -> tuple[bool, Optional[str]]:
+    data: dict[str, Any], required_fields: list[str]
+) -> tuple[bool, str | None]:
     """
     Validate that seed data contains all required fields.
 

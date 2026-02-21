@@ -9,7 +9,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -32,7 +32,7 @@ dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates"))
 
 
-def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str]:
+def extract_schema_requirements(template_definition: dict[str, Any]) -> list[str]:
     """Extract all {{ variable }} references from Jinja2 template."""
     env = jinja2.Environment(autoescape=True)
     all_variables = set()
@@ -71,7 +71,7 @@ def get_latest_version(template_id: str) -> int:
         return 1
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for PUT /templates/{template_id} endpoint.
 

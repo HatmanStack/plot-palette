@@ -8,7 +8,7 @@ for downloading completed job exports.
 import json
 import os
 import sys
-from typing import Any, Dict
+from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -31,7 +31,7 @@ bucket_name = os.environ.get("BUCKET_NAME", "plot-palette-data")
 PRESIGNED_URL_EXPIRATION = 3600  # 1 hour
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for GET /jobs/{job_id}/download endpoint.
 
