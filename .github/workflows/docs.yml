@@ -5,6 +5,7 @@ on:
     paths:
       - '**/*.md'
       - '.markdownlint.json'
+      - '.cspell.json'
       - '.github/workflows/docs.yml'
 
 jobs:
@@ -18,6 +19,12 @@ jobs:
         uses: DavidAnson/markdownlint-cli2-action@v19
         with:
           globs: '**/*.md #node_modules #.pytest_cache'
+
+      - name: Spell check
+        uses: streetsidesoftware/cspell-action@v6
+        with:
+          files: '**/*.md'
+          config: '.cspell.json'
 
       - name: Check links
         uses: lycheeverse/lychee-action@v2
