@@ -496,9 +496,9 @@ feat(frontend): build template marketplace with browse, search, and fork
    - Policies: DynamoDB read/write on Templates table
 
 **Verification Checklist:**
-- [ ] `cfn-lint backend/template.yaml` passes
-- [ ] New functions have correct routes
-- [ ] IAM policies are least-privilege
+- [x] `cfn-lint backend/template.yaml` passes
+- [x] New functions have correct routes
+- [x] IAM policies are least-privilege
 
 **Commit Message Template:**
 ```

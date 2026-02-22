@@ -596,6 +596,71 @@ Resources:
             Path: /dashboard/{job_id}
             Method: GET
 
+  # ============================================================
+  # Lambda Functions - Cost Analytics (Phase 2)
+  # ============================================================
+  GetCostAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-cost-analytics-${Environment}
+      CodeUri: lambdas/dashboard/
+      Handler: get_cost_analytics.lambda_handler
+      MemorySize: 256
+      Timeout: 15
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref CostTrackingTable
+      Events:
+        GetCostAnalytics:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /dashboard/cost-analytics
+            Method: GET
+
+  # ============================================================
+  # Lambda Functions - Marketplace (Phase 2)
+  # ============================================================
+  SearchTemplatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-search-templates-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: search_templates.lambda_handler
+      MemorySize: 256
+      Timeout: 15
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        SearchTemplates:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/marketplace
+            Method: GET
+
+  ForkTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-fork-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: fork_template.lambda_handler
+      MemorySize: 256
+      Timeout: 15
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        ForkTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}/fork
+            Method: POST
+
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL
