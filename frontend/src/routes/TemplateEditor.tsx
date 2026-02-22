@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Editor from '@monaco-editor/react'
 import VersionList from '../components/VersionList'
+import TemplateDiffView, { formatTemplateForDiff } from '../components/TemplateDiffView'
 import { fetchTemplate } from '../services/api'
 import type { Template } from '../services/api'
 
@@ -79,6 +80,10 @@ export default function TemplateEditor() {
   const [latestVersion, setLatestVersion] = useState(1)
   const [showVersionSidebar, setShowVersionSidebar] = useState(true)
 
+  // Diff mode state
+  const [diffMode, setDiffMode] = useState(false)
+  const [diffCompareVersion, setDiffCompareVersion] = useState<number | null>(null)
+
   // Fetch template data when editing existing template
   const { data: templateData } = useQuery({
     queryKey: ['template', templateId, currentVersion],
@@ -117,11 +122,30 @@ export default function TemplateEditor() {
     }
   }, [latestTemplateData, currentVersion])
 
+  // Fetch comparison version for diff mode
+  const { data: compareTemplateData } = useQuery({
+    queryKey: ['template', templateId, diffCompareVersion],
+    queryFn: () => fetchTemplate(templateId!, diffCompareVersion!),
+    enabled: !!templateId && diffMode && diffCompareVersion !== null,
+  })
+
   const isViewingHistorical = templateId && currentVersion < latestVersion
 
   function handleSelectVersion(version: number) {
+    setDiffMode(false)
+    setDiffCompareVersion(null)
     setCurrentVersion(version)
     queryClient.invalidateQueries({ queryKey: ['template', templateId, version] })
+  }
+
+  function handleCompare(version: number) {
+    setDiffCompareVersion(version)
+    setDiffMode(true)
+  }
+
+  function handleExitDiff() {
+    setDiffMode(false)
+    setDiffCompareVersion(null)
   }
 
   async function handleRestore() {
@@ -245,32 +269,51 @@ export default function TemplateEditor() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Template YAML
+                  {diffMode ? 'Diff View' : 'Template YAML'}
                 </label>
-                <div className="border border-gray-300 rounded-md overflow-hidden">
-                  <Editor
-                    height="500px"
-                    defaultLanguage="yaml"
-                    value={templateYaml}
-                    onChange={(value) => setTemplateYaml(value || '')}
-                    theme="vs-light"
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 13,
-                      lineNumbers: 'on',
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      tabSize: 2,
-                      wordWrap: 'on',
-                      readOnly: !!isViewingHistorical,
-                    }}
-                  />
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  {isViewingHistorical
-                    ? 'Read-only: viewing a historical version'
-                    : 'Write your template using YAML syntax with Jinja2 variables'}
-                </p>
+                {diffMode && templateData && compareTemplateData ? (
+                  <div>
+                    <TemplateDiffView
+                      originalContent={formatTemplateForDiff(compareTemplateData)}
+                      modifiedContent={formatTemplateForDiff(templateData)}
+                      originalVersion={diffCompareVersion!}
+                      modifiedVersion={currentVersion}
+                    />
+                    <button
+                      onClick={handleExitDiff}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Exit Diff View
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="border border-gray-300 rounded-md overflow-hidden">
+                      <Editor
+                        height="500px"
+                        defaultLanguage="yaml"
+                        value={templateYaml}
+                        onChange={(value) => setTemplateYaml(value || '')}
+                        theme="vs-light"
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          lineNumbers: 'on',
+                          scrollBeyondLastLine: false,
+                          automaticLayout: true,
+                          tabSize: 2,
+                          wordWrap: 'on',
+                          readOnly: !!isViewingHistorical,
+                        }}
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {isViewingHistorical
+                        ? 'Read-only: viewing a historical version'
+                        : 'Write your template using YAML syntax with Jinja2 variables'}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -394,6 +437,7 @@ export default function TemplateEditor() {
                 templateId={templateId}
                 currentVersion={currentVersion}
                 onSelectVersion={handleSelectVersion}
+                onCompare={handleCompare}
               />
             </div>
           </div>
