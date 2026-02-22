@@ -107,11 +107,11 @@ import os
 from typing import Any
 
 # Add shared modules to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
-from shared.lambda_responses import success_response, error_response
-from shared.aws_clients import get_dynamodb_resource
-from shared.utils import extract_request_id, set_correlation_id
+from lambda_responses import success_response, error_response
+from aws_clients import get_dynamodb_resource
+from utils import extract_request_id, set_correlation_id
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     set_correlation_id(extract_request_id(event))
@@ -127,7 +127,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 ```
 
 **Key conventions:**
-- `sys.path.insert(0, ...)` enables `from shared.xxx import yyy`
+- `sys.path.insert(0, ...)` enables `from xxx import yyy` (flat imports from `shared/`)
 - `success_response(status_code, body_dict)` and `error_response(status_code, message)` from `lambda_responses.py`
 - `CORS_HEADERS.copy()` is used internally (already fixed in lambda_responses.py)
 - Error messages are sanitized before returning to clients
