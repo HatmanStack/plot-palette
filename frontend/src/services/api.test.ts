@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ZodError } from 'zod'
 import axios from 'axios'
 import * as authService from './auth'
 
@@ -279,6 +280,22 @@ describe('API Service', () => {
       await expect(interceptor!(error)).rejects.toEqual(error)
 
       expect(window.location.href).toBe(originalHref)
+    })
+  })
+
+  describe('Edge cases', () => {
+    it('rejects with ZodError when response data is invalid', async () => {
+      mockAxios.get.mockResolvedValueOnce({
+        data: { jobs: [{ invalid_field: true }] },
+      })
+
+      await expect(fetchJobs()).rejects.toThrow(ZodError)
+    })
+
+    it('propagates network errors without swallowing', async () => {
+      mockAxios.get.mockRejectedValueOnce(new Error('Network Error'))
+
+      await expect(fetchJobs()).rejects.toThrow('Network Error')
     })
   })
 })
