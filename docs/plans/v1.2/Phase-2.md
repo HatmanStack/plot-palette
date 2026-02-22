@@ -324,13 +324,13 @@ feat(lambdas): add template marketplace search endpoint
    - The forked template is fully independent — editing the original doesn't affect the fork.
 
 **Verification Checklist:**
-- [ ] Fork creates a new template with new template_id
-- [ ] Fork copies template_definition and schema_requirements
-- [ ] Fork sets user_id to the authenticated user
-- [ ] Fork sets version to 1 and is_public to false
-- [ ] Fork fails on private template not owned by user (403)
-- [ ] Fork allows custom name override
-- [ ] Fork appends " (fork)" to name when no override
+- [x] Fork creates a new template with new template_id
+- [x] Fork copies template_definition and schema_requirements
+- [x] Fork sets user_id to the authenticated user
+- [x] Fork sets version to 1 and is_public to false
+- [x] Fork fails on private template not owned by user (403)
+- [x] Fork allows custom name override
+- [x] Fork appends " (fork)" to name when no override
 
 **Testing Instructions:**
 
