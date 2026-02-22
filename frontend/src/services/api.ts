@@ -109,6 +109,53 @@ export async function downloadPartialExport(jobId: string): Promise<z.infer<type
   return PartialExportSchema.parse(data)
 }
 
+// Template version schema
+export const TemplateVersionSchema = z.object({
+  version: z.number(),
+  name: z.string().default(''),
+  description: z.string().default(''),
+  created_at: z.string().default(''),
+})
+
+export type TemplateVersion = z.infer<typeof TemplateVersionSchema>
+
+const TemplateVersionListSchema = z.object({
+  versions: z.array(TemplateVersionSchema),
+  template_id: z.string(),
+})
+
+export async function fetchTemplateVersions(templateId: string): Promise<TemplateVersion[]> {
+  const { data } = await apiClient.get(`/templates/${templateId}/versions`)
+  return TemplateVersionListSchema.parse(data).versions
+}
+
+// Template schema for full template data
+export const TemplateSchema = z.object({
+  template_id: z.string(),
+  version: z.number(),
+  name: z.string().default(''),
+  description: z.string().default(''),
+  user_id: z.string().default(''),
+  is_public: z.boolean().default(false),
+  is_owner: z.boolean().default(false),
+  created_at: z.string().default(''),
+  steps: z.array(z.object({
+    id: z.string(),
+    model: z.string().optional(),
+    model_tier: z.string().optional(),
+    prompt: z.string(),
+  })).default([]),
+  schema_requirements: z.array(z.string()).default([]),
+})
+
+export type Template = z.infer<typeof TemplateSchema>
+
+export async function fetchTemplate(templateId: string, version?: number | 'latest'): Promise<Template> {
+  const params = version !== undefined ? `?version=${version}` : ''
+  const { data } = await apiClient.get(`/templates/${templateId}${params}`)
+  return TemplateSchema.parse(data)
+}
+
 export async function generateUploadUrl(filename: string, contentType: string = 'application/json'): Promise<{
   upload_url: string
   s3_key: string

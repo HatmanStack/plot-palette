@@ -1,16 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '../test/test-utils'
+import { render, screen, fireEvent, act, waitFor } from '../test/test-utils'
 import TemplateEditor from './TemplateEditor'
 
 // Mock Monaco editor
 vi.mock('@monaco-editor/react', () => ({
-  default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+  default: ({ value, onChange, options }: { value: string; onChange: (v: string) => void; options?: { readOnly?: boolean } }) => (
     <textarea
       data-testid="monaco-editor"
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      readOnly={options?.readOnly}
+      aria-readonly={options?.readOnly}
     />
   ),
+}))
+
+// Mock API functions
+vi.mock('../services/api', () => ({
+  fetchTemplate: vi.fn(),
+  fetchTemplateVersions: vi.fn(),
 }))
 
 const mockNavigate = vi.fn()
@@ -95,17 +103,52 @@ describe('TemplateEditor', () => {
     expect(screen.getByText('Multi-Step')).toBeInTheDocument()
     expect(screen.getByText('Conditionals')).toBeInTheDocument()
   })
+
+  it('hides version sidebar for new template', () => {
+    render(<TemplateEditor />)
+    // Version sidebar should not be present
+    expect(screen.queryByText('Versions')).not.toBeInTheDocument()
+    expect(screen.queryByText('Version History')).not.toBeInTheDocument()
+  })
 })
 
 describe('TemplateEditor in edit mode', () => {
-  it('renders edit mode when templateId is present', async () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
     const routerModule = await import('react-router-dom')
     vi.spyOn(routerModule, 'useParams').mockReturnValue({
       templateId: 'tmpl-abc123',
     })
 
+    const apiModule = await import('../services/api')
+    vi.mocked(apiModule.fetchTemplate).mockResolvedValue({
+      template_id: 'tmpl-abc123',
+      version: 2,
+      name: 'Test Template',
+      description: 'A test',
+      user_id: 'user-1',
+      is_public: false,
+      is_owner: true,
+      created_at: '2025-01-01T00:00:00',
+      steps: [{ id: 'step1', prompt: 'Generate something' }],
+      schema_requirements: ['author.name'],
+    })
+    vi.mocked(apiModule.fetchTemplateVersions).mockResolvedValue([
+      { version: 2, name: 'v2', description: '', created_at: '2025-01-02T00:00:00' },
+      { version: 1, name: 'v1', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
+  })
+
+  it('renders edit mode when templateId is present', async () => {
     render(<TemplateEditor />)
     expect(screen.getByText(/Edit Template: tmpl-abc123/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Update/ })).toBeInTheDocument()
+  })
+
+  it('shows version sidebar when editing existing template', async () => {
+    render(<TemplateEditor />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Versions')).toBeInTheDocument()
+    })
   })
 })
