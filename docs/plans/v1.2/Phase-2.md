@@ -540,9 +540,9 @@ feat(infra): add SAM resources for cost analytics, marketplace, and fork
    - Fork a public template as user C — verify new template in table with user C's user_id
 
 **Verification Checklist:**
-- [ ] Cost analytics returns correct data for authenticated user only
-- [ ] Marketplace returns only public templates
-- [ ] Fork creates independent copy
+- [x] Cost analytics returns correct data for authenticated user only
+- [x] Marketplace returns only public templates
+- [x] Fork creates independent copy
 
 **Commit Message Template:**
 ```
