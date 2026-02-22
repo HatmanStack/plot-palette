@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "plot-palette"
-version = "0.1.0"
+version = "1.1.0"
 description = "Synthetic data generation platform using AWS Bedrock"
 readme = "README.md"
 requires-python = ">=3.11"
