@@ -382,9 +382,41 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     return logger
 
 
-def validate_seed_data(
-    data: dict[str, Any], required_fields: list[str]
-) -> tuple[bool, str | None]:
+def extract_schema_requirements(template_definition: dict[str, Any]) -> list[str]:
+    """
+    Extract all {{ variable }} references from a Jinja2 template definition.
+
+    Args:
+        template_definition: Template definition dictionary with steps
+
+    Returns:
+        Sorted list of unique variable references
+
+    Raises:
+        ValueError: If template syntax is invalid
+    """
+    import jinja2
+
+    env = jinja2.Environment(autoescape=True)
+    all_variables: set[str] = set()
+
+    try:
+        for step in template_definition.get("steps", []):
+            prompt = step.get("prompt", "")
+            ast = env.parse(prompt)
+            variables = jinja2.meta.find_undeclared_variables(ast)
+            all_variables.update(variables)
+
+        built_ins = {"steps", "loop", "range", "dict", "list"}
+        schema_vars = [v for v in all_variables if v not in built_ins]
+
+        return sorted(schema_vars)
+
+    except jinja2.TemplateSyntaxError as e:
+        raise ValueError(f"Invalid template syntax: {str(e)}") from e
+
+
+def validate_seed_data(data: dict[str, Any], required_fields: list[str]) -> tuple[bool, str | None]:
     """
     Validate that seed data contains all required fields.
 
@@ -393,7 +425,7 @@ def validate_seed_data(
         required_fields: List of required field paths (dot notation)
 
     Returns:
-        tuple[bool, Optional[str]]: (is_valid, error_message)
+        tuple[bool, str | None]: (is_valid, error_message)
 
     Examples:
         >>> data = {"author": {"name": "Jane"}}

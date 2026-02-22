@@ -8,7 +8,7 @@ validation, budget limits, and Step Functions orchestration.
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 # Add shared library to Python path
@@ -221,7 +221,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Generate job ID
         job_id = generate_job_id()
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         # Create job record
         job = JobConfig(
@@ -299,7 +299,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     ExpressionAttributeNames={"#s": "status"},
                     ExpressionAttributeValues={
                         ":failed": "FAILED",
-                        ":now": datetime.utcnow().isoformat(),
+                        ":now": datetime.now(UTC).isoformat(),
                         ":err": "Failed to start job execution",
                     },
                 )

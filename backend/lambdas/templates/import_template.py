@@ -7,7 +7,7 @@ POST /templates/import endpoint that imports templates from YAML files.
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 # Add shared library to Python path
@@ -165,7 +165,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Generate new template ID
         new_template_id = generate_template_id()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Create template record
         new_template = {

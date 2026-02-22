@@ -94,7 +94,7 @@ def estimate_completion(
         return None
 
     try:
-        start_time = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        start_time = datetime.fromisoformat(started_at)
         now = datetime.now(UTC)
         elapsed = (now - start_time).total_seconds()
 

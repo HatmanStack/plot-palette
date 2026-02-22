@@ -10,6 +10,7 @@ import time
 from collections.abc import Callable
 from functools import wraps
 from threading import Lock
+from typing import Any
 
 from botocore.exceptions import ClientError
 
@@ -189,7 +190,7 @@ def retry_with_backoff(
             return client.invoke_model(...)
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args, **kwargs):
             cb = None

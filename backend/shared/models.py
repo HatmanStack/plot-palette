@@ -5,7 +5,7 @@ This module defines type-safe data models for jobs, templates, checkpoints,
 and cost tracking using Pydantic for validation and serialization.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, NotRequired
 
@@ -309,7 +309,7 @@ class CostBreakdown(BaseModel):
             item["model_id"] = {"S": self.model_id}
 
         # Add TTL (90 days from now)
-        ttl = int(datetime.utcnow().timestamp() + (90 * 24 * 60 * 60))
+        ttl = int(datetime.now(UTC).timestamp() + (90 * 24 * 60 * 60))
         item["ttl"] = {"N": str(ttl)}
 
         return item
@@ -333,7 +333,7 @@ class CostBreakdown(BaseModel):
             item["model_id"] = self.model_id
 
         # Add TTL (90 days from now)
-        ttl = int(datetime.utcnow().timestamp() + (90 * 24 * 60 * 60))
+        ttl = int(datetime.now(UTC).timestamp() + (90 * 24 * 60 * 60))
         item["ttl"] = ttl
 
         return item

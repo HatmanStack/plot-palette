@@ -8,18 +8,21 @@ validation and automatic schema extraction.
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
-import jinja2
-import jinja2.meta
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
-from utils import generate_template_id, sanitize_error_message, setup_logger
+from utils import (
+    extract_schema_requirements,
+    generate_template_id,
+    sanitize_error_message,
+    setup_logger,
+)
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -29,40 +32,6 @@ from aws_clients import get_dynamodb_resource
 
 dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates"))
-
-
-def extract_schema_requirements(template_definition: dict[str, Any]) -> list[str]:
-    """
-    Extract all {{ variable }} references from Jinja2 template.
-
-    Args:
-        template_definition: Template definition dictionary with steps
-
-    Returns:
-        List[str]: Sorted list of unique variable references
-
-    Raises:
-        ValueError: If template syntax is invalid
-    """
-    env = jinja2.Environment(autoescape=True)
-    all_variables = set()
-
-    try:
-        # Extract variables from all steps
-        for step in template_definition.get("steps", []):
-            prompt = step.get("prompt", "")
-            ast = env.parse(prompt)
-            variables = jinja2.meta.find_undeclared_variables(ast)
-            all_variables.update(variables)
-
-        # Filter out built-in variables like 'steps'
-        built_ins = {"steps", "loop", "range", "dict", "list"}
-        schema_vars = [v for v in all_variables if v not in built_ins]
-
-        return sorted(schema_vars)
-
-    except jinja2.TemplateSyntaxError as e:
-        raise ValueError(f"Invalid template syntax: {str(e)}") from e
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -144,7 +113,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Validate Jinja2 syntax and extract schema
         try:
             # First validate template syntax (including filters, conditionals, loops)
-            from template_filters import validate_template_syntax
+            from template_filters import validate_template_syntax  # deferred: depends on sys.path
 
             valid, error_msg = validate_template_syntax(template_def)
             if not valid:
@@ -156,7 +125,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Generate template ID
         template_id = generate_template_id()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Create template record
         template = {
