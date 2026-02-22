@@ -8,15 +8,15 @@ NOTE: Phase 8 is code writing only. These tests use moto to mock S3.
 Real infrastructure testing happens in Phase 9.
 """
 
-import pytest
 import json
 import os
-from unittest.mock import MagicMock, patch, Mock
-from datetime import datetime
-from moto import mock_aws
-import boto3
+from unittest.mock import MagicMock, patch
 
+import boto3
+import pytest
 from backend.shared.models import CheckpointState
+from botocore.exceptions import ClientError
+from moto import mock_aws
 
 
 @pytest.fixture
@@ -378,6 +378,191 @@ class TestCheckpointConcurrency:
         assert merged['records_generated'] == 105
         assert merged['tokens_used'] == 52000
         assert merged['cost_accumulated'] == 2.6
+
+
+def _import_worker():
+    """Import worker module, setting up sys.path and env vars for module-level init.
+
+    Returns (worker_module, Worker) or calls pytest.skip if dependencies missing.
+    """
+    import sys
+
+    worker_dir = os.path.join(os.path.dirname(__file__), "..", "..", "backend", "ecs_tasks", "worker")
+    worker_dir = os.path.abspath(worker_dir)
+
+    # Worker module needs its directory on sys.path for `from template_engine import ...`
+    # and env vars for module-level validation.
+    env_vars = {
+        "JOBS_TABLE_NAME": "test-Jobs",
+        "TEMPLATES_TABLE_NAME": "test-Templates",
+        "COST_TRACKING_TABLE_NAME": "test-CostTracking",
+        "CHECKPOINT_METADATA_TABLE_NAME": "test-CheckpointMetadata",
+        "BUCKET_NAME": "test-bucket",
+        "QUEUE_TABLE_NAME": "test-Queue",
+        "AWS_DEFAULT_REGION": "us-east-1",
+    }
+
+    old_path = sys.path[:]
+    try:
+        if worker_dir not in sys.path:
+            sys.path.insert(0, worker_dir)
+
+        with patch.dict(os.environ, env_vars):
+            from backend.ecs_tasks.worker import worker as worker_module
+            from backend.ecs_tasks.worker.worker import Worker
+
+            return worker_module, Worker
+    except ImportError as e:
+        pytest.skip(f"Worker dependency not installed: {e}")
+    finally:
+        sys.path = old_path
+
+
+@pytest.mark.integration
+@pytest.mark.worker
+class TestETagConflictRetry:
+    """Test checkpoint save retries on DynamoDB ConditionalCheckFailedException."""
+
+    def test_retries_on_first_conflict_then_succeeds(self):
+        """Patch checkpoint_metadata_table.update_item to raise on first call, succeed on second."""
+        worker_module, Worker = _import_worker()
+
+        w = Worker.__new__(Worker)
+        w.shutdown_requested = False
+
+        conflict_error = ClientError(
+            {"Error": {"Code": "ConditionalCheckFailedException", "Message": "Version conflict"}},
+            "UpdateItem",
+        )
+
+        call_count = {"n": 0}
+        original_update = MagicMock()
+
+        def update_side_effect(**kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise conflict_error
+            return original_update(**kwargs)
+
+        # Checkpoint data simulating a save in progress
+        checkpoint_data = {
+            "job_id": "test-job-retry",
+            "records_generated": 100,
+            "current_batch": 2,
+            "tokens_used": 50000,
+            "cost_accumulated": 2.5,
+            "_version": 3,
+        }
+
+        # Mock load_checkpoint to return a "remote" checkpoint with lower records
+        remote_checkpoint = {
+            "job_id": "test-job-retry",
+            "records_generated": 80,
+            "current_batch": 2,
+            "tokens_used": 40000,
+            "cost_accumulated": 2.0,
+            "_version": 4,
+        }
+
+        mock_table = MagicMock()
+        mock_table.update_item.side_effect = update_side_effect
+
+        mock_s3_response = {"ETag": '"new-etag-abc"'}
+        mock_s3 = MagicMock()
+        mock_s3.put_object.return_value = mock_s3_response
+
+        mock_load = MagicMock(return_value=remote_checkpoint)
+
+        with (
+            patch.object(worker_module, "checkpoint_metadata_table", mock_table),
+            patch.object(worker_module, "s3_client", mock_s3),
+            patch.object(w, "load_checkpoint", mock_load),
+            patch("time.sleep") as mock_sleep,
+            patch.dict(os.environ, {"BUCKET_NAME": "test-bucket"}),
+        ):
+            w.save_checkpoint("test-job-retry", checkpoint_data)
+
+        # update_item called twice (first conflict, second success)
+        assert mock_table.update_item.call_count == 2
+        # load_checkpoint called once to reload after conflict
+        mock_load.assert_called_once_with("test-job-retry")
+        # Backoff of 0.1s (2^0 * 100ms)
+        mock_sleep.assert_called_once_with(0.1)
+        # Merged checkpoint uses the version from remote
+        assert checkpoint_data["_version"] == 5  # new_version after second save
+
+
+@pytest.mark.integration
+@pytest.mark.worker
+class TestSIGTERMHandlerBehavior:
+    """Test Worker.handle_shutdown sets shutdown_requested and schedules alarm."""
+
+    def test_handle_shutdown_sets_flag_and_alarm(self):
+        """Call handle_shutdown and verify shutdown_requested and signal.alarm."""
+        import signal as signal_module
+
+        _, Worker = _import_worker()
+
+        w = Worker.__new__(Worker)
+        w.shutdown_requested = False
+
+        with patch.object(signal_module, "alarm") as mock_alarm:
+            w.handle_shutdown(signal_module.SIGTERM, None)
+
+        assert w.shutdown_requested is True
+        mock_alarm.assert_called_once_with(100)
+
+
+@pytest.mark.integration
+@pytest.mark.worker
+class TestMaxRetriesExceeded:
+    """Test checkpoint save raises after MAX_RETRIES conflicts."""
+
+    def test_raises_after_three_conflicts(self):
+        """Patch update_item to always raise ConditionalCheckFailedException."""
+        worker_module, Worker = _import_worker()
+
+        w = Worker.__new__(Worker)
+        w.shutdown_requested = False
+
+        conflict_error = ClientError(
+            {"Error": {"Code": "ConditionalCheckFailedException", "Message": "Version conflict"}},
+            "UpdateItem",
+        )
+
+        mock_table = MagicMock()
+        mock_table.update_item.side_effect = conflict_error
+
+        # Remote checkpoint always has lower records so retry path is taken
+        remote_checkpoint = {
+            "job_id": "test-job-max",
+            "records_generated": 50,
+            "current_batch": 1,
+            "tokens_used": 20000,
+            "cost_accumulated": 1.0,
+            "_version": 10,
+        }
+
+        checkpoint_data = {
+            "job_id": "test-job-max",
+            "records_generated": 100,
+            "current_batch": 2,
+            "tokens_used": 50000,
+            "cost_accumulated": 2.5,
+            "_version": 5,
+        }
+
+        with (
+            patch.object(worker_module, "checkpoint_metadata_table", mock_table),
+            patch.object(w, "load_checkpoint", return_value=remote_checkpoint),
+            patch("time.sleep"),
+            patch.dict(os.environ, {"BUCKET_NAME": "test-bucket"}),
+        ):
+            with pytest.raises(Exception, match="Failed to save checkpoint after"):
+                w.save_checkpoint("test-job-max", checkpoint_data)
+
+        # 3 update_item calls (initial + 2 retries before the 3rd raises)
+        assert mock_table.update_item.call_count == 3
 
 
 if __name__ == "__main__":

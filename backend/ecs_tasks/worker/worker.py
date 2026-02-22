@@ -14,8 +14,8 @@ import signal
 import sys
 import time
 from datetime import datetime
+from typing import Any
 
-import boto3
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -24,6 +24,7 @@ from template_engine import TemplateEngine
 
 # Import from shared constants
 sys.path.append("/app")
+from shared.aws_clients import get_bedrock_client, get_dynamodb_resource, get_s3_client
 from shared.constants import (
     FARGATE_SPOT_PRICING,
     MODEL_PRICING,
@@ -33,6 +34,7 @@ from shared.constants import (
     WORKER_EXIT_SUCCESS,
 )
 from shared.models import CostBreakdown, CostComponents
+from shared.utils import estimate_tokens as shared_estimate_tokens
 
 # Setup logging
 logging.basicConfig(
@@ -43,10 +45,10 @@ logger = logging.getLogger(__name__)
 # Orchestration mode: 'step_functions' (launched by SFN) or 'standalone' (queue polling)
 ORCHESTRATION_MODE = os.environ.get("ORCHESTRATION_MODE", "standalone")
 
-# AWS clients
-dynamodb = boto3.resource("dynamodb")
-s3_client = boto3.client("s3")
-bedrock_client = boto3.client("bedrock-runtime")
+# AWS clients (shared factory with connection pooling, retry config, and extended timeouts)
+dynamodb = get_dynamodb_resource()
+s3_client = get_s3_client()
+bedrock_client = get_bedrock_client()
 
 # Validate required environment variables
 required_env_vars = {
@@ -172,6 +174,7 @@ class Worker:
 
     def get_next_job(self):
         """Pull next job from QUEUED status and move to RUNNING."""
+        assert queue_table is not None, "QUEUE_TABLE_NAME required in standalone mode"
         try:
             # Query for QUEUED jobs (oldest first)
             response = queue_table.query(
@@ -299,15 +302,19 @@ class Worker:
             f"Generating {target_records} records for job {job_id}, starting at {start_index}"
         )
 
-        batch_records = []
+        batch_records: list[dict[str, Any]] = []
         batch_number = checkpoint.get("current_batch", 1)
         running_cost = checkpoint.get("cost_accumulated", 0.0)
+        failed_records = checkpoint.get("failed_records", 0)
 
         for i in range(start_index, target_records):
             if self.shutdown_requested:
                 logger.info("Shutdown requested, checkpointing and exiting")
-                self.save_checkpoint(job_id, checkpoint)
-                self.save_batch(job_id, batch_number, batch_records)
+                try:
+                    self.save_batch(job_id, batch_number, batch_records)
+                    self.save_checkpoint(job_id, checkpoint)
+                except Exception as e:
+                    logger.error(f"Best-effort checkpoint failed during shutdown: {e}")
                 break
 
             # Check budget using in-memory running cost (updated after every call)
@@ -367,6 +374,8 @@ class Worker:
 
             except Exception as e:
                 logger.error(f"Error generating record {i}: {str(e)}")
+                failed_records += 1
+                checkpoint["failed_records"] = failed_records
                 # Continue with next record (don't fail entire job for one bad record)
                 continue
 
@@ -383,6 +392,9 @@ class Worker:
 
         # Export data
         self.export_data(job_id, config)
+
+        if failed_records > 0:
+            logger.warning(f"Job {job_id} completed with {failed_records} failed records")
 
         logger.info(f"Job {job_id} completed: {checkpoint['records_generated']} records generated")
 
@@ -423,23 +435,8 @@ class Worker:
             raise
 
     def estimate_tokens(self, result, model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"):
-        """
-        Estimate tokens used in generation using model-specific approximation.
-
-        Args:
-            result: Generation result (will be JSON-serialized)
-            model_id: Model identifier for model-specific estimation
-
-        Returns:
-            int: Estimated token count
-        """
-        text = json.dumps(result)
-        # Use model-specific token estimation
-        # Claude: ~3.5 chars/token, Llama/Mistral: ~4 chars/token
-        if "claude" in model_id.lower():
-            return max(1, int(len(text) / 3.5))
-        else:
-            return max(1, int(len(text) / 4))
+        """Estimate tokens used in generation (delegates to shared utility)."""
+        return shared_estimate_tokens(json.dumps(result), model_id)
 
     def load_checkpoint(self, job_id):
         """Load checkpoint from S3 with version from DynamoDB."""
@@ -627,16 +624,16 @@ class Worker:
             # Fail open to avoid blocking generation
             return 0.0
 
-    def _calculate_bedrock_cost(self, tokens, model_id):
+    def _calculate_bedrock_cost(self, tokens: int, model_id: str) -> float:
         """Calculate Bedrock cost for a token count assuming 40/60 input/output split."""
         pricing = MODEL_PRICING.get(
             model_id, MODEL_PRICING["anthropic.claude-3-5-sonnet-20241022-v2:0"]
         )
         input_tokens = int(tokens * 0.4)
         output_tokens = tokens - input_tokens
-        return (input_tokens / 1_000_000) * pricing["input"] + (
-            output_tokens / 1_000_000
-        ) * pricing["output"]
+        input_price: float = pricing["input"]  # type: ignore[assignment]
+        output_price: float = pricing["output"]  # type: ignore[assignment]
+        return (input_tokens / 1_000_000) * input_price + (output_tokens / 1_000_000) * output_price
 
     def estimate_single_call_cost(self, result, model_id):
         """Estimate cost of a single Bedrock call including input and output tokens."""
@@ -688,6 +685,7 @@ class Worker:
                 s3=round(s3_cost, 6),
                 total=round(total_cost, 4),
             ),
+            model_id=model_id,
         )
 
         try:
@@ -977,6 +975,9 @@ class Worker:
         )
 
         # Find and move queue item from RUNNING to COMPLETED
+        if queue_table is None:
+            logger.info(f"Job {job_id} marked as COMPLETED")
+            return
         try:
             # Query for this job in RUNNING queue
             response = queue_table.query(
@@ -1026,6 +1027,9 @@ class Worker:
         )
 
         # Move queue item from RUNNING to FAILED
+        if queue_table is None:
+            logger.error(f"Job {job_id} marked as FAILED: {error_message}")
+            return
         try:
             response = queue_table.query(
                 KeyConditionExpression="#status = :running",
@@ -1069,6 +1073,9 @@ class Worker:
         )
 
         # Move queue item
+        if queue_table is None:
+            logger.warning(f"Job {job_id} exceeded budget limit")
+            return
         try:
             response = queue_table.query(
                 KeyConditionExpression="#status = :running",

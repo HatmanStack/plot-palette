@@ -18,7 +18,13 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
 from template_filters import validate_template_syntax
-from utils import extract_schema_requirements, sanitize_error_message, setup_logger
+from utils import (
+    extract_request_id,
+    extract_schema_requirements,
+    sanitize_error_message,
+    set_correlation_id,
+    setup_logger,
+)
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -62,6 +68,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         Dict: API Gateway response with new version info
     """
     try:
+        set_correlation_id(extract_request_id(event))
+
         # Extract user ID from JWT claims
         user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
 

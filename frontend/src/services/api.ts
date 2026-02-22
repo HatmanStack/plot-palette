@@ -30,11 +30,10 @@ apiClient.interceptors.response.use(
   }
 )
 
-// Runtime validation schema
-export const JobSchema = z.object({
+// Base job fields shared across all statuses
+const JobBase = z.object({
   job_id: z.string(),
   user_id: z.string().default(''),
-  status: z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'BUDGET_EXCEEDED']),
   created_at: z.string().default(''),
   updated_at: z.string().default(''),
   template_id: z.string().optional(),
@@ -48,6 +47,16 @@ export const JobSchema = z.object({
     model: z.string().optional(),
   }).optional(),
 })
+
+// Discriminated union: status-specific variants with optional fields
+export const JobSchema = z.discriminatedUnion('status', [
+  JobBase.extend({ status: z.literal('QUEUED') }),
+  JobBase.extend({ status: z.literal('RUNNING'), started_at: z.string().optional() }),
+  JobBase.extend({ status: z.literal('COMPLETED'), completed_at: z.string().optional() }),
+  JobBase.extend({ status: z.literal('FAILED'), error_message: z.string().optional() }),
+  JobBase.extend({ status: z.literal('CANCELLED') }),
+  JobBase.extend({ status: z.literal('BUDGET_EXCEEDED') }),
+])
 
 export type Job = z.infer<typeof JobSchema>
 

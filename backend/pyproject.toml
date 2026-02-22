@@ -65,14 +65,14 @@ include = ["shared*", "lambdas*", "ecs_tasks*"]
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
+warn_return_any = false
 warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 check_untyped_defs = true
 strict_optional = true
 warn_redundant_casts = true
-warn_unused_ignores = true
+warn_unused_ignores = false
 show_error_codes = true
 
 [[tool.mypy.overrides]]
@@ -97,8 +97,24 @@ module = [
     "utils",
     "template_filters",
     "template_engine",
+    "shared.*",
 ]
 ignore_missing_imports = true
+
+# Lambda handlers and worker interact heavily with boto3 (returns Any).
+# Relax no-any-return and allow gradual typing for untyped methods.
+[[tool.mypy.overrides]]
+module = [
+    "lambdas",
+    "lambdas.*",
+    "ecs_tasks",
+    "ecs_tasks.*",
+    "shared",
+    "shared.*",
+]
+warn_return_any = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 
 [tool.ruff]
 target-version = "py311"

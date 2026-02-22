@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { ToastProvider } from '../contexts/ToastContext'
 import Dashboard from './Dashboard'
 import type { Job } from '../services/api'
 
@@ -52,7 +53,9 @@ describe('Dashboard', () => {
   const renderDashboard = () => {
     return render(
       <MemoryRouter>
-        <Dashboard />
+        <ToastProvider>
+          <Dashboard />
+        </ToastProvider>
       </MemoryRouter>
     )
   }

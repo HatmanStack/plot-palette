@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any, NotRequired, TypedDict
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .constants import JobStatus
 
@@ -63,6 +63,8 @@ class ResumeStateDict(TypedDict, total=False):
 class JobConfig(BaseModel):
     """Job configuration and state model matching DynamoDB Jobs table schema."""
 
+    model_config = ConfigDict(extra="forbid")
+
     job_id: str = Field(..., description="Unique job identifier (UUID)")
     user_id: str = Field(..., description="User who created the job")
     status: JobStatus = Field(default=JobStatus.QUEUED, description="Current job status")
@@ -78,6 +80,13 @@ class JobConfig(BaseModel):
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
     cost_estimate: float = Field(default=0.0, ge=0, description="Estimated cost in USD")
     execution_arn: str | None = Field(None, description="Step Functions execution ARN")
+
+    @model_validator(mode="after")
+    def validate_cross_fields(self) -> "JobConfig":
+        """Validate cross-field consistency."""
+        if self.status == JobStatus.COMPLETED and self.records_generated == 0:
+            raise ValueError("COMPLETED job must have records_generated > 0")
+        return self
 
     def to_dynamodb(self) -> dict[str, Any]:
         """Convert to low-level DynamoDB item format (for client.put_item)."""
@@ -167,6 +176,8 @@ class JobConfig(BaseModel):
 class TemplateStep(BaseModel):
     """Single step in a multi-step template."""
 
+    model_config = ConfigDict(extra="forbid")
+
     id: str = Field(..., description="Step identifier")
     model: str | None = Field(None, description="Specific model ID to use")
     model_tier: str | None = Field(None, description="Model tier (tier-1, tier-2, tier-3)")
@@ -190,6 +201,8 @@ class TemplateStep(BaseModel):
 
 class TemplateDefinition(BaseModel):
     """Prompt template definition for generation jobs."""
+
+    model_config = ConfigDict(extra="forbid")
 
     template_id: str = Field(..., description="Unique template identifier (UUID)")
     version: int = Field(default=1, ge=1, description="Template version number")
@@ -239,6 +252,8 @@ class TemplateDefinition(BaseModel):
 class CheckpointState(BaseModel):
     """Checkpoint state for job recovery after spot interruptions."""
 
+    model_config = ConfigDict(extra="forbid")
+
     job_id: str = Field(..., description="Job identifier")
     records_generated: int = Field(default=0, ge=0, description="Total records generated so far")
     current_batch: int = Field(default=0, ge=0, description="Current batch number")
@@ -268,6 +283,8 @@ class CheckpointState(BaseModel):
 class CostComponents(BaseModel):
     """Breakdown of costs by service."""
 
+    model_config = ConfigDict(extra="forbid")
+
     bedrock: float = Field(default=0.0, ge=0, description="Bedrock API costs")
     fargate: float = Field(default=0.0, ge=0, description="Fargate compute costs")
     s3: float = Field(default=0.0, ge=0, description="S3 storage/operations costs")
@@ -276,6 +293,8 @@ class CostComponents(BaseModel):
 
 class CostBreakdown(BaseModel):
     """Cost breakdown for a specific time period."""
+
+    model_config = ConfigDict(extra="forbid")
 
     job_id: str = Field(..., description="Job identifier")
     timestamp: datetime = Field(
@@ -361,6 +380,8 @@ class CostBreakdown(BaseModel):
 
 class QueueItem(BaseModel):
     """Queue item for job scheduling."""
+
+    model_config = ConfigDict(extra="forbid")
 
     status: JobStatus = Field(..., description="Queue status (QUEUED, RUNNING, COMPLETED)")
     job_id: str = Field(..., description="Job identifier")

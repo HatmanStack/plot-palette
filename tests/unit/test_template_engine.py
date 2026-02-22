@@ -457,5 +457,35 @@ class TestTemplateSyntaxValidation:
         assert is_valid is True
 
 
+class TestSandboxedEnvironment:
+    """Test that template engine uses SandboxedEnvironment."""
+
+    def test_sandbox_rejects_dunder_access(self):
+        """Test that sandboxed env raises SecurityError on dunder access."""
+        from jinja2.sandbox import SecurityError
+
+        engine = TemplateEngine()
+        step_def = {
+            'id': 'test',
+            'prompt': '{{ "".__class__.__mro__ }}'
+        }
+        context = {}
+
+        with pytest.raises(SecurityError):
+            engine.render_step(step_def, context)
+
+    def test_sandbox_allows_normal_templates(self):
+        """Test that sandboxed env allows normal template rendering."""
+        engine = TemplateEngine()
+        step_def = {
+            'id': 'test',
+            'prompt': 'Hello {{ name }}, you are {{ age }} years old.'
+        }
+        context = {'name': 'Alice', 'age': 30}
+
+        rendered = engine.render_step(step_def, context)
+        assert rendered == 'Hello Alice, you are 30 years old.'
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
