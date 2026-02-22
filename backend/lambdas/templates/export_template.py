@@ -22,7 +22,7 @@ except ImportError:
     yaml = None
 
 from lambda_responses import error_response
-from utils import sanitize_error_message, setup_logger
+from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -48,6 +48,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         Dict: API Gateway response with YAML content
     """
     try:
+        set_correlation_id(extract_request_id(event))
+
         # Check YAML library availability
         if yaml is None:
             logger.error("PyYAML not available")

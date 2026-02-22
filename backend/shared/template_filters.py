@@ -16,6 +16,33 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex to reject dangerous SSTI patterns before parsing
+_DANGEROUS_PATTERNS = re.compile(
+    r"__\w+__|"
+    r"\battr\s*\(|\bgetattr\s*\(|\bsetattr\s*\(|"
+    r"\bimport\s*\(|\beval\s*\(|\bexec\s*\(|\bopen\s*\(|"
+    r"\bos\.",
+    re.IGNORECASE,
+)
+
+# Pre-compiled regex patterns for hot-path functions
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?]+")
+_WORD_RE = re.compile(r"\b\w+\b")
+_STYLE_PATTERNS = {
+    "poetic": re.compile(r"\b(poet|poetry|verse|lyrical)\b", re.IGNORECASE),
+    "narrative": re.compile(r"\b(story|narrative|tale|chronicle)\b", re.IGNORECASE),
+    "descriptive": re.compile(r"\b(describe|vivid|detailed)\b", re.IGNORECASE),
+    "minimalist": re.compile(r"\b(minimal|sparse|concise|brief)\b", re.IGNORECASE),
+    "verbose": re.compile(r"\b(elaborate|detailed|extensive)\b", re.IGNORECASE),
+    "dramatic": re.compile(r"\b(drama|theatrical|intense)\b", re.IGNORECASE),
+}
+_MD_HEADER_RE = re.compile(r"#+\s+")
+_MD_BOLD_RE = re.compile(r"\*\*(.*?)\*\*")
+_MD_ITALIC_RE = re.compile(r"\*(.*?)\*")
+_MD_LINK_RE = re.compile(r"\[(.*?)\]\(.*?\)")
+_MD_CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
+_MD_INLINE_CODE_RE = re.compile(r"`(.*?)`")
+
 
 def random_sentence(text: str) -> str:
     """
@@ -30,7 +57,7 @@ def random_sentence(text: str) -> str:
     if not text:
         return ""
 
-    sentences = re.split(r"[.!?]+", text)
+    sentences = _SENTENCE_SPLIT_RE.split(text)
     sentences = [s.strip() for s in sentences if s.strip()]
 
     return random.choice(sentences) if sentences else text
@@ -76,17 +103,8 @@ def writing_style(biography: str) -> str:
 
     style_keywords = []
 
-    style_patterns = {
-        "poetic": r"\b(poet|poetry|verse|lyrical)\b",
-        "narrative": r"\b(story|narrative|tale|chronicle)\b",
-        "descriptive": r"\b(describe|vivid|detailed)\b",
-        "minimalist": r"\b(minimal|sparse|concise|brief)\b",
-        "verbose": r"\b(elaborate|detailed|extensive)\b",
-        "dramatic": r"\b(drama|theatrical|intense)\b",
-    }
-
-    for style, pattern in style_patterns.items():
-        if re.search(pattern, biography, re.IGNORECASE):
+    for style, pattern in _STYLE_PATTERNS.items():
+        if pattern.search(biography):
             style_keywords.append(style)
 
     return ", ".join(style_keywords) if style_keywords else "general"
@@ -180,7 +198,7 @@ def extract_keywords(text: str, count: int = 5) -> list[str]:
     }
 
     # Extract words
-    words = re.findall(r"\b\w+\b", text.lower())
+    words = _WORD_RE.findall(text.lower())
     words = [w for w in words if w not in stop_words and len(w) > 3]
 
     # Count frequency
@@ -204,7 +222,7 @@ def summarize_text(text: str, max_sentences: int = 3) -> str:
     if not text:
         return ""
 
-    sentences = re.split(r"[.!?]+", text)
+    sentences = _SENTENCE_SPLIT_RE.split(text)
     sentences = [s.strip() for s in sentences if s.strip()]
 
     if not sentences:
@@ -243,17 +261,17 @@ def remove_markdown(text: str) -> str:
         return ""
 
     # Remove headers
-    text = re.sub(r"#+\s+", "", text)
+    text = _MD_HEADER_RE.sub("", text)
     # Remove bold
-    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    text = _MD_BOLD_RE.sub(r"\1", text)
     # Remove italic
-    text = re.sub(r"\*(.*?)\*", r"\1", text)
+    text = _MD_ITALIC_RE.sub(r"\1", text)
     # Remove links
-    text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)
+    text = _MD_LINK_RE.sub(r"\1", text)
     # Remove code blocks
-    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    text = _MD_CODE_BLOCK_RE.sub("", text)
     # Remove inline code
-    text = re.sub(r"`(.*?)`", r"\1", text)
+    text = _MD_INLINE_CODE_RE.sub(r"\1", text)
 
     return text
 
@@ -301,6 +319,13 @@ def validate_template_syntax(template_def: dict[str, Any]) -> tuple[bool, str]:
             prompt = step.get("prompt", "")
             if not prompt:
                 return False, f"Step '{step.get('id', 'unknown')}' has empty prompt"
+
+            # Check for dangerous SSTI patterns before parsing
+            if _DANGEROUS_PATTERNS.search(prompt):
+                return (
+                    False,
+                    f"Step '{step.get('id', 'unknown')}' contains forbidden pattern",
+                )
 
             # Try to parse template
             try:

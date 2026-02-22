@@ -13,6 +13,7 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 import jinja2
+from jinja2.sandbox import SandboxedEnvironment
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -42,9 +43,9 @@ class TemplateEngine:
             if dynamodb_client:
                 self.dynamodb = dynamodb_client
             else:
-                import boto3
+                from aws_clients import get_dynamodb_resource
 
-                self.dynamodb = boto3.resource("dynamodb")
+                self.dynamodb = get_dynamodb_resource()
 
             table_name = os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates")
             self.templates_table = self.dynamodb.Table(table_name)
@@ -53,8 +54,8 @@ class TemplateEngine:
             self.dynamodb = None
             logger.warning(f"Failed to initialize DynamoDB template loader: {str(e)}")
 
-        # Create Jinja2 environment with custom loader (no autoescape — prompts are plain text, not HTML)
-        self.env = jinja2.Environment(  # nosec B701 — LLM prompts are plain text, not HTML
+        # Create sandboxed Jinja2 environment (no autoescape — prompts are plain text, not HTML)
+        self.env = SandboxedEnvironment(
             loader=jinja2.FunctionLoader(self.load_template_string),
             autoescape=False,
             trim_blocks=True,
@@ -138,7 +139,7 @@ class TemplateEngine:
     ) -> dict[str, Any]:
         """Execute multi-step template with Bedrock calls."""
         context = seed_data.copy()
-        results = {}
+        results: dict[str, Any] = {}
 
         steps = template_def.get("steps", [])
         if not steps:

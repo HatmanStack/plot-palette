@@ -359,3 +359,48 @@ def test_validate_template_syntax_error_sanitized():
     # Should either pass validation or return a sanitized error
     assert isinstance(message, str)
     assert len(message) < 500
+
+
+def test_validate_rejects_dunder_access():
+    """Test that templates with dunder access patterns are rejected."""
+    template_def = {
+        'steps': [
+            {
+                'id': 'step1',
+                'prompt': '{{ "".__class__.__mro__ }}'
+            }
+        ]
+    }
+    valid, message = validate_template_syntax(template_def)
+    assert valid is False
+    assert "forbidden pattern" in message.lower()
+
+
+def test_validate_rejects_eval():
+    """Test that templates with eval/exec patterns are rejected."""
+    for dangerous in ['eval(', 'exec(', 'import(', 'getattr(', 'os.system']:
+        template_def = {
+            'steps': [
+                {
+                    'id': 'step1',
+                    'prompt': f'{{{{ {dangerous}"test") }}}}'
+                }
+            ]
+        }
+        valid, message = validate_template_syntax(template_def)
+        assert valid is False, f"Should reject pattern: {dangerous}"
+        assert "forbidden pattern" in message.lower()
+
+
+def test_validate_allows_normal_templates():
+    """Test that normal templates without dangerous patterns pass validation."""
+    template_def = {
+        'steps': [
+            {
+                'id': 'step1',
+                'prompt': 'Write a {{ genre }} story about {{ topic | random_word }}.'
+            }
+        ]
+    }
+    valid, message = validate_template_syntax(template_def)
+    assert valid is True

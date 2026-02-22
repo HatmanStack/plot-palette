@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
-from utils import sanitize_error_message, setup_logger
+from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -43,23 +43,35 @@ def calculate_cost_breakdown(job_id: str) -> dict[str, float]:
         Dict with bedrock, fargate, s3, and total costs
     """
     try:
-        response = cost_tracking_table.query(KeyConditionExpression=Key("job_id").eq(job_id))
-
         bedrock_cost = 0.0
         fargate_cost = 0.0
         s3_cost = 0.0
 
-        for item in response.get("Items", []):
-            estimated_cost = item.get("estimated_cost", 0.0)
+        # Paginate to accumulate cost across all pages
+        last_key = None
+        while True:
+            query_kwargs: dict[str, Any] = {
+                "KeyConditionExpression": Key("job_id").eq(job_id),
+            }
+            if last_key:
+                query_kwargs["ExclusiveStartKey"] = last_key
+            response = cost_tracking_table.query(**query_kwargs)
 
-            # If estimated_cost is a dict with breakdown
-            if isinstance(estimated_cost, dict):
-                bedrock_cost += float(estimated_cost.get("bedrock", 0.0))
-                fargate_cost += float(estimated_cost.get("fargate", 0.0))
-                s3_cost += float(estimated_cost.get("s3", 0.0))
-            else:
-                # If it's a single number, assume it's mostly Bedrock cost
-                bedrock_cost += float(estimated_cost)
+            for item in response.get("Items", []):
+                estimated_cost = item.get("estimated_cost", 0.0)
+
+                # If estimated_cost is a dict with breakdown
+                if isinstance(estimated_cost, dict):
+                    bedrock_cost += float(estimated_cost.get("bedrock", 0.0))
+                    fargate_cost += float(estimated_cost.get("fargate", 0.0))
+                    s3_cost += float(estimated_cost.get("s3", 0.0))
+                else:
+                    # If it's a single number, assume it's mostly Bedrock cost
+                    bedrock_cost += float(estimated_cost)
+
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
 
         return {
             "bedrock": round(bedrock_cost, 4),
@@ -132,6 +144,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         Dict: API Gateway response with dashboard stats
     """
     try:
+        set_correlation_id(extract_request_id(event))
+
         # Extract user ID from JWT claims
         user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
 

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import StatusBadge from './StatusBadge'
 import type { Job } from '../services/api'
 import { downloadJobExport } from '../services/api'
+import { useToast } from '../hooks/useToast'
 
 interface JobCardProps {
   job: Job
@@ -9,6 +10,8 @@ interface JobCardProps {
 }
 
 export default function JobCard({ job, onDelete }: JobCardProps) {
+  const { toast } = useToast()
+
   const progress = job['num_records'] > 0
     ? (job['records_generated'] / job['num_records']) * 100
     : 0
@@ -94,8 +97,8 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
               try {
                 const { download_url } = await downloadJobExport(job['job_id'])
                 window.open(download_url, '_blank')
-              } catch (err) {
-                console.error('Failed to download:', err)
+              } catch {
+                toast('Failed to download export', 'error')
               }
             }}
             className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"

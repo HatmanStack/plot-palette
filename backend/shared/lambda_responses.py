@@ -6,11 +6,12 @@ Eliminates duplicated error_response/success_response across 15 handlers.
 """
 
 import json
+import os
 from typing import Any
 
 CORS_HEADERS = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": os.environ.get("ALLOWED_ORIGIN", "*"),
 }
 
 

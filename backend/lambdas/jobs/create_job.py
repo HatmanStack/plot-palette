@@ -14,12 +14,20 @@ from typing import Any
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
+import uuid
+
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from constants import ExportFormat, JobStatus
 from lambda_responses import error_response, success_response
 from models import JobConfig
-from utils import generate_job_id, sanitize_error_message, setup_logger
+from utils import (
+    extract_request_id,
+    generate_job_id,
+    sanitize_error_message,
+    set_correlation_id,
+    setup_logger,
+)
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -142,6 +150,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         Dict: API Gateway response
     """
     try:
+        set_correlation_id(extract_request_id(event))
+
         # Extract user ID from JWT claims
         user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
 
@@ -153,9 +163,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         except json.JSONDecodeError:
             return error_response(400, "Invalid JSON in request body")
 
-        # Check idempotency token
-        idempotency_token = body.get("idempotency_token")
-        if idempotency_token:
+        # Check idempotency token (generate server-side if client doesn't provide one)
+        idempotency_token = body.get("idempotency_token") or str(uuid.uuid4())
+        if body.get("idempotency_token"):
             try:
                 existing = jobs_table.query(
                     IndexName="user-id-index",

@@ -5,6 +5,7 @@ This module provides utility functions for ID generation, cost calculation,
 S3 operations, logging, and data manipulation.
 """
 
+import contextvars
 import logging
 import os
 import re
@@ -24,6 +25,37 @@ from .constants import (
     PRESIGNED_URL_EXPIRATION,
     S3_PRICING,
 )
+
+# Correlation ID for request tracing across Lambda invocations
+_correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "correlation_id", default=""
+)
+
+
+def set_correlation_id(request_id: str) -> None:
+    """Set the correlation ID for the current request context."""
+    _correlation_id.set(request_id)
+
+
+def get_correlation_id() -> str:
+    """Get the current correlation ID."""
+    return _correlation_id.get()
+
+
+def extract_request_id(event: dict[str, Any]) -> str:
+    """Extract API Gateway request ID from Lambda event."""
+    return (
+        event.get("requestContext", {}).get("requestId", "")
+        or event.get("requestContext", {}).get("request_id", "")
+    )
+
+
+class CorrelationIdFilter(logging.Filter):
+    """Logging filter that adds correlation_id to log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.correlation_id = _correlation_id.get()  # type: ignore[attr-defined]
+        return True
 
 
 def sanitize_filename(filename: str) -> str:
@@ -181,7 +213,7 @@ def calculate_bedrock_cost(tokens: int, model_id: str, is_input: bool = True) ->
     if model_id not in MODEL_PRICING:
         raise ValueError(f"Unknown model ID: {model_id}")
 
-    price_per_million = MODEL_PRICING[model_id]["input" if is_input else "output"]
+    price_per_million: float = MODEL_PRICING[model_id]["input" if is_input else "output"]  # type: ignore[assignment]
     return (tokens / 1_000_000) * price_per_million
 
 
@@ -369,11 +401,14 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(level)
 
-    # Create formatter (JSON for structured logging)
+    # Create formatter (JSON for structured logging with correlation ID)
     formatter = logging.Formatter(
-        '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": %(message)s}'
+        '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "correlation_id": "%(correlation_id)s", "message": %(message)s}'
     )
     handler.setFormatter(formatter)
+
+    # Add correlation ID filter
+    handler.addFilter(CorrelationIdFilter())
 
     # Add handler to logger
     if not logger.handlers:

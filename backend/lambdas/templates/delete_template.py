@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
-from utils import sanitize_error_message, setup_logger
+from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -76,6 +76,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         Dict: API Gateway response
     """
     try:
+        set_correlation_id(extract_request_id(event))
+
         # Extract user ID from JWT claims
         user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
 
@@ -121,14 +123,20 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 )
                 return error_response(409, "Cannot delete template - it is currently in use")
 
-        # Delete all versions
+        # Delete all versions (with ownership condition to prevent TOCTOU race)
         try:
             for template in templates:
                 templates_table.delete_item(
-                    Key={"template_id": template_id, "version": template["version"]}
+                    Key={"template_id": template_id, "version": template["version"]},
+                    ConditionExpression="user_id = :uid",
+                    ExpressionAttributeValues={":uid": user_id},
                 )
 
         except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return error_response(
+                    409, "Template ownership changed during deletion, please retry"
+                )
             logger.error(json.dumps({"event": "template_delete_error", "error": str(e)}))
             return error_response(500, "Error deleting template")
 

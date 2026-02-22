@@ -68,8 +68,7 @@ jobs:
         run: ruff format --check backend/
 
       - name: Type check
-        continue-on-error: true
-        run: cd backend && mypy lambdas/ ecs_tasks/ --config-file pyproject.toml --warn-unused-ignores
+        run: cd backend && mypy lambdas/ ecs_tasks/ --config-file pyproject.toml
 
       - name: Security scan
         run: |

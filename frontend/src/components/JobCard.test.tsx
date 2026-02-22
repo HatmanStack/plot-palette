@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BrowserRouter } from 'react-router-dom'
+import { ToastProvider } from '../contexts/ToastContext'
 import JobCard from './JobCard'
 import type { Job } from '../services/api'
 
@@ -33,7 +34,9 @@ describe('JobCard', () => {
   const renderJobCard = (job: Job) => {
     return render(
       <BrowserRouter>
-        <JobCard job={job} onDelete={mockOnDelete} />
+        <ToastProvider>
+          <JobCard job={job} onDelete={mockOnDelete} />
+        </ToastProvider>
       </BrowserRouter>
     )
   }

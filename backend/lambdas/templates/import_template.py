@@ -24,7 +24,13 @@ except ImportError:
 
 from lambda_responses import error_response, success_response
 from template_filters import validate_template_syntax
-from utils import generate_template_id, sanitize_error_message, setup_logger
+from utils import (
+    extract_request_id,
+    generate_template_id,
+    sanitize_error_message,
+    set_correlation_id,
+    setup_logger,
+)
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -50,6 +56,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         Dict: API Gateway response with new template_id
     """
     try:
+        set_correlation_id(extract_request_id(event))
+
         # Check YAML library availability
         if yaml is None:
             logger.error("PyYAML not available")

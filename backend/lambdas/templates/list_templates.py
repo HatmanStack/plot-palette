@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
-from utils import sanitize_error_message, setup_logger
+from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -43,6 +43,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         Dict: API Gateway response with list of templates
     """
     try:
+        set_correlation_id(extract_request_id(event))
+
         # Extract user ID from JWT claims
         user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
 
@@ -64,21 +66,33 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         all_templates = user_templates.copy()
 
-        # Get public templates if requested
+        # Get public templates if requested (paginated with cap)
+        # TODO: Add GSI on is_public for better performance at scale
         if include_public:
+            max_public = 100
             try:
-                public_response = templates_table.scan(
-                    FilterExpression=Attr("is_public").eq(True) & Attr("user_id").ne(user_id)
-                )
-                public_templates = public_response.get("Items", [])
-                all_templates.extend(public_templates)
+                public_templates: list[Any] = []
+                last_key = None
+                while len(public_templates) < max_public:
+                    scan_kwargs: dict[str, Any] = {
+                        "FilterExpression": Attr("is_public").eq(True)
+                        & Attr("user_id").ne(user_id),
+                    }
+                    if last_key:
+                        scan_kwargs["ExclusiveStartKey"] = last_key
+                    public_response = templates_table.scan(**scan_kwargs)
+                    public_templates.extend(public_response.get("Items", []))
+                    last_key = public_response.get("LastEvaluatedKey")
+                    if not last_key:
+                        break
+                all_templates.extend(public_templates[:max_public])
             except ClientError as e:
                 logger.error(json.dumps({"event": "scan_public_templates_error", "error": str(e)}))
                 # Continue with just user templates if public scan fails
                 pass
 
         # Group by template_id and keep only latest version
-        template_dict = {}
+        template_dict: dict[str, Any] = {}
         for template in all_templates:
             template_id = template["template_id"]
             version = template.get("version", 1)

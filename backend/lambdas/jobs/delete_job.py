@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
-from utils import sanitize_error_message, setup_logger
+from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -121,6 +121,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         Dict: API Gateway response
     """
     try:
+        set_correlation_id(extract_request_id(event))
+
         # Extract user ID from JWT claims
         user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
 
@@ -284,10 +286,24 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             # Delete cost tracking records
             delete_cost_tracking_records(job_id)
 
-            # Delete job record
+            # Delete job record (only if still in terminal status)
             try:
-                jobs_table.delete_item(Key={"job_id": job_id})
+                jobs_table.delete_item(
+                    Key={"job_id": job_id},
+                    ConditionExpression="#status IN (:completed, :failed, :cancelled, :budget)",
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":completed": "COMPLETED",
+                        ":failed": "FAILED",
+                        ":cancelled": "CANCELLED",
+                        ":budget": "BUDGET_EXCEEDED",
+                    },
+                )
             except ClientError as e:
+                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    return error_response(
+                        409, "Job status changed during deletion, please retry"
+                    )
                 logger.error(json.dumps({"event": "job_delete_error", "error": str(e)}))
                 return error_response(500, "Error deleting job")
 

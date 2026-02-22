@@ -57,6 +57,7 @@ Globals:
         SUBNET_IDS: !Ref SubnetIds
         SECURITY_GROUP_ID: !Ref SecurityGroupId
         STATE_MACHINE_ARN: !Ref StateMachineArn
+        ALLOWED_ORIGIN: !Select [0, !Ref AllowedOrigins]
     LoggingConfig:
       LogGroup: !Ref LambdaLogGroup
       LogFormat: JSON
