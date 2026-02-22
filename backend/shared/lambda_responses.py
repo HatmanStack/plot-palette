@@ -28,7 +28,7 @@ def error_response(status_code: int, message: str) -> dict[str, Any]:
     """
     return {
         "statusCode": status_code,
-        "headers": CORS_HEADERS,
+        "headers": CORS_HEADERS.copy(),
         "body": json.dumps({"error": message}),
     }
 
@@ -47,6 +47,6 @@ def success_response(status_code: int, body: Any, **json_kwargs: Any) -> dict[st
     """
     return {
         "statusCode": status_code,
-        "headers": CORS_HEADERS,
+        "headers": CORS_HEADERS.copy(),
         "body": json.dumps(body, **json_kwargs),
     }

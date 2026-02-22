@@ -1,4 +1,4 @@
-import { createContext, useCallback, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 type ToastType = 'success' | 'error' | 'info'
 
@@ -20,16 +20,31 @@ let nextId = 0
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
+
+  useEffect(() => {
+    const timers = timersRef.current
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer))
+    }
+  }, [])
 
   const toast = useCallback((message: string, type: ToastType = 'info') => {
     const id = nextId++
     setToasts((prev) => [...prev, { id, message, type }])
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
+      timersRef.current.delete(id)
     }, 5000)
+    timersRef.current.set(id, timer)
   }, [])
 
   const dismiss = useCallback((id: number) => {
+    const timer = timersRef.current.get(id)
+    if (timer) {
+      clearTimeout(timer)
+      timersRef.current.delete(id)
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
@@ -51,6 +66,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <span className="text-sm">{t.message}</span>
             <button
               onClick={() => dismiss(t.id)}
+              aria-label="Dismiss notification"
               className="text-white/80 hover:text-white text-lg leading-none"
             >
               &times;

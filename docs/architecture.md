@@ -33,7 +33,7 @@ graph TD
 
 ## Design Decisions
 
-**DynamoDB (not RDS)** -- Pay-per-request billing matches bursty Lambda access patterns. No connection pool management. Single-digit millisecond reads for dashboard polling. Five tables keep partition keys simple and hot-key-free.
+**DynamoDB (not RDS)** -- Pay-per-request billing matches burst-driven Lambda access patterns. No connection pool management. Single-digit millisecond reads for dashboard polling. Five tables keep partition keys simple and hot-key-free.
 
 **Fargate Spot (not Lambda)** -- Generation jobs run 10-60 minutes with large memory footprints (seed data + batch buffers). Lambda's 15-minute timeout and 10 GB memory cap are insufficient. Fargate Spot provides up to 70% cost savings over on-demand, with a 120-second interruption notice that the checkpoint system handles.
 

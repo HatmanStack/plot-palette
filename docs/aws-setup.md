@@ -32,7 +32,7 @@ The deploy script prompts for:
 |--------|-------------|---------|
 | Stack Name | CloudFormation stack name | `plot-palette` |
 | AWS Region | Deployment region | `us-east-1` |
-| Environment | `development` or `production` | `development` |
+| Environment | `dev`, `staging`, or `prod` | `dev` |
 
 After deployment completes, SAM outputs the values needed for `.env`:
 

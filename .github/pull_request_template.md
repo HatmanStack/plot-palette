@@ -6,8 +6,6 @@
 
 <!-- Brief description of the changes -->
 
--
-
 ## Scope & Risk
 
 - **Area**: <!-- backend / frontend / infra / ci -->
