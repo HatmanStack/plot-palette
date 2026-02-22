@@ -378,6 +378,69 @@ class CostBreakdown(BaseModel):
         )
 
 
+class NotificationPreferences(BaseModel):
+    """Per-user notification preferences for job status alerts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = Field(..., description="User identifier")
+    email_enabled: bool = Field(default=False, description="Whether email notifications are enabled")
+    email_address: str | None = Field(None, description="Email address for notifications")
+    webhook_enabled: bool = Field(default=False, description="Whether webhook notifications are enabled")
+    webhook_url: str | None = Field(None, description="Webhook URL for notifications (HTTPS only)")
+    notify_on_complete: bool = Field(default=True, description="Notify when job completes")
+    notify_on_failure: bool = Field(default=True, description="Notify when job fails")
+    notify_on_budget_exceeded: bool = Field(default=True, description="Notify when budget exceeded")
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Last update timestamp"
+    )
+
+    @field_validator("webhook_url")
+    @classmethod
+    def validate_webhook_url(cls, v):
+        """Webhook URL must be HTTPS if provided."""
+        if v is not None and not v.startswith("https://"):
+            raise ValueError("Webhook URL must start with https://")
+        return v
+
+    def to_table_item(self) -> dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        item: dict[str, Any] = {
+            "user_id": self.user_id,
+            "email_enabled": self.email_enabled,
+            "webhook_enabled": self.webhook_enabled,
+            "notify_on_complete": self.notify_on_complete,
+            "notify_on_failure": self.notify_on_failure,
+            "notify_on_budget_exceeded": self.notify_on_budget_exceeded,
+            "updated_at": self.updated_at.isoformat(),
+        }
+        if self.email_address is not None:
+            item["email_address"] = self.email_address
+        if self.webhook_url is not None:
+            item["webhook_url"] = self.webhook_url
+        return item
+
+    @classmethod
+    def from_dynamodb(cls, item: dict[str, Any]) -> "NotificationPreferences":
+        """Create NotificationPreferences from DynamoDB table item."""
+        return cls(
+            user_id=item["user_id"],
+            email_enabled=item.get("email_enabled", False),
+            email_address=item.get("email_address"),
+            webhook_enabled=item.get("webhook_enabled", False),
+            webhook_url=item.get("webhook_url"),
+            notify_on_complete=item.get("notify_on_complete", True),
+            notify_on_failure=item.get("notify_on_failure", True),
+            notify_on_budget_exceeded=item.get("notify_on_budget_exceeded", True),
+            updated_at=datetime.fromisoformat(item["updated_at"]),
+        )
+
+    @classmethod
+    def defaults(cls, user_id: str) -> "NotificationPreferences":
+        """Return default preferences for a user with no saved preferences."""
+        return cls(user_id=user_id)
+
+
 class QueueItem(BaseModel):
     """Queue item for job scheduling."""
 
