@@ -77,6 +77,7 @@ export async function createJob(jobData: {
   budget_limit: number
   num_records: number
   output_format?: string
+  template_version?: number
 }): Promise<Job> {
   const { data } = await apiClient.post('/jobs', jobData)
   return JobSchema.parse(data)

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import CreateJob from './CreateJob'
 import * as api from '../services/api'
@@ -9,6 +10,7 @@ import * as api from '../services/api'
 vi.mock('../services/api', () => ({
   createJob: vi.fn(),
   generateUploadUrl: vi.fn(),
+  fetchTemplateVersions: vi.fn(),
 }))
 
 // Mock axios for S3 upload
@@ -30,17 +32,33 @@ vi.mock('react-router-dom', async () => {
 
 const mockCreateJob = vi.mocked(api.createJob)
 const mockGenerateUploadUrl = vi.mocked(api.generateUploadUrl)
+const mockFetchTemplateVersions = vi.mocked(api.fetchTemplateVersions)
+
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+    },
+  })
+}
 
 describe('CreateJob', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockFetchTemplateVersions.mockResolvedValue([
+      { version: 3, name: 'v3', description: '', created_at: '2025-01-03T00:00:00' },
+      { version: 2, name: 'v2', description: '', created_at: '2025-01-02T00:00:00' },
+      { version: 1, name: 'v1', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
   })
 
   const renderCreateJob = () => {
     return render(
-      <MemoryRouter>
-        <CreateJob />
-      </MemoryRouter>
+      <QueryClientProvider client={createTestQueryClient()}>
+        <MemoryRouter>
+          <CreateJob />
+        </MemoryRouter>
+      </QueryClientProvider>
     )
   }
 
@@ -115,6 +133,46 @@ describe('CreateJob', () => {
     })
   })
 
+  describe('Template version selection', () => {
+    it('shows version dropdown after template ID is entered', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Template Version')).toBeInTheDocument()
+      })
+    })
+
+    it('defaults to Latest version', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      await waitFor(() => {
+        const select = screen.getByLabelText('Template Version') as HTMLSelectElement
+        expect(select.value).toBe('latest')
+      })
+    })
+
+    it('shows version in review step', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      // Navigate to step 4
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      // Version is shown in review
+      expect(screen.getByText('Latest')).toBeInTheDocument()
+    })
+  })
+
   describe('Step 3: Job Configuration', () => {
     it('renders budget limit input', async () => {
       const user = userEvent.setup()
@@ -123,9 +181,7 @@ describe('CreateJob', () => {
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
 
-      // Label exists but has no for/id association, so check by text
       expect(screen.getByText(/Budget Limit/)).toBeInTheDocument()
-      // Should have number inputs (budget and records)
       const spinbuttons = screen.getAllByRole('spinbutton')
       expect(spinbuttons.length).toBeGreaterThanOrEqual(1)
     })
@@ -157,7 +213,6 @@ describe('CreateJob', () => {
       const user = userEvent.setup()
       renderCreateJob()
 
-      // Navigate to step 4
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
@@ -169,7 +224,6 @@ describe('CreateJob', () => {
       const user = userEvent.setup()
       renderCreateJob()
 
-      // Navigate to step 4 without filling required fields
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
@@ -212,7 +266,6 @@ describe('CreateJob', () => {
       // Go to step 2 and upload file
       await user.click(screen.getByRole('button', { name: 'Next' }))
 
-      // Create a mock file - find input by type since no label association
       const file = new File(['{"data": "test"}'], 'test.json', { type: 'application/json' })
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
       await user.upload(fileInput, file)
@@ -238,7 +291,6 @@ describe('CreateJob', () => {
 
       renderCreateJob()
 
-      // Fill required fields
       await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
       await user.click(screen.getByRole('button', { name: 'Next' }))
 

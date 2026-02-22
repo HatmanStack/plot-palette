@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createJob, generateUploadUrl } from '../services/api'
+import { useQuery } from '@tanstack/react-query'
+import { createJob, generateUploadUrl, fetchTemplateVersions } from '../services/api'
 import { estimateCostRange } from '../constants/pricing'
 import axios from 'axios'
 
 interface WizardData {
   templateId: string
+  templateVersion: number | 'latest'
   seedDataFile: File | null
   budgetLimit: number
   numRecords: number
@@ -20,11 +22,24 @@ export default function CreateJob() {
 
   const [data, setData] = useState<WizardData>({
     templateId: '',
+    templateVersion: 'latest',
     seedDataFile: null,
     budgetLimit: 10,
     numRecords: 100,
     outputFormat: 'JSONL',
   })
+
+  // Fetch template versions when template ID is entered
+  const { data: versions, isLoading: versionsLoading } = useQuery({
+    queryKey: ['template', data.templateId, 'versions'],
+    queryFn: () => fetchTemplateVersions(data.templateId),
+    enabled: data.templateId.length > 0,
+  })
+
+  // Reset version selection when template changes
+  useEffect(() => {
+    setData((prev) => ({ ...prev, templateVersion: 'latest' }))
+  }, [data.templateId])
 
   async function handleSubmit() {
     if (!data.templateId || !data.seedDataFile) {
@@ -49,14 +64,28 @@ export default function CreateJob() {
         },
       })
 
-      // Step 3: Create job with the S3 key (user-id is handled server-side)
-      const job = await createJob({
+      // Step 3: Create job with the S3 key
+      const jobPayload: {
+        template_id: string
+        seed_data_path: string
+        budget_limit: number
+        num_records: number
+        output_format: string
+        template_version?: number
+      } = {
         template_id: data.templateId,
         seed_data_path: s3_key,
         budget_limit: data.budgetLimit,
         num_records: data.numRecords,
         output_format: data.outputFormat,
-      })
+      }
+
+      // Only pass template_version when a specific version is selected
+      if (data.templateVersion !== 'latest') {
+        jobPayload.template_version = data.templateVersion
+      }
+
+      const job = await createJob(jobPayload)
 
       navigate(`/jobs/${job.job_id}`)
     } catch (err) {
@@ -120,6 +149,37 @@ export default function CreateJob() {
                 Enter a template ID or select from the templates page
               </p>
             </div>
+
+            {/* Version selector — appears after template ID is entered */}
+            {data.templateId && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Template Version
+                </label>
+                {versionsLoading ? (
+                  <p className="text-sm text-gray-500">Loading versions...</p>
+                ) : (
+                  <select
+                    value={String(data.templateVersion)}
+                    onChange={(e) =>
+                      setData({
+                        ...data,
+                        templateVersion: e.target.value === 'latest' ? 'latest' : Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    aria-label="Template Version"
+                  >
+                    <option value="latest">Latest</option>
+                    {versions?.map((v) => (
+                      <option key={v.version} value={v.version}>
+                        Version {v.version} — {v.created_at ? new Date(v.created_at).toLocaleDateString() : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -223,6 +283,10 @@ export default function CreateJob() {
               <div className="flex justify-between">
                 <span className="font-medium">Template:</span>
                 <span>{data.templateId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-medium">Version:</span>
+                <span>{data.templateVersion === 'latest' ? 'Latest' : `Version ${data.templateVersion}`}</span>
               </div>
               <div className="flex justify-between">
                 <span className="font-medium">Seed Data:</span>
