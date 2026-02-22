@@ -260,13 +260,13 @@ feat(frontend): add cost analytics dashboard page
 **Design decision:** Full-text search in DynamoDB is limited. For MVP, client-side filtering via scan + filter is acceptable because the template volume is expected to be low (< 1000). If volume grows, migrate to OpenSearch or add a GSI on a `category` field.
 
 **Verification Checklist:**
-- [ ] Returns only public templates (no private templates leak)
-- [ ] Search query filters by name and description (case-insensitive)
-- [ ] Only latest version per template returned
-- [ ] Response omits template_definition
-- [ ] Pagination works with last_key
-- [ ] Sort by recent works
-- [ ] Empty search returns all public templates
+- [x] Returns only public templates (no private templates leak)
+- [x] Search query filters by name and description (case-insensitive)
+- [x] Only latest version per template returned
+- [x] Response omits template_definition
+- [x] Pagination works with last_key
+- [x] Sort by recent works
+- [x] Empty search returns all public templates
 
 **Testing Instructions:**
 
