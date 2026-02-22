@@ -412,15 +412,15 @@ feat(lambdas): add template fork endpoint
    - On error: toast error message
 
 **Verification Checklist:**
-- [ ] My Templates tab shows user's templates
-- [ ] Marketplace tab shows public templates
-- [ ] Search filters marketplace results
-- [ ] Fork creates copy in user's collection
-- [ ] Preview modal shows template details
-- [ ] "Create Template" navigates to editor
-- [ ] Delete removes template (with confirmation)
-- [ ] Pagination loads more results
-- [ ] Empty states for no templates / no search results
+- [x] My Templates tab shows user's templates
+- [x] Marketplace tab shows public templates
+- [x] Search filters marketplace results
+- [x] Fork creates copy in user's collection
+- [x] Preview modal shows template details
+- [x] "Create Template" navigates to editor
+- [x] Delete removes template (with confirmation)
+- [x] Pagination loads more results
+- [x] Empty states for no templates / no search results
 
 **Testing Instructions:**
 
