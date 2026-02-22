@@ -177,6 +177,97 @@ export async function createTemplate(templateData: {
   return TemplateSchema.parse(data)
 }
 
+// Cost Analytics schemas
+export const CostAnalyticsSchema = z.object({
+  summary: z.object({
+    total_spend: z.number(),
+    job_count: z.number(),
+    avg_cost_per_job: z.number(),
+    avg_cost_per_record: z.number(),
+    budget_efficiency: z.number(),
+    most_expensive_job: z.string().nullable(),
+  }),
+  time_series: z.array(z.object({
+    date: z.string(),
+    bedrock: z.number(),
+    fargate: z.number(),
+    s3: z.number(),
+    total: z.number(),
+  })),
+  by_model: z.array(z.object({
+    model_id: z.string(),
+    model_name: z.string().optional(),
+    total: z.number(),
+    job_count: z.number(),
+  })),
+})
+
+export type CostAnalytics = z.infer<typeof CostAnalyticsSchema>
+
+export async function fetchCostAnalytics(period: string = '30d', groupBy: string = 'day'): Promise<CostAnalytics> {
+  const { data } = await apiClient.get('/dashboard/cost-analytics', {
+    params: { period, group_by: groupBy },
+  })
+  return CostAnalyticsSchema.parse(data)
+}
+
+// Marketplace schemas
+export const MarketplaceTemplateSchema = z.object({
+  template_id: z.string(),
+  name: z.string(),
+  description: z.string().default(''),
+  user_id: z.string().default(''),
+  version: z.number(),
+  schema_requirements: z.array(z.string()).default([]),
+  step_count: z.number().default(0),
+  created_at: z.string().default(''),
+})
+
+export type MarketplaceTemplate = z.infer<typeof MarketplaceTemplateSchema>
+
+const MarketplaceResultsSchema = z.object({
+  templates: z.array(MarketplaceTemplateSchema),
+  count: z.number(),
+  total: z.number(),
+  last_key: z.string().optional(),
+})
+
+export type MarketplaceResults = z.infer<typeof MarketplaceResultsSchema>
+
+export async function searchMarketplaceTemplates(params: {
+  q?: string
+  sort?: string
+  limit?: number
+  lastKey?: string
+} = {}): Promise<MarketplaceResults> {
+  const { data } = await apiClient.get('/templates/marketplace', {
+    params: {
+      q: params.q,
+      sort: params.sort,
+      limit: params.limit,
+      last_key: params.lastKey,
+    },
+  })
+  return MarketplaceResultsSchema.parse(data)
+}
+
+export async function forkTemplate(templateId: string, name?: string): Promise<{ template_id: string }> {
+  const body = name ? { name } : undefined
+  const { data } = await apiClient.post(`/templates/${templateId}/fork`, body)
+  return data
+}
+
+// Template list for user's own templates
+export async function fetchUserTemplates(): Promise<Template[]> {
+  const { data } = await apiClient.get('/templates')
+  const templates = data.templates || []
+  return templates.map((t: unknown) => TemplateSchema.parse(t))
+}
+
+export async function deleteTemplate(templateId: string): Promise<void> {
+  await apiClient.delete(`/templates/${templateId}`)
+}
+
 export async function generateUploadUrl(filename: string, contentType: string = 'application/json'): Promise<{
   upload_url: string
   s3_key: string

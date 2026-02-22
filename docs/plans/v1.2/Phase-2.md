@@ -175,14 +175,14 @@ feat(lambdas): add cost analytics aggregation endpoint
    - Add route `/cost-analytics` to App.tsx
 
 **Verification Checklist:**
-- [ ] Cost Analytics page loads and shows data
-- [ ] Period selector changes data (7d/30d/90d)
-- [ ] Bar chart renders with correct proportions
-- [ ] Model breakdown table shows all models used
-- [ ] Summary cards show correct formatted values
-- [ ] Empty state shown for zero cost data
-- [ ] Sidebar navigation link works
-- [ ] Loading state shown while fetching
+- [x] Cost Analytics page loads and shows data
+- [x] Period selector changes data (7d/30d/90d)
+- [x] Bar chart renders with correct proportions
+- [x] Model breakdown table shows all models used
+- [x] Summary cards show correct formatted values
+- [x] Empty state shown for zero cost data
+- [x] Sidebar navigation link works
+- [x] Loading state shown while fetching
 
 **Testing Instructions:**
 

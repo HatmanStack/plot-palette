@@ -12,6 +12,7 @@ import CreateJob from './routes/CreateJob'
 import JobDetail from './routes/JobDetail'
 import Templates from './routes/Templates'
 import TemplateEditor from './routes/TemplateEditor'
+import CostAnalytics from './routes/CostAnalytics'
 import Settings from './routes/Settings'
 import Layout from './components/Layout'
 
@@ -40,6 +41,7 @@ function App() {
               <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/cost-analytics" element={<CostAnalytics />} />
                 <Route path="/jobs" element={<Jobs />} />
                 <Route path="/jobs/new" element={<CreateJob />} />
                 <Route path="/jobs/:jobId" element={<JobDetail />} />
