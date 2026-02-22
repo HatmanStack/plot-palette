@@ -301,9 +301,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 )
             except ClientError as e:
                 if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                    return error_response(
-                        409, "Job status changed during deletion, please retry"
-                    )
+                    return error_response(409, "Job status changed during deletion, please retry")
                 logger.error(json.dumps({"event": "job_delete_error", "error": str(e)}))
                 return error_response(500, "Error deleting job")
 

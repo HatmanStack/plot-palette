@@ -1,4 +1,4 @@
-import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 type ToastType = 'success' | 'error' | 'info'
 
@@ -17,6 +17,12 @@ export interface ToastContextValue {
 export const ToastContext = createContext<ToastContextValue | null>(null)
 
 let nextId = 0
+
+const typeStyles: Record<ToastType, string> = {
+  success: 'bg-green-600',
+  error: 'bg-red-600',
+  info: 'bg-blue-600',
+}
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -48,14 +54,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
-  const typeStyles: Record<ToastType, string> = {
-    success: 'bg-green-600',
-    error: 'bg-red-600',
-    info: 'bg-blue-600',
-  }
+  const contextValue = useMemo(() => ({ toast }), [toast])
 
   return (
-    <ToastContext.Provider value={{ toast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
         {toasts.map((t) => (

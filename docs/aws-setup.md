@@ -12,11 +12,13 @@
 Bedrock models require explicit enablement per region. In the AWS Console:
 
 1. Navigate to **Amazon Bedrock** > **Model access** in your target region (default: `us-east-1`).
-2. Request access for the models used by Plot Palette:
-   - **Meta Llama 3.1 8B Instruct** (tier-1, cheapest)
-   - **Meta Llama 3.1 70B Instruct** (tier-2, balanced)
-   - **Anthropic Claude 3.5 Sonnet** (tier-3, premium)
+2. Request access for the models referenced in `backend/shared/constants.py`:
+   - **Meta Llama 3.1 8B Instruct** (`meta.llama3-1-8b-instruct-v1:0`, tier-1)
+   - **Meta Llama 3.1 70B Instruct** (`meta.llama3-1-70b-instruct-v1:0`, tier-2)
+   - **Anthropic Claude 3.5 Sonnet** (`anthropic.claude-3-5-sonnet-20241022-v2:0`, tier-3)
 3. Wait for access to be granted (usually instant for Llama, may take minutes for Claude).
+
+> **Note:** Bedrock model availability changes over time. Check the [Model access](https://console.aws.amazon.com/bedrock/home#/modelaccess) page for current offerings. If you swap model IDs, update `TIER_TO_MODEL_ID` and `MODEL_PRICING` in `constants.py`.
 
 Without model access, generation jobs will fail with `AccessDeniedException`.
 
@@ -81,3 +83,9 @@ Plot Palette costs scale with usage. With no active jobs, costs are near zero (D
 | S3 | $0.023/GB/month + request fees | Negligible |
 
 Budget limits in job config prevent runaway costs. The worker checks accumulated cost against the budget after each batch.
+
+> Pricing estimates are approximate. See official pages for current rates:
+> [Bedrock](https://aws.amazon.com/bedrock/pricing/),
+> [Fargate](https://aws.amazon.com/fargate/pricing/),
+> [DynamoDB](https://aws.amazon.com/dynamodb/pricing/),
+> [S3](https://aws.amazon.com/s3/pricing/).

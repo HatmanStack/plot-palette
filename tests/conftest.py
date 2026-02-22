@@ -11,6 +11,9 @@ from unittest.mock import MagicMock, patch
 from datetime import datetime
 from typing import Dict, Any, Generator
 
+# Set ALLOWED_ORIGIN before any Lambda module imports (they read it at module level)
+os.environ.setdefault("ALLOWED_ORIGIN", "*")
+
 # Set up test environment variables before any imports
 @pytest.fixture(scope="session", autouse=True)
 def test_environment() -> Generator[None, None, None]:

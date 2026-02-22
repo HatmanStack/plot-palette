@@ -27,9 +27,7 @@ from .constants import (
 )
 
 # Correlation ID for request tracing across Lambda invocations
-_correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "correlation_id", default=""
-)
+_correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar("correlation_id", default="")
 
 
 def set_correlation_id(request_id: str) -> None:
@@ -44,10 +42,9 @@ def get_correlation_id() -> str:
 
 def extract_request_id(event: dict[str, Any]) -> str:
     """Extract API Gateway request ID from Lambda event."""
-    return (
-        event.get("requestContext", {}).get("requestId", "")
-        or event.get("requestContext", {}).get("request_id", "")
-    )
+    return event.get("requestContext", {}).get("requestId", "") or event.get(
+        "requestContext", {}
+    ).get("request_id", "")
 
 
 class CorrelationIdFilter(logging.Filter):

@@ -394,9 +394,7 @@ class Worker:
         self.export_data(job_id, config)
 
         if failed_records > 0:
-            logger.warning(
-                f"Job {job_id} completed with {failed_records} failed records"
-            )
+            logger.warning(f"Job {job_id} completed with {failed_records} failed records")
 
         logger.info(f"Job {job_id} completed: {checkpoint['records_generated']} records generated")
 
@@ -635,9 +633,7 @@ class Worker:
         output_tokens = tokens - input_tokens
         input_price: float = pricing["input"]  # type: ignore[assignment]
         output_price: float = pricing["output"]  # type: ignore[assignment]
-        return (input_tokens / 1_000_000) * input_price + (
-            output_tokens / 1_000_000
-        ) * output_price
+        return (input_tokens / 1_000_000) * input_price + (output_tokens / 1_000_000) * output_price
 
     def estimate_single_call_cost(self, result, model_id):
         """Estimate cost of a single Bedrock call including input and output tokens."""

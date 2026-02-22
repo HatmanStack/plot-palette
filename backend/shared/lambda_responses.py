@@ -6,12 +6,18 @@ Eliminates duplicated error_response/success_response across 15 handlers.
 """
 
 import json
+import logging
 import os
 from typing import Any
 
+_allowed_origin = os.environ.get("ALLOWED_ORIGIN")
+if not _allowed_origin:
+    logging.getLogger(__name__).warning("ALLOWED_ORIGIN not set, defaulting to 'null'")
+    _allowed_origin = "null"
+
 CORS_HEADERS = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": os.environ.get("ALLOWED_ORIGIN", "*"),
+    "Access-Control-Allow-Origin": _allowed_origin,
 }
 
 
