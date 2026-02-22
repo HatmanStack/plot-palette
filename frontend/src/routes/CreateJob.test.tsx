@@ -283,6 +283,107 @@ describe('CreateJob', () => {
     })
   })
 
+  describe('Template version in payload', () => {
+    it('passes template_version when specific version is selected', async () => {
+      const user = userEvent.setup()
+
+      mockGenerateUploadUrl.mockResolvedValueOnce({
+        upload_url: 'https://s3.example.com/upload',
+        s3_key: 'seed-data/test-file.json',
+      })
+      mockCreateJob.mockResolvedValueOnce({
+        'job_id': 'new-job-456',
+        'user_id': 'user-1',
+        status: 'QUEUED',
+        'created_at': '2024-01-01T00:00:00Z',
+        'updated_at': '2024-01-01T00:00:00Z',
+        'template_id': 'template-1',
+        'budget_limit': 10,
+        'num_records': 100,
+        'records_generated': 0,
+        'tokens_used': 0,
+        'cost_estimate': 0,
+      })
+
+      renderCreateJob()
+
+      // Fill in template ID
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      // Wait for version dropdown and select version 2
+      await waitFor(() => {
+        expect(screen.getByLabelText('Template Version')).toBeInTheDocument()
+      })
+      await user.selectOptions(screen.getByLabelText('Template Version'), '2')
+
+      // Navigate to step 2 and upload file
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      const file = new File(['{"data": "test"}'], 'test.json', { type: 'application/json' })
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      await user.upload(fileInput, file)
+
+      // Navigate to step 3 (config) and step 4 (review)
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      // Submit
+      await user.click(screen.getByRole('button', { name: 'Create Job' }))
+
+      await waitFor(() => {
+        expect(mockCreateJob).toHaveBeenCalledWith(
+          expect.objectContaining({
+            template_id: 'my-template',
+            template_version: 2,
+          })
+        )
+      })
+    })
+
+    it('omits template_version when Latest is selected', async () => {
+      const user = userEvent.setup()
+
+      mockGenerateUploadUrl.mockResolvedValueOnce({
+        upload_url: 'https://s3.example.com/upload',
+        s3_key: 'seed-data/test-file.json',
+      })
+      mockCreateJob.mockResolvedValueOnce({
+        'job_id': 'new-job-789',
+        'user_id': 'user-1',
+        status: 'QUEUED',
+        'created_at': '2024-01-01T00:00:00Z',
+        'updated_at': '2024-01-01T00:00:00Z',
+        'template_id': 'template-1',
+        'budget_limit': 10,
+        'num_records': 100,
+        'records_generated': 0,
+        'tokens_used': 0,
+        'cost_estimate': 0,
+      })
+
+      renderCreateJob()
+
+      // Fill in template ID (keeps default "Latest")
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      // Navigate through all steps
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      const file = new File(['{"data": "test"}'], 'test.json', { type: 'application/json' })
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      await user.upload(fileInput, file)
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      // Submit
+      await user.click(screen.getByRole('button', { name: 'Create Job' }))
+
+      await waitFor(() => {
+        expect(mockCreateJob).toHaveBeenCalled()
+        const payload = mockCreateJob.mock.calls[0][0]
+        expect(payload).not.toHaveProperty('template_version')
+      })
+    })
+  })
+
   describe('Error handling', () => {
     it('displays error message when API fails', async () => {
       const user = userEvent.setup()

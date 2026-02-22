@@ -15,10 +15,14 @@ vi.mock('@monaco-editor/react', () => ({
   ),
 }))
 
-// Mock API functions
+// Mock API functions — names match the actual export
+const mockUpdateTemplate = vi.fn()
+const mockCreateTemplate = vi.fn()
 vi.mock('../services/api', () => ({
   fetchTemplate: vi.fn(),
   fetchTemplateVersions: vi.fn(),
+  updateTemplate: (...args: unknown[]) => mockUpdateTemplate(...args),
+  createTemplate: (...args: unknown[]) => mockCreateTemplate(...args),
 }))
 
 const mockNavigate = vi.fn()
@@ -55,8 +59,14 @@ describe('TemplateEditor', () => {
     expect(screen.getByText('Please provide both a name and template content')).toBeInTheDocument()
   })
 
-  it('saves template and navigates on success', async () => {
-    vi.useFakeTimers()
+  it('saves template via API and navigates on success', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    mockCreateTemplate.mockResolvedValueOnce({
+      template_id: 'new-tmpl-123',
+      version: 1,
+      name: 'My Template',
+    })
+
     render(<TemplateEditor />)
 
     fireEvent.change(screen.getByPlaceholderText('e.g., Creative Writing Generator'), {
@@ -64,12 +74,11 @@ describe('TemplateEditor', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /Save/ }))
 
-    // Advance past the simulated save delay
-    await act(async () => {
-      vi.advanceTimersByTime(1000)
+    await waitFor(() => {
+      expect(screen.getByText('Template saved successfully!')).toBeInTheDocument()
     })
 
-    expect(screen.getByText('Template saved successfully!')).toBeInTheDocument()
+    expect(mockCreateTemplate).toHaveBeenCalled()
 
     // Advance past the navigate timeout
     act(() => {
@@ -134,8 +143,8 @@ describe('TemplateEditor in edit mode', () => {
       schema_requirements: ['author.name'],
     })
     vi.mocked(apiModule.fetchTemplateVersions).mockResolvedValue([
-      { version: 2, name: 'v2', description: '', created_at: '2025-01-02T00:00:00' },
-      { version: 1, name: 'v1', description: '', created_at: '2025-01-01T00:00:00' },
+      { version: 2, name: 'Updated', description: '', created_at: '2025-01-02T00:00:00' },
+      { version: 1, name: 'Initial', description: '', created_at: '2025-01-01T00:00:00' },
     ])
   })
 
@@ -149,6 +158,137 @@ describe('TemplateEditor in edit mode', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Versions')).toBeInTheDocument()
+    })
+  })
+
+  it('switches to read-only when viewing historical version', async () => {
+    // Set up so latestVersion=3, currentVersion starts at 3
+    const apiModule = await import('../services/api')
+    vi.mocked(apiModule.fetchTemplate).mockImplementation((_id, version) => {
+      const v = version === 'latest' ? 3 : (typeof version === 'number' ? version : 1)
+      return Promise.resolve({
+        template_id: 'tmpl-abc123',
+        version: v,
+        name: `Template v${v}`,
+        description: '',
+        user_id: 'user-1',
+        is_public: false,
+        is_owner: true,
+        created_at: '2025-01-01T00:00:00',
+        steps: [{ id: 'step1', prompt: 'content' }],
+        schema_requirements: [],
+      })
+    })
+    // Use distinct names that don't clash with the "v{N}" version label
+    vi.mocked(apiModule.fetchTemplateVersions).mockResolvedValue([
+      { version: 3, name: 'Third', description: '', created_at: '2025-01-03T00:00:00' },
+      { version: 2, name: 'Second', description: '', created_at: '2025-01-02T00:00:00' },
+      { version: 1, name: 'First', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
+
+    render(<TemplateEditor />)
+
+    // Wait for version list to load — use the unique name text
+    await waitFor(() => {
+      expect(screen.getByText('First')).toBeInTheDocument()
+    })
+
+    // Click on version 1's name to select it
+    fireEvent.click(screen.getByText('First'))
+
+    // Wait for the editor to become read-only
+    await waitFor(() => {
+      const editor = screen.getByTestId('monaco-editor')
+      expect(editor).toHaveAttribute('aria-readonly', 'true')
+    })
+
+    // Should show "Viewing version" indicator text
+    expect(screen.getByText(/viewing a historical version/i)).toBeInTheDocument()
+  })
+
+  it('shows Restore button when viewing historical version', async () => {
+    const apiModule = await import('../services/api')
+    vi.mocked(apiModule.fetchTemplate).mockImplementation((_id, version) => {
+      const v = version === 'latest' ? 3 : (typeof version === 'number' ? version : 1)
+      return Promise.resolve({
+        template_id: 'tmpl-abc123',
+        version: v,
+        name: `Template v${v}`,
+        description: '',
+        user_id: 'user-1',
+        is_public: false,
+        is_owner: true,
+        created_at: '2025-01-01T00:00:00',
+        steps: [{ id: 'step1', prompt: 'content' }],
+        schema_requirements: [],
+      })
+    })
+    vi.mocked(apiModule.fetchTemplateVersions).mockResolvedValue([
+      { version: 3, name: 'Third', description: '', created_at: '2025-01-03T00:00:00' },
+      { version: 1, name: 'First', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
+
+    render(<TemplateEditor />)
+
+    await waitFor(() => {
+      expect(screen.getByText('First')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('First'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Restore This Version/ })).toBeInTheDocument()
+    })
+
+    // Save button should NOT be visible when viewing historical
+    expect(screen.queryByRole('button', { name: /^Save$|^Update$/ })).not.toBeInTheDocument()
+  })
+
+  it('calls updateTemplate when restoring a historical version', async () => {
+    const apiModule = await import('../services/api')
+    vi.mocked(apiModule.fetchTemplate).mockImplementation((_id, version) => {
+      const v = version === 'latest' ? 3 : (typeof version === 'number' ? version : 1)
+      return Promise.resolve({
+        template_id: 'tmpl-abc123',
+        version: v,
+        name: `Template v${v}`,
+        description: '',
+        user_id: 'user-1',
+        is_public: false,
+        is_owner: true,
+        created_at: '2025-01-01T00:00:00',
+        steps: [{ id: 'step1', prompt: 'restored content' }],
+        schema_requirements: [],
+      })
+    })
+    vi.mocked(apiModule.fetchTemplateVersions).mockResolvedValue([
+      { version: 3, name: 'Third', description: '', created_at: '2025-01-03T00:00:00' },
+      { version: 1, name: 'First', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
+    mockUpdateTemplate.mockResolvedValueOnce({
+      template_id: 'tmpl-abc123',
+      version: 4,
+      name: 'Template v1',
+    })
+
+    render(<TemplateEditor />)
+
+    await waitFor(() => {
+      expect(screen.getByText('First')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('First'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Restore This Version/ })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Restore This Version/ }))
+
+    await waitFor(() => {
+      expect(mockUpdateTemplate).toHaveBeenCalledWith('tmpl-abc123', expect.objectContaining({
+        steps: [{ id: 'step1', prompt: 'restored content' }],
+      }))
     })
   })
 })

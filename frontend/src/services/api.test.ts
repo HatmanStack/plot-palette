@@ -9,6 +9,7 @@ vi.mock('axios', () => {
     create: vi.fn(() => mockAxios),
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
     delete: vi.fn(),
     interceptors: {
       request: {
@@ -46,6 +47,10 @@ import {
   cancelJob,
   generateUploadUrl,
   downloadPartialExport,
+  fetchTemplate,
+  fetchTemplateVersions,
+  updateTemplate,
+  createTemplate,
 } from './api'
 
 describe('API Service', () => {
@@ -305,6 +310,124 @@ describe('API Service', () => {
       mockAxios.get.mockRejectedValueOnce(new Error('Network Error'))
 
       await expect(downloadPartialExport('job-abc123')).rejects.toThrow('Network Error')
+    })
+  })
+
+  describe('fetchTemplate', () => {
+    const templateResponse = {
+      template_id: 'tmpl-123',
+      version: 2,
+      name: 'My Template',
+      description: 'A template',
+      user_id: 'user-1',
+      is_public: false,
+      is_owner: true,
+      created_at: '2025-01-01T00:00:00',
+      steps: [{ id: 'step1', prompt: 'Generate text' }],
+      schema_requirements: ['author.name'],
+    }
+
+    it('fetches template without version parameter', async () => {
+      mockAxios.get.mockResolvedValueOnce({ data: templateResponse })
+
+      const result = await fetchTemplate('tmpl-123')
+
+      expect(mockAxios.get).toHaveBeenCalledWith('/templates/tmpl-123')
+      expect(result.template_id).toBe('tmpl-123')
+      expect(result.version).toBe(2)
+    })
+
+    it('appends version=latest query parameter', async () => {
+      mockAxios.get.mockResolvedValueOnce({ data: { ...templateResponse, version: 3 } })
+
+      const result = await fetchTemplate('tmpl-123', 'latest')
+
+      expect(mockAxios.get).toHaveBeenCalledWith('/templates/tmpl-123?version=latest')
+      expect(result.version).toBe(3)
+    })
+
+    it('appends specific version number as query parameter', async () => {
+      mockAxios.get.mockResolvedValueOnce({ data: templateResponse })
+
+      await fetchTemplate('tmpl-123', 2)
+
+      expect(mockAxios.get).toHaveBeenCalledWith('/templates/tmpl-123?version=2')
+    })
+
+    it('rejects with ZodError for invalid template response', async () => {
+      mockAxios.get.mockResolvedValueOnce({ data: { invalid: true } })
+
+      await expect(fetchTemplate('tmpl-123')).rejects.toThrow(ZodError)
+    })
+  })
+
+  describe('fetchTemplateVersions', () => {
+    it('calls correct endpoint and returns parsed versions', async () => {
+      const response = {
+        template_id: 'tmpl-123',
+        versions: [
+          { version: 3, name: 'v3', description: '', created_at: '2025-01-03T00:00:00' },
+          { version: 2, name: 'v2', description: '', created_at: '2025-01-02T00:00:00' },
+          { version: 1, name: 'v1', description: '', created_at: '2025-01-01T00:00:00' },
+        ],
+      }
+      mockAxios.get.mockResolvedValueOnce({ data: response })
+
+      const result = await fetchTemplateVersions('tmpl-123')
+
+      expect(mockAxios.get).toHaveBeenCalledWith('/templates/tmpl-123/versions')
+      expect(result).toHaveLength(3)
+      expect(result[0].version).toBe(3)
+    })
+
+    it('rejects with ZodError for malformed response', async () => {
+      mockAxios.get.mockResolvedValueOnce({ data: { no_versions: true } })
+
+      await expect(fetchTemplateVersions('tmpl-123')).rejects.toThrow(ZodError)
+    })
+  })
+
+  describe('updateTemplate', () => {
+    it('sends PUT request with template data and returns parsed response', async () => {
+      const templateData = {
+        name: 'Updated Name',
+        steps: [{ id: 'step1', prompt: 'Updated prompt' }],
+      }
+      const response = {
+        template_id: 'tmpl-123',
+        version: 3,
+        name: 'Updated Name',
+        steps: [{ id: 'step1', prompt: 'Updated prompt' }],
+      }
+      mockAxios.put.mockResolvedValueOnce({ data: response })
+
+      const result = await updateTemplate('tmpl-123', templateData)
+
+      expect(mockAxios.put).toHaveBeenCalledWith('/templates/tmpl-123', templateData)
+      expect(result.version).toBe(3)
+      expect(result.name).toBe('Updated Name')
+    })
+  })
+
+  describe('createTemplate', () => {
+    it('sends POST request with template data and returns parsed response', async () => {
+      const templateData = {
+        name: 'New Template',
+        steps: [{ id: 'step1', prompt: 'Generate text' }],
+      }
+      const response = {
+        template_id: 'tmpl-new-456',
+        version: 1,
+        name: 'New Template',
+        steps: [{ id: 'step1', prompt: 'Generate text' }],
+      }
+      mockAxios.post.mockResolvedValueOnce({ data: response })
+
+      const result = await createTemplate(templateData)
+
+      expect(mockAxios.post).toHaveBeenCalledWith('/templates', templateData)
+      expect(result.template_id).toBe('tmpl-new-456')
+      expect(result.version).toBe(1)
     })
   })
 

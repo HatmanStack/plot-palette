@@ -106,4 +106,56 @@ describe('VersionList', () => {
       expect(screen.getByText(/Failed to load versions/)).toBeInTheDocument()
     })
   })
+
+  it('shows Compare button for non-current versions when onCompare is provided', async () => {
+    mockFetchVersions.mockResolvedValueOnce([
+      { version: 2, name: '', description: '', created_at: '2025-01-02T00:00:00' },
+      { version: 1, name: '', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
+
+    renderVersionList({ currentVersion: 2, onCompare: vi.fn() })
+
+    await waitFor(() => {
+      // Compare button shows only for non-current version
+      expect(screen.getByText('Compare')).toBeInTheDocument()
+    })
+
+    // Only 1 Compare button (version 1 only, not current version 2)
+    expect(screen.getAllByText('Compare')).toHaveLength(1)
+  })
+
+  it('calls onCompare when Compare button is clicked', async () => {
+    const user = userEvent.setup()
+    const onCompare = vi.fn()
+
+    mockFetchVersions.mockResolvedValueOnce([
+      { version: 2, name: '', description: '', created_at: '2025-01-02T00:00:00' },
+      { version: 1, name: '', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
+
+    renderVersionList({ currentVersion: 2, onCompare })
+
+    await waitFor(() => {
+      expect(screen.getByText('Compare')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByText('Compare'))
+
+    expect(onCompare).toHaveBeenCalledWith(1)
+  })
+
+  it('does not show Compare buttons when onCompare is not provided', async () => {
+    mockFetchVersions.mockResolvedValueOnce([
+      { version: 2, name: '', description: '', created_at: '2025-01-02T00:00:00' },
+      { version: 1, name: '', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
+
+    renderVersionList({ currentVersion: 2 })
+
+    await waitFor(() => {
+      expect(screen.getByText('v1')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Compare')).not.toBeInTheDocument()
+  })
 })

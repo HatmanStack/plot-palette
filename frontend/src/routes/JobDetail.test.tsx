@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { ToastProvider } from '../contexts/ToastContext'
 import JobDetail from './JobDetail'
 import type { Job } from '../services/api'
 import { useJobPolling } from '../hooks/useJobPolling'
@@ -33,7 +34,8 @@ const mockUseJobPolling = vi.mocked(useJobPolling)
 const mockCancelJob = vi.mocked(cancelJob)
 const mockDeleteJob = vi.mocked(deleteJob)
 const mockDownloadJobExport = vi.mocked(downloadJobExport)
-const mockDownloadPartialExport = vi.mocked(downloadPartialExport)
+// downloadPartialExport is mocked via vi.mock but not directly referenced in tests
+void downloadPartialExport
 
 function createMockJob(overrides: Partial<Job> = {}): Job {
   return {
@@ -55,7 +57,9 @@ function createMockJob(overrides: Partial<Job> = {}): Job {
 function renderJobDetail() {
   return render(
     <MemoryRouter>
-      <JobDetail />
+      <ToastProvider>
+        <JobDetail />
+      </ToastProvider>
     </MemoryRouter>
   )
 }
