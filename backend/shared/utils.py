@@ -396,6 +396,7 @@ def extract_schema_requirements(template_definition: dict[str, Any]) -> list[str
         ValueError: If template syntax is invalid
     """
     import jinja2
+    import jinja2.meta
 
     env = jinja2.Environment(autoescape=True)
     all_variables: set[str] = set()

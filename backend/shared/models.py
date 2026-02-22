@@ -7,11 +7,10 @@ and cost tracking using Pydantic for validation and serialization.
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, NotRequired
+from typing import Any, NotRequired, TypedDict
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from pydantic import BaseModel, Field, field_validator
-from typing_extensions import TypedDict
 
 from .constants import JobStatus
 
