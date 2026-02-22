@@ -688,3 +688,126 @@ npm run check
 - **Spec:** All tasks have corresponding commits and files
 - **Code Quality:** Implementation follows existing patterns; frontend components are well-structured
 - **Test Quality:** Backend tests are test theater (simulate pattern); frontend tests are behavioral but have gaps
+
+---
+
+## Review Feedback (Iteration 2) — Re-verification
+
+### Critical 1: Backend Unit Tests — RESOLVED
+
+Tests now use `handler_import.load_handler()` (new file `tests/unit/handler_import.py`) to import actual Lambda handler modules via `importlib`. The `_invoke()` helper patches module-level clients (`_mod.jobs_table`, `_mod.s3_client`, etc.) and calls the real `lambda_handler`. All `simulate_*_handler` functions have been removed.
+
+**Evidence:**
+- `tests/unit/test_download_partial.py:8` — `from tests.unit.handler_import import load_handler`
+- `tests/unit/test_download_partial.py:11-12` — `_mod = load_handler(...)`, `lambda_handler = _mod.lambda_handler`
+- `tests/unit/test_download_partial.py:59-64` — `_invoke()` patches module attrs and calls `lambda_handler(event, None)`
+- Same pattern in `test_list_versions.py` and `test_get_template.py`
+- 20 unit tests pass, all calling actual handlers
+
+### Critical 2: Phase 0 sys.path Pattern — PARTIALLY RESOLVED
+
+The `handler_import.py` helper correctly handles the mismatch between Phase 0's documented pattern (`from shared.xxx`) and the actual codebase pattern (`from xxx` with `../../shared` on path). It aliases flat module names in `sys.modules` (line 35-39). However, Phase 0's documentation at lines 109-114 still shows the incorrect pattern. This is a Phase 0 documentation issue, not a Phase 1 implementation issue.
+
+**Remaining:** Phase 0 lines 109-114 and 130 should be updated to match the actual codebase pattern in a future pass.
+
+### Critical 3: Integration Tests — RESOLVED
+
+Both integration test files now import actual handlers via `load_handler()` and invoke `lambda_handler()` with moto-backed AWS services.
+
+**Evidence:**
+- `tests/integration/test_partial_export.py:18-19` — loads actual handler
+- `tests/integration/test_partial_export.py:75` — `result = lambda_handler(_make_event(), None)`
+- `tests/integration/test_partial_export.py:77-82` — asserts on actual handler response
+- `tests/integration/test_template_versions.py:16-20` — loads both `list_versions` and `get_template` handlers
+- `tests/integration/test_template_versions.py:94` — `result = list_versions_handler(_make_list_event(), None)`
+- 9 integration tests pass, all calling actual handlers
+
+### Significant 4: TemplateEditor TODO Stubs — RESOLVED
+
+- `handleRestore()` now calls `updateTemplate(templateId, {...})` (line 156)
+- `handleSave()` now calls `updateTemplate` for existing templates and `createTemplate` for new ones (lines 193-197)
+- New API functions `updateTemplate` and `createTemplate` added to `api.ts` (lines 160-178)
+
+### Significant 5: JobDetail Toast — RESOLVED
+
+- `useToast` imported at line 5, destructured at line 12
+- All error handlers now use `toast('...', 'error')`: `handleCancel` (line 22), `handleDelete` (line 33), `handleDownload` (line 43), `handlePartialDownload` (line 54)
+
+### Significant 6: fetchTemplate/fetchTemplateVersions Tests — RESOLVED
+
+`api.test.ts` now includes:
+- `fetchTemplate` (4 tests): no version param, `version=latest`, `version=2`, ZodError on invalid response
+- `fetchTemplateVersions` (2 tests): correct endpoint + parsing, ZodError on malformed response
+- `updateTemplate` (1 test): PUT request with correct payload
+- `createTemplate` (1 test): POST request with correct payload
+
+### Significant 7: CreateJob template_version Test — RESOLVED
+
+Two new tests in `CreateJob.test.tsx`:
+- "passes template_version when specific version is selected" (line 287) — asserts `mockCreateJob` called with `expect.objectContaining({ template_version: 2 })`
+- "omits template_version when Latest is selected" (line 342) — asserts payload does `not.toHaveProperty('template_version')`
+
+### Significant 8: TemplateEditor Read-Only Mode Test — RESOLVED
+
+Three new tests in `TemplateEditor.test.tsx`:
+- "switches to read-only when viewing historical version" (line 164) — clicks version 1, asserts `aria-readonly="true"` and "viewing a historical version" text
+- "shows Restore button when viewing historical version" (line 209) — verifies Restore visible, Save/Update not visible
+- "calls updateTemplate when restoring a historical version" (line 247) — verifies `mockUpdateTemplate` called with correct steps
+
+### Minor 9: VersionList Compare Button Test — RESOLVED
+
+Three new tests in `VersionList.test.tsx`:
+- "shows Compare button for non-current versions when onCompare is provided" (line 110)
+- "calls onCompare when Compare button is clicked" (line 127)
+- "does not show Compare buttons when onCompare is not provided" (line 147)
+
+### Minor 10: PRESIGNED_URL_EXPIRATION — NOT ADDRESSED (Accepted)
+
+Download handlers still define their own `PRESIGNED_URL_EXPIRATION = 3600` locally. Acceptable — the 1-hour expiry is intentional for download operations, and Phase 0's 900 value applies to other presigned URL use cases.
+
+### Minor 11: Committed Directly to Main — NOT ADDRESSED (Historical)
+
+Cannot be retroactively changed. Future phases should use feature branches per Phase 0 guidance.
+
+---
+
+## Code Review — Phase 1
+
+### Verification Summary
+
+- **Tests:** 29 backend (20 unit + 9 integration) + 97 frontend = 126 tests, all passing
+- **Build:** Frontend compiles successfully
+- **Commits:** 13 commits total (8 implementation + 5 fixes), conventional format
+- **Spec:** All 8 tasks completed, all verification checklists satisfied
+- **Code Quality:** High — follows existing patterns, proper error handling, Zod validation
+- **Test Quality:** High — all tests call actual code (no test theater), behavioral frontend tests with proper mocking
+
+### Review Complete
+
+**Implementation Quality:** High
+**Spec Compliance:** 100%
+**Test Coverage:** Adequate (126 tests covering all features)
+**Code Quality:** High
+
+#### Key Files Changed (Implementation)
+- `backend/lambdas/jobs/download_partial.py` — Partial export handler
+- `backend/lambdas/templates/list_versions.py` — Version list handler
+- `backend/lambdas/templates/get_template.py` — version=latest support
+- `backend/lambdas/jobs/create_job.py` — Latest version resolution
+- `backend/template.yaml` — SAM resources for new endpoints
+- `frontend/src/services/api.ts` — 6 new API functions with Zod schemas
+- `frontend/src/components/VersionList.tsx` — Version history component
+- `frontend/src/components/TemplateDiffView.tsx` — Monaco DiffEditor component
+- `frontend/src/routes/JobDetail.tsx` — Partial download + toast errors
+- `frontend/src/routes/TemplateEditor.tsx` — Version sidebar, diff mode, restore
+- `frontend/src/routes/CreateJob.tsx` — Version selector in wizard
+
+#### Key Files Changed (Fix commits)
+- `tests/unit/handler_import.py` — New test helper for loading Lambda handlers
+- `tests/unit/test_download_partial.py` — Rewritten to call actual handler
+- `tests/unit/test_list_versions.py` — Rewritten to call actual handler
+- `tests/unit/test_get_template.py` — Rewritten to call actual handler
+- `tests/integration/test_partial_export.py` — Rewritten to invoke handler
+- `tests/integration/test_template_versions.py` — Rewritten to invoke handler
+
+**APPROVED**
