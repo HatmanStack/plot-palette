@@ -192,20 +192,23 @@ def test_cost_analytics_daily_aggregation():
         BillingMode="PAY_PER_REQUEST",
     )
 
-    jobs_table.put_item(Item={
-        "job_id": "job-1",
-        "user_id": "user-A",
-        "status": "COMPLETED",
-        "budget_limit": Decimal("100"),
-        "records_generated": 500,
-        "created_at": (now - timedelta(days=10)).isoformat(),
-    })
-
-    # Two cost records on different days
-    for day_offset in [8, 6]:
+    # Two jobs finishing on different days
+    for i, (jid, day_created, day_cost) in enumerate([
+        ("job-1", 10, 8),
+        ("job-2", 7, 6),
+    ]):
+        jobs_table.put_item(Item={
+            "job_id": jid,
+            "user_id": "user-A",
+            "status": "COMPLETED",
+            "budget_limit": Decimal("100"),
+            "records_generated": 500,
+            "created_at": (now - timedelta(days=day_created)).isoformat(),
+        })
+        # Each job has one final cost record (cumulative snapshot)
         cost_table.put_item(Item={
-            "job_id": "job-1",
-            "timestamp": (now - timedelta(days=day_offset)).isoformat(),
+            "job_id": jid,
+            "timestamp": (now - timedelta(days=day_cost)).isoformat(),
             "estimated_cost": {
                 "bedrock": Decimal("10.0"),
                 "fargate": Decimal("2.0"),
@@ -226,11 +229,11 @@ def test_cost_analytics_daily_aggregation():
     assert result["statusCode"] == 200
     body = json.loads(result["body"])
 
-    # 2 daily entries
+    # 2 daily entries (one per job's final record)
     assert len(body["time_series"]) == 2
     # Total: 2 * 12.5 = 25.0
     assert abs(body["summary"]["total_spend"] - 25.0) < 0.01
-    assert body["summary"]["avg_cost_per_job"] == 25.0  # 1 job
+    assert body["summary"]["avg_cost_per_job"] == 12.5  # 25.0 / 2 jobs
 
 
 @mock_aws

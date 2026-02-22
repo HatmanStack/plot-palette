@@ -82,29 +82,6 @@ class TestSearchReturnsOnlyPublic:
     """Ensure private templates never appear in marketplace results."""
 
     def test_search_returns_only_public(self):
-        """Insert public and private templates. Assert only public returned."""
-        templates = [
-            make_template("t-1", name="Public One", is_public=True),
-            make_template("t-2", name="Private One", is_public=False),
-            make_template("t-3", name="Public Two", is_public=True),
-        ]
-
-        response = _invoke(make_event(), templates)
-
-        assert response["statusCode"] == 200
-        body = json.loads(response["body"])
-        # The handler filters is_public=True via DynamoDB FilterExpression,
-        # so mock returns all but handler filters. Since we mock scan
-        # with FilterExpression, DynamoDB would only return public ones.
-        # But since our mock returns all, the handler should still only
-        # return public templates if it does its own filtering, or we
-        # need to mock the scan to only return public ones.
-        #
-        # Given the handler uses FilterExpression on DynamoDB scan,
-        # we should mock scan to return only public templates:
-        pass
-
-    def test_search_returns_only_public_corrected(self):
         """Properly mock DynamoDB FilterExpression scan results."""
         public_templates = [
             make_template("t-1", name="Public One", is_public=True),

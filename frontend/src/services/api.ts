@@ -251,10 +251,17 @@ export async function searchMarketplaceTemplates(params: {
   return MarketplaceResultsSchema.parse(data)
 }
 
-export async function forkTemplate(templateId: string, name?: string): Promise<{ template_id: string }> {
+const ForkResultSchema = z.object({
+  template_id: z.string(),
+  name: z.string().optional(),
+  version: z.number().optional(),
+  message: z.string().optional(),
+})
+
+export async function forkTemplate(templateId: string, name?: string): Promise<z.infer<typeof ForkResultSchema>> {
   const body = name ? { name } : undefined
   const { data } = await apiClient.post(`/templates/${templateId}/fork`, body)
-  return data
+  return ForkResultSchema.parse(data)
 }
 
 // Template list for user's own templates

@@ -250,6 +250,17 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             records = get_cost_records(job["job_id"])
             all_records.extend(records)
 
+        # Deduplicate: keep only the latest cost record per job.
+        # Cost records are cumulative snapshots (each contains total cost
+        # from job start), so only the final record represents actual spend.
+        latest_by_job: dict[str, dict[str, Any]] = {}
+        for record in all_records:
+            jid = record.get("job_id", "")
+            ts = record.get("timestamp", "")
+            if jid not in latest_by_job or ts > latest_by_job[jid].get("timestamp", ""):
+                latest_by_job[jid] = record
+        all_records = list(latest_by_job.values())
+
         # Build time series
         if group_by == "week":
             time_series = aggregate_by_week(all_records)

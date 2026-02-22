@@ -122,7 +122,7 @@ class TestCostAnalyticsByDay:
     """Test daily aggregation of cost data."""
 
     def test_cost_analytics_by_day(self):
-        """Mock 3 jobs with cost records across 5 days. Assert daily totals."""
+        """Mock 3 jobs with cumulative cost snapshots. Assert only final record per job used."""
         now = datetime.now(UTC)
         jobs = [
             make_job_item("job-1", created_at=(now - timedelta(days=5)).isoformat()),
@@ -136,17 +136,19 @@ class TestCostAnalyticsByDay:
         day4 = (now - timedelta(days=2)).isoformat()
         day5 = (now - timedelta(days=1)).isoformat()
 
+        # Cost records are cumulative snapshots — each record contains total
+        # cost from job start. Only the latest per job represents actual spend.
         cost_records = {
             "job-1": [
-                make_cost_record("job-1", day1, bedrock=1.0, fargate=0.5, s3=0.1),
-                make_cost_record("job-1", day2, bedrock=2.0, fargate=0.3, s3=0.05),
+                make_cost_record("job-1", day1, bedrock=2.0, fargate=0.5, s3=0.1),   # intermediate
+                make_cost_record("job-1", day2, bedrock=5.0, fargate=1.0, s3=0.2),   # final
             ],
             "job-2": [
-                make_cost_record("job-2", day3, bedrock=1.5, fargate=0.4, s3=0.08),
+                make_cost_record("job-2", day3, bedrock=3.0, fargate=0.8, s3=0.15),  # final (single)
             ],
             "job-3": [
-                make_cost_record("job-3", day4, bedrock=0.8, fargate=0.2, s3=0.03),
-                make_cost_record("job-3", day5, bedrock=3.0, fargate=1.0, s3=0.2),
+                make_cost_record("job-3", day4, bedrock=1.0, fargate=0.2, s3=0.05),  # intermediate
+                make_cost_record("job-3", day5, bedrock=4.0, fargate=1.5, s3=0.3),   # final
             ],
         }
 
@@ -156,33 +158,39 @@ class TestCostAnalyticsByDay:
         body = json.loads(response["body"])
         assert "time_series" in body
         assert "summary" in body
-        assert len(body["time_series"]) == 5
+        # Only final records kept: day2 (job-1), day3 (job-2), day5 (job-3)
+        assert len(body["time_series"]) == 3
 
-        # Verify total spend sums correctly
+        # Total spend = final records only: 6.2 + 3.95 + 5.8 = 15.95
         total = body["summary"]["total_spend"]
-        expected = (1.6) + (2.35) + (1.98) + (1.03) + (4.2)
-        assert abs(total - expected) < 0.01
+        assert abs(total - 15.95) < 0.01
 
 
 class TestCostAnalyticsByModel:
     """Test model-based aggregation."""
 
     def test_cost_analytics_by_model(self):
-        """Mock cost records with different model_ids. Assert per-model sums."""
+        """Two jobs with different models. Assert per-model sums use final records only."""
         now = datetime.now(UTC)
-        jobs = [make_job_item("job-1", created_at=(now - timedelta(days=5)).isoformat())]
+        jobs = [
+            make_job_item("job-1", created_at=(now - timedelta(days=5)).isoformat()),
+            make_job_item("job-2", created_at=(now - timedelta(days=3)).isoformat()),
+        ]
 
+        # Each job uses a single model; records are cumulative snapshots
         cost_records = {
             "job-1": [
+                make_cost_record("job-1", (now - timedelta(days=4)).isoformat(),
+                                 bedrock=1.0, fargate=0.3, s3=0.05,
+                                 model_id="meta.llama3-1-8b-instruct-v1:0"),
                 make_cost_record("job-1", (now - timedelta(days=3)).isoformat(),
-                                 bedrock=1.0, fargate=0.5, s3=0.1,
-                                 model_id="meta.llama3-1-8b-instruct-v1:0"),
-                make_cost_record("job-1", (now - timedelta(days=2)).isoformat(),
+                                 bedrock=3.0, fargate=0.8, s3=0.15,
+                                 model_id="meta.llama3-1-8b-instruct-v1:0"),  # final
+            ],
+            "job-2": [
+                make_cost_record("job-2", (now - timedelta(days=2)).isoformat(),
                                  bedrock=5.0, fargate=0.5, s3=0.1,
-                                 model_id="anthropic.claude-3-5-sonnet-20241022-v2:0"),
-                make_cost_record("job-1", (now - timedelta(days=1)).isoformat(),
-                                 bedrock=2.0, fargate=0.3, s3=0.05,
-                                 model_id="meta.llama3-1-8b-instruct-v1:0"),
+                                 model_id="anthropic.claude-3-5-sonnet-20241022-v2:0"),  # final
             ],
         }
 
@@ -193,12 +201,12 @@ class TestCostAnalyticsByModel:
         assert "by_model" in body
         assert len(body["by_model"]) == 2
 
-        # Check llama total: (1.0+0.5+0.1) + (2.0+0.3+0.05) = 3.95
+        # Llama: final record for job-1 = 3.0 + 0.8 + 0.15 = 3.95
         llama = next(m for m in body["by_model"] if "llama" in m["model_id"].lower())
         assert abs(llama["total"] - 3.95) < 0.01
         assert llama["model_name"] == "Llama 3.1 8B"
 
-        # Check claude total: (5.0+0.5+0.1) = 5.6
+        # Claude: final record for job-2 = 5.0 + 0.5 + 0.1 = 5.6
         claude = next(m for m in body["by_model"] if "claude" in m["model_id"].lower())
         assert abs(claude["total"] - 5.6) < 0.01
         assert claude["model_name"] == "Claude 3.5 Sonnet"
