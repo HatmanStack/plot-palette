@@ -14,6 +14,7 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from botocore.exceptions import ClientError
+from constants import DOWNLOAD_URL_EXPIRATION
 from lambda_responses import error_response, success_response
 from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
 
@@ -27,8 +28,6 @@ dynamodb = get_dynamodb_resource()
 s3_client = get_s3_client()
 jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs"))
 bucket_name = os.environ.get("BUCKET_NAME", "plot-palette-data")
-
-PRESIGNED_URL_EXPIRATION = 3600  # 1 hour
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -100,7 +99,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "Key": s3_key,
                     "ResponseContentDisposition": f'attachment; filename="{filename}"',
                 },
-                ExpiresIn=PRESIGNED_URL_EXPIRATION,
+                ExpiresIn=DOWNLOAD_URL_EXPIRATION,
             )
         except ClientError as e:
             logger.error(json.dumps({"event": "presigned_url_error", "error": str(e)}))
@@ -111,7 +110,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             {
                 "download_url": download_url,
                 "filename": filename,
-                "expires_in": PRESIGNED_URL_EXPIRATION,
+                "expires_in": DOWNLOAD_URL_EXPIRATION,
             },
         )
 

@@ -114,6 +114,7 @@ RETRY_BACKOFF_BASE = 2  # Exponential backoff base (seconds)
 
 # Presigned URL Configuration
 PRESIGNED_URL_EXPIRATION = 900  # Presigned URL expiration time (15 minutes)
+DOWNLOAD_URL_EXPIRATION = 3600  # Download presigned URL expiration (1 hour)
 
 # Template Engine Configuration
 MAX_TEMPLATE_STEPS = 10  # Maximum number of steps in a multi-step template
