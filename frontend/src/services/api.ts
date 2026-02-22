@@ -95,6 +95,20 @@ export async function downloadJobExport(jobId: string): Promise<{ download_url: 
   return data
 }
 
+// Partial export response schema
+const PartialExportSchema = z.object({
+  download_url: z.string(),
+  filename: z.string(),
+  records_available: z.number(),
+  format: z.string(),
+  expires_in: z.number(),
+})
+
+export async function downloadPartialExport(jobId: string): Promise<z.infer<typeof PartialExportSchema>> {
+  const { data } = await apiClient.get(`/jobs/${jobId}/download-partial`)
+  return PartialExportSchema.parse(data)
+}
+
 export async function generateUploadUrl(filename: string, contentType: string = 'application/json'): Promise<{
   upload_url: string
   s3_key: string

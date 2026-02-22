@@ -45,6 +45,7 @@ import {
   deleteJob,
   cancelJob,
   generateUploadUrl,
+  downloadPartialExport,
 } from './api'
 
 describe('API Service', () => {
@@ -280,6 +281,30 @@ describe('API Service', () => {
       await expect(interceptor!(error)).rejects.toEqual(error)
 
       expect(window.location.href).toBe(originalHref)
+    })
+  })
+
+  describe('downloadPartialExport', () => {
+    it('calls correct endpoint and returns Zod-parsed response', async () => {
+      const response = {
+        download_url: 'https://s3.example.com/partial.jsonl',
+        filename: 'job-abc123-partial.jsonl',
+        records_available: 50,
+        format: 'jsonl',
+        expires_in: 3600,
+      }
+      mockAxios.get.mockResolvedValueOnce({ data: response })
+
+      const result = await downloadPartialExport('job-abc123')
+
+      expect(mockAxios.get).toHaveBeenCalledWith('/jobs/job-abc123/download-partial')
+      expect(result).toEqual(response)
+    })
+
+    it('propagates network errors', async () => {
+      mockAxios.get.mockRejectedValueOnce(new Error('Network Error'))
+
+      await expect(downloadPartialExport('job-abc123')).rejects.toThrow('Network Error')
     })
   })
 

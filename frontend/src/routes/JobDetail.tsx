@@ -1,12 +1,14 @@
+import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useJobPolling } from '../hooks/useJobPolling'
-import { cancelJob, deleteJob, downloadJobExport } from '../services/api'
+import { cancelJob, deleteJob, downloadJobExport, downloadPartialExport } from '../services/api'
 import StatusBadge from '../components/StatusBadge'
 
 export default function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
   const { data: job, isLoading, error } = useJobPolling(jobId!)
+  const [partialDownloading, setPartialDownloading] = useState(false)
 
   async function handleCancel() {
     if (!jobId || !confirm('Are you sure you want to cancel this job?')) return
@@ -37,6 +39,19 @@ export default function JobDetail() {
       window.open(download_url, '_blank')
     } catch (err) {
       console.error('Failed to download job:', err)
+    }
+  }
+
+  async function handlePartialDownload() {
+    if (!jobId) return
+    setPartialDownloading(true)
+    try {
+      const { download_url } = await downloadPartialExport(jobId)
+      window.open(download_url, '_blank')
+    } catch (err) {
+      console.error('Failed to download partial results:', err)
+    } finally {
+      setPartialDownloading(false)
     }
   }
 
@@ -197,6 +212,16 @@ export default function JobDetail() {
                   className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
                 >
                   Download Exports
+                </button>
+              )}
+
+              {job.status !== 'COMPLETED' && job['records_generated'] > 0 && (
+                <button
+                  onClick={handlePartialDownload}
+                  disabled={partialDownloading}
+                  className="w-full px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                >
+                  {partialDownloading ? 'Preparing...' : `Download Partial Results (${job['records_generated']} records)`}
                 </button>
               )}
 

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import StatusBadge from './StatusBadge'
 import type { Job } from '../services/api'
-import { downloadJobExport } from '../services/api'
+import { downloadJobExport, downloadPartialExport } from '../services/api'
 import { useToast } from '../hooks/useToast'
 
 interface JobCardProps {
@@ -104,6 +104,21 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
             className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
           >
             Download
+          </button>
+        )}
+        {job.status !== 'COMPLETED' && job['records_generated'] > 0 && (
+          <button
+            onClick={async () => {
+              try {
+                const { download_url } = await downloadPartialExport(job['job_id'])
+                window.open(download_url, '_blank')
+              } catch {
+                toast('Failed to download partial results', 'error')
+              }
+            }}
+            className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors text-sm"
+          >
+            Partial
           </button>
         )}
         {(job.status === 'RUNNING' || job.status === 'QUEUED') && (
