@@ -55,7 +55,7 @@ cd frontend && npx vitest run src/test/someFile.test.tsx
 
 ### Python (backend)
 
-- **Linter**: ruff (E, W, F, I, B, C4 rules)
+- **Linter**: ruff (E, W, F, I, B, C4, UP rules)
 - **Type checker**: mypy (strict mode)
 - **Line length**: 100 characters
 - **Formatter**: ruff format

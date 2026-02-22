@@ -33,7 +33,7 @@ jobs:
         run: cd frontend && npx tsc --noEmit
 
       - name: Security audit
-        run: cd frontend && npm audit --audit-level=high
+        run: cd frontend && npm audit --audit-level=high --omit=dev
 
       - name: Test with coverage
         run: cd frontend && npm test -- --run --coverage

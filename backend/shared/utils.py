@@ -12,7 +12,7 @@ import sys
 import uuid
 from datetime import datetime
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -218,7 +218,7 @@ def calculate_s3_cost(puts: int = 0, gets: int = 0) -> float:
     return put_cost + get_cost
 
 
-def get_nested_field(data: Dict[str, Any], field_path: str) -> Any:
+def get_nested_field(data: dict[str, Any], field_path: str) -> Any:
     """
     Get value from nested dictionary using dot notation.
 
@@ -246,7 +246,7 @@ def get_nested_field(data: Dict[str, Any], field_path: str) -> Any:
     return current
 
 
-def set_nested_field(data: Dict[str, Any], field_path: str, value: Any) -> None:
+def set_nested_field(data: dict[str, Any], field_path: str, value: Any) -> None:
     """
     Set value in nested dictionary using dot notation.
 
@@ -382,9 +382,42 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     return logger
 
 
-def validate_seed_data(
-    data: Dict[str, Any], required_fields: list[str]
-) -> tuple[bool, Optional[str]]:
+def extract_schema_requirements(template_definition: dict[str, Any]) -> list[str]:
+    """
+    Extract all {{ variable }} references from a Jinja2 template definition.
+
+    Args:
+        template_definition: Template definition dictionary with steps
+
+    Returns:
+        Sorted list of unique variable references
+
+    Raises:
+        ValueError: If template syntax is invalid
+    """
+    import jinja2
+    import jinja2.meta
+
+    env = jinja2.Environment(autoescape=True)
+    all_variables: set[str] = set()
+
+    try:
+        for step in template_definition.get("steps", []):
+            prompt = step.get("prompt", "")
+            parsed_template = env.parse(prompt)
+            variables = jinja2.meta.find_undeclared_variables(parsed_template)
+            all_variables.update(variables)
+
+        built_ins = {"steps", "loop", "range", "dict", "list"}
+        schema_vars = [v for v in all_variables if v not in built_ins]
+
+        return sorted(schema_vars)
+
+    except jinja2.TemplateSyntaxError as e:
+        raise ValueError(f"Invalid template syntax: {str(e)}") from e
+
+
+def validate_seed_data(data: dict[str, Any], required_fields: list[str]) -> tuple[bool, str | None]:
     """
     Validate that seed data contains all required fields.
 
@@ -393,7 +426,7 @@ def validate_seed_data(
         required_fields: List of required field paths (dot notation)
 
     Returns:
-        tuple[bool, Optional[str]]: (is_valid, error_message)
+        tuple[bool, str | None]: (is_valid, error_message)
 
     Examples:
         >>> data = {"author": {"name": "Jane"}}

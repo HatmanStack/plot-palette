@@ -10,7 +10,7 @@ import logging
 import random
 import re
 from collections import Counter
-from typing import Any, List, Tuple
+from typing import Any
 
 from botocore.exceptions import ClientError
 
@@ -121,7 +121,7 @@ def truncate_tokens(text: str, max_tokens: int) -> str:
     return truncated + "..."
 
 
-def extract_keywords(text: str, count: int = 5) -> List[str]:
+def extract_keywords(text: str, count: int = 5) -> list[str]:
     """
     Extract top N keywords from text using frequency analysis.
 
@@ -274,7 +274,7 @@ def json_safe(obj: Any) -> str:
         return str(obj)
 
 
-def validate_template_syntax(template_def: dict) -> Tuple[bool, str]:
+def validate_template_syntax(template_def: dict[str, Any]) -> tuple[bool, str]:
     """
     Validate Jinja2 syntax in template definition.
 
@@ -322,7 +322,9 @@ def validate_template_syntax(template_def: dict) -> Tuple[bool, str]:
         return False, f"Template validation error: {sanitize_error_message(str(e))}"
 
 
-def validate_template_includes(template_def: dict, templates_table) -> Tuple[bool, str]:
+def validate_template_includes(
+    template_def: dict[str, Any], templates_table: Any
+) -> tuple[bool, str]:
     """
     Validate that all included templates exist in DynamoDB.
 

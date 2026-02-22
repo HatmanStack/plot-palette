@@ -7,9 +7,10 @@ pattern for protecting against cascading failures.
 
 import logging
 import time
+from collections.abc import Callable
 from functools import wraps
 from threading import Lock
-from typing import Callable, Optional, Set, Tuple, Type
+from typing import Any
 
 from botocore.exceptions import ClientError
 
@@ -17,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 # Exceptions that should trigger retries
-RETRYABLE_EXCEPTIONS: Tuple[Type[Exception], ...] = (
+RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
     ClientError,  # AWS SDK errors (includes throttling)
 )
 
 # AWS error codes that are retryable
-RETRYABLE_ERROR_CODES: Set[str] = {
+RETRYABLE_ERROR_CODES: set[str] = {
     "ThrottlingException",
     "Throttling",
     "RequestLimitExceeded",
@@ -70,7 +71,7 @@ class CircuitBreaker:
 
         self._state = self.CLOSED
         self._failure_count = 0
-        self._last_failure_time: Optional[float] = None
+        self._last_failure_time: float | None = None
         self._lock = Lock()
 
     @property
@@ -166,8 +167,8 @@ def retry_with_backoff(
     base_delay: float = 1.0,
     max_delay: float = 30.0,
     exponential_base: float = 2.0,
-    circuit_breaker_name: Optional[str] = None,
-    retryable_exceptions: Optional[Tuple[Type[Exception], ...]] = None,
+    circuit_breaker_name: str | None = None,
+    retryable_exceptions: tuple[type[Exception], ...] | None = None,
 ):
     """
     Decorator for retry with exponential backoff and optional circuit breaker.
@@ -189,9 +190,9 @@ def retry_with_backoff(
             return client.invoke_model(...)
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             cb = None
             if circuit_breaker_name:
                 cb = get_circuit_breaker(circuit_breaker_name)

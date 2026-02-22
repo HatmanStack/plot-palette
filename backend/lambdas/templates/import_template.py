@@ -7,8 +7,8 @@ POST /templates/import endpoint that imports templates from YAML files.
 import json
 import os
 import sys
-from datetime import datetime
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -36,7 +36,7 @@ dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates"))
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for POST /templates/import endpoint.
 
@@ -165,7 +165,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Generate new template ID
         new_template_id = generate_template_id()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Create template record
         new_template = {

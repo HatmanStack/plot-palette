@@ -8,8 +8,8 @@ cost breakdown, budget tracking, and performance metrics.
 import json
 import os
 import sys
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -32,7 +32,7 @@ cost_tracking_table = dynamodb.Table(
 )
 
 
-def calculate_cost_breakdown(job_id: str) -> Dict[str, float]:
+def calculate_cost_breakdown(job_id: str) -> dict[str, float]:
     """
     Query CostTracking table and calculate total costs by category.
 
@@ -77,8 +77,8 @@ def calculate_cost_breakdown(job_id: str) -> Dict[str, float]:
 
 
 def estimate_completion(
-    records_generated: int, target_records: int, started_at: Optional[str]
-) -> Optional[str]:
+    records_generated: int, target_records: int, started_at: str | None
+) -> str | None:
     """
     Estimate job completion time based on current generation rate.
 
@@ -94,8 +94,10 @@ def estimate_completion(
         return None
 
     try:
-        start_time = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-        now = datetime.now(timezone.utc)
+        start_time = datetime.fromisoformat(started_at)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=UTC)
+        now = datetime.now(UTC)
         elapsed = (now - start_time).total_seconds()
 
         if elapsed <= 0:
@@ -115,7 +117,7 @@ def estimate_completion(
     return None
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for GET /dashboard/{job_id} endpoint.
 

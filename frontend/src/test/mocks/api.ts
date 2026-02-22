@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 import type { Job } from '../../services/api'
 
-export interface ApiMockConfig {
+interface ApiMockConfig {
   fetchJobsResult?: Job[] | Error
   fetchJobDetailsResult?: Job | Error
   createJobResult?: Job | Error
@@ -11,7 +11,7 @@ export interface ApiMockConfig {
 }
 
 // Sample job data for testing
-export const sampleJob: Job = {
+const sampleJob: Job = {
   job_id: 'job-123',
   user_id: 'user-456',
   status: 'QUEUED',
@@ -136,15 +136,3 @@ export const apiErrors = {
   rateLimited: new Error('Too Many Requests'),
 }
 
-// Pre-configured mocks for common scenarios
-export const defaultApiMock = createApiMock()
-
-export const emptyJobsMock = createApiMock({
-  fetchJobsResult: [],
-})
-
-export const apiFailureMock = createApiMock({
-  fetchJobsResult: apiErrors.networkError,
-  fetchJobDetailsResult: apiErrors.networkError,
-  createJobResult: apiErrors.networkError,
-})

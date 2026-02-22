@@ -6,7 +6,7 @@ Eliminates duplicated error_response/success_response across 15 handlers.
 """
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 CORS_HEADERS = {
     "Content-Type": "application/json",
@@ -14,7 +14,7 @@ CORS_HEADERS = {
 }
 
 
-def error_response(status_code: int, message: str) -> Dict[str, Any]:
+def error_response(status_code: int, message: str) -> dict[str, Any]:
     """
     Generate standardized error response.
 
@@ -32,7 +32,7 @@ def error_response(status_code: int, message: str) -> Dict[str, Any]:
     }
 
 
-def success_response(status_code: int, body: Any, **json_kwargs: Any) -> Dict[str, Any]:
+def success_response(status_code: int, body: Any, **json_kwargs: Any) -> dict[str, Any]:
     """
     Generate standardized success response.
 

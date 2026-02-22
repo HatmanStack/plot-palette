@@ -1,5 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
+import { QueryClient } from '@tanstack/react-query'
 
 // Create a test-optimized QueryClient
 export function createTestQueryClient(): QueryClient {
@@ -21,34 +20,4 @@ export function createTestQueryClient(): QueryClient {
       },
     },
   })
-}
-
-interface QueryClientWrapperProps {
-  children: ReactNode
-  client?: QueryClient
-}
-
-// Wrapper component for tests that need QueryClient
-export function QueryClientWrapper({ children, client }: QueryClientWrapperProps) {
-  const queryClient = client ?? createTestQueryClient()
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
-  )
-}
-
-// HOC for wrapping components in QueryClientProvider
-export function withQueryClient<P extends object>(
-  Component: React.ComponentType<P>,
-  client?: QueryClient
-) {
-  return function WrappedComponent(props: P) {
-    return (
-      <QueryClientWrapper client={client}>
-        <Component {...props} />
-      </QueryClientWrapper>
-    )
-  }
 }

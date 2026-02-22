@@ -7,13 +7,12 @@ and retry configuration for production workloads.
 
 import os
 from functools import lru_cache
-from typing import Optional
 
 import boto3
 from botocore.config import Config
 
 
-def _get_endpoint_url() -> Optional[str]:
+def _get_endpoint_url() -> str | None:
     """Return AWS_ENDPOINT_URL if set (for LocalStack), else None."""
     return os.environ.get("AWS_ENDPOINT_URL")
 
@@ -36,7 +35,7 @@ _bedrock_config = Config(
 
 
 @lru_cache(maxsize=1)
-def get_dynamodb_resource(region_name: Optional[str] = None):
+def get_dynamodb_resource(region_name: str | None = None):
     """
     Get cached DynamoDB resource with connection pooling.
 
@@ -55,7 +54,7 @@ def get_dynamodb_resource(region_name: Optional[str] = None):
 
 
 @lru_cache(maxsize=1)
-def get_dynamodb_client(region_name: Optional[str] = None):
+def get_dynamodb_client(region_name: str | None = None):
     """
     Get cached DynamoDB client with connection pooling.
 
@@ -76,7 +75,7 @@ def get_dynamodb_client(region_name: Optional[str] = None):
 
 
 @lru_cache(maxsize=1)
-def get_s3_client(region_name: Optional[str] = None):
+def get_s3_client(region_name: str | None = None):
     """
     Get cached S3 client with connection pooling.
 
@@ -103,7 +102,7 @@ def get_s3_client(region_name: Optional[str] = None):
 
 
 @lru_cache(maxsize=1)
-def get_bedrock_client(region_name: Optional[str] = None):
+def get_bedrock_client(region_name: str | None = None):
     """
     Get cached Bedrock runtime client with extended timeouts.
 
@@ -125,7 +124,7 @@ def get_bedrock_client(region_name: Optional[str] = None):
 
 
 @lru_cache(maxsize=1)
-def get_ecs_client(region_name: Optional[str] = None):
+def get_ecs_client(region_name: str | None = None):
     """
     Get cached ECS client with connection pooling.
 
@@ -144,7 +143,7 @@ def get_ecs_client(region_name: Optional[str] = None):
 
 
 @lru_cache(maxsize=1)
-def get_sfn_client(region_name: Optional[str] = None):
+def get_sfn_client(region_name: str | None = None):
     """
     Get cached Step Functions client with connection pooling.
 
@@ -163,7 +162,7 @@ def get_sfn_client(region_name: Optional[str] = None):
 
 
 @lru_cache(maxsize=1)
-def get_sts_client(region_name: Optional[str] = None):
+def get_sts_client(region_name: str | None = None):
     """
     Get cached STS client for identity operations.
 

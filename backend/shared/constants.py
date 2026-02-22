@@ -5,11 +5,11 @@ This module defines all application-wide constants including pricing,
 configuration values, and enumeration types.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
 # Job Status Values
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     """Job status enumeration."""
 
     QUEUED = "QUEUED"
@@ -21,7 +21,7 @@ class JobStatus(str, Enum):
 
 
 # Export Format Types
-class ExportFormat(str, Enum):
+class ExportFormat(StrEnum):
     """Dataset export format enumeration."""
 
     JSONL = "JSONL"

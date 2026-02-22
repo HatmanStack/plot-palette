@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 
-export interface AuthMockConfig {
+interface AuthMockConfig {
   signInResult?: string | Error
   signUpResult?: void | Error
   getIdTokenResult?: string | null | Error
@@ -71,15 +71,3 @@ export const authErrors = {
   usernameExists: new Error('User already exists'),
 }
 
-// Pre-configured mocks for common scenarios
-export const authenticatedMock = createAuthMock()
-
-export const unauthenticatedMock = createAuthMock({
-  getIdTokenResult: null,
-  getCurrentUserResult: null,
-})
-
-export const authFailureMock = createAuthMock({
-  signInResult: authErrors.invalidCredentials,
-  getIdTokenResult: authErrors.invalidCredentials,
-})

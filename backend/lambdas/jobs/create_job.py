@@ -8,8 +8,8 @@ validation, budget limits, and Step Functions orchestration.
 import json
 import os
 import sys
-from datetime import datetime
-from typing import Any, Dict
+from datetime import UTC, datetime
+from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -34,7 +34,7 @@ jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs
 templates_table = dynamodb.Table(os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates"))
 
 
-def validate_job_config(config: Dict[str, Any]) -> tuple[bool, str]:
+def validate_job_config(config: dict[str, Any]) -> tuple[bool, str]:
     """
     Validate job configuration parameters.
 
@@ -127,7 +127,7 @@ def start_job_execution(job_id: str) -> str:
         raise
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for POST /jobs endpoint.
 
@@ -221,7 +221,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Generate job ID
         job_id = generate_job_id()
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         # Create job record
         job = JobConfig(
@@ -299,7 +299,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     ExpressionAttributeNames={"#s": "status"},
                     ExpressionAttributeValues={
                         ":failed": "FAILED",
-                        ":now": datetime.utcnow().isoformat(),
+                        ":now": datetime.now(UTC).isoformat(),
                         ":err": "Failed to start job execution",
                     },
                 )

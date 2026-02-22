@@ -8,19 +8,17 @@ PUT /templates/{template_id} endpoint that creates a new version of a template
 import json
 import os
 import sys
-from datetime import datetime
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
-import jinja2
-import jinja2.meta
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
 from template_filters import validate_template_syntax
-from utils import sanitize_error_message, setup_logger
+from utils import extract_schema_requirements, sanitize_error_message, setup_logger
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -30,27 +28,6 @@ from aws_clients import get_dynamodb_resource
 
 dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates"))
-
-
-def extract_schema_requirements(template_definition: Dict[str, Any]) -> List[str]:
-    """Extract all {{ variable }} references from Jinja2 template."""
-    env = jinja2.Environment(autoescape=True)
-    all_variables = set()
-
-    try:
-        for step in template_definition.get("steps", []):
-            prompt = step.get("prompt", "")
-            ast = env.parse(prompt)
-            variables = jinja2.meta.find_undeclared_variables(ast)
-            all_variables.update(variables)
-
-        built_ins = {"steps", "loop", "range", "dict", "list"}
-        schema_vars = [v for v in all_variables if v not in built_ins]
-
-        return sorted(schema_vars)
-
-    except jinja2.TemplateSyntaxError as e:
-        raise ValueError(f"Invalid template syntax: {str(e)}") from e
 
 
 def get_latest_version(template_id: str) -> int:
@@ -71,7 +48,7 @@ def get_latest_version(template_id: str) -> int:
         return 1
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for PUT /templates/{template_id} endpoint.
 
@@ -150,7 +127,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         latest_version = get_latest_version(template_id)
         new_version = latest_version + 1
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Create new version
         new_template = {
