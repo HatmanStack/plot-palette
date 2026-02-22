@@ -207,27 +207,42 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if not is_valid:
             return error_response(400, error_msg)
 
-        # Validate template exists
+        # Validate template exists and resolve version
         template_id = body["template_id"]
-        template_version_raw = body.get("template_version", 1)
-        try:
-            template_version = int(template_version_raw)
-            if template_version < 1:
-                return error_response(400, "template_version must be a positive integer")
-        except (ValueError, TypeError):
-            return error_response(400, "template_version must be a positive integer")
+        template_version_raw = body.get("template_version")
 
         try:
-            template_response = templates_table.get_item(
-                Key={"template_id": template_id, "version": template_version}
-            )
+            if template_version_raw is None:
+                # Resolve to latest version when not specified
+                template_response = templates_table.query(
+                    KeyConditionExpression=Key("template_id").eq(template_id),
+                    ScanIndexForward=False,
+                    Limit=1,
+                )
+                items = template_response.get("Items", [])
+                if not items:
+                    return error_response(404, "Template not found")
+                template_version = int(items[0]["version"])
+            else:
+                try:
+                    template_version = int(template_version_raw)
+                    if template_version < 1:
+                        return error_response(400, "template_version must be a positive integer")
+                except (ValueError, TypeError):
+                    return error_response(400, "template_version must be a positive integer")
 
-            if "Item" not in template_response:
-                return error_response(404, "Template not found")
+                template_response = templates_table.get_item(
+                    Key={"template_id": template_id, "version": template_version}
+                )
+                if "Item" not in template_response:
+                    return error_response(404, "Template not found")
 
         except ClientError as e:
             logger.error(json.dumps({"event": "template_lookup_error", "error": str(e)}))
             return error_response(500, "Error validating template")
+
+        # Store resolved version in config for reproducibility
+        body["template_version"] = template_version
 
         # Generate job ID
         job_id = generate_job_id()
