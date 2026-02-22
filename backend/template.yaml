@@ -347,6 +347,27 @@ Resources:
             Path: /jobs/{job_id}/download
             Method: GET
 
+  DownloadPartialFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-download-partial-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: download_partial.lambda_handler
+      MemorySize: 512
+      Timeout: 30
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+      Events:
+        DownloadPartial:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/download-partial
+            Method: GET
+
   # ============================================================
   # Lambda Functions - Templates
   # ============================================================
@@ -494,6 +515,23 @@ Resources:
           Properties:
             ApiId: !Ref HttpApi
             Path: /templates/{template_id}/export
+            Method: GET
+
+  ListTemplateVersionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-list-template-versions-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: list_versions.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        ListTemplateVersions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}/versions
             Method: GET
 
   # ============================================================
