@@ -8,6 +8,7 @@ interface TemplateDiffViewProps {
   modifiedVersion: number
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatTemplateForDiff(template: Template): string {
   const lines: string[] = []
 

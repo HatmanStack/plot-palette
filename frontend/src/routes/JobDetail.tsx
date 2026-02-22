@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useJobPolling } from '../hooks/useJobPolling'
 import { cancelJob, deleteJob, downloadJobExport, downloadPartialExport } from '../services/api'
+import { useToast } from '../hooks/useToast'
 import StatusBadge from '../components/StatusBadge'
 
 export default function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
   const { data: job, isLoading, error } = useJobPolling(jobId!)
+  const { toast } = useToast()
   const [partialDownloading, setPartialDownloading] = useState(false)
 
   async function handleCancel() {
@@ -16,8 +18,8 @@ export default function JobDetail() {
     try {
       await cancelJob(jobId)
       navigate('/dashboard')
-    } catch (err) {
-      console.error('Failed to cancel job:', err)
+    } catch {
+      toast('Failed to cancel job', 'error')
     }
   }
 
@@ -27,8 +29,8 @@ export default function JobDetail() {
     try {
       await deleteJob(jobId)
       navigate('/dashboard')
-    } catch (err) {
-      console.error('Failed to delete job:', err)
+    } catch {
+      toast('Failed to delete job', 'error')
     }
   }
 
@@ -37,8 +39,8 @@ export default function JobDetail() {
     try {
       const { download_url } = await downloadJobExport(jobId)
       window.open(download_url, '_blank')
-    } catch (err) {
-      console.error('Failed to download job:', err)
+    } catch {
+      toast('Failed to download job', 'error')
     }
   }
 
@@ -48,8 +50,8 @@ export default function JobDetail() {
     try {
       const { download_url } = await downloadPartialExport(jobId)
       window.open(download_url, '_blank')
-    } catch (err) {
-      console.error('Failed to download partial results:', err)
+    } catch {
+      toast('Failed to download partial results', 'error')
     } finally {
       setPartialDownloading(false)
     }

@@ -157,6 +157,26 @@ export async function fetchTemplate(templateId: string, version?: number | 'late
   return TemplateSchema.parse(data)
 }
 
+export async function updateTemplate(templateId: string, templateData: {
+  name: string
+  description?: string
+  steps: Array<{ id: string; model?: string; model_tier?: string; prompt: string }>
+  schema_requirements?: string[]
+}): Promise<Template> {
+  const { data } = await apiClient.put(`/templates/${templateId}`, templateData)
+  return TemplateSchema.parse(data)
+}
+
+export async function createTemplate(templateData: {
+  name: string
+  description?: string
+  steps: Array<{ id: string; model?: string; model_tier?: string; prompt: string }>
+  schema_requirements?: string[]
+}): Promise<Template> {
+  const { data } = await apiClient.post('/templates', templateData)
+  return TemplateSchema.parse(data)
+}
+
 export async function generateUploadUrl(filename: string, contentType: string = 'application/json'): Promise<{
   upload_url: string
   s3_key: string

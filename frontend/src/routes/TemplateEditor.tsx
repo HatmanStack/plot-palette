@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Editor from '@monaco-editor/react'
 import VersionList from '../components/VersionList'
 import TemplateDiffView, { formatTemplateForDiff } from '../components/TemplateDiffView'
-import { fetchTemplate } from '../services/api'
+import { fetchTemplate, updateTemplate, createTemplate } from '../services/api'
 import type { Template } from '../services/api'
 
 const SAMPLE_TEMPLATE = `template:
@@ -84,6 +84,10 @@ export default function TemplateEditor() {
   const [diffMode, setDiffMode] = useState(false)
   const [diffCompareVersion, setDiffCompareVersion] = useState<number | null>(null)
 
+  // Track whether the initial version has been resolved to avoid
+  // re-triggering when the user deliberately navigates to version 1
+  const initialVersionResolved = useRef(false)
+
   // Fetch template data when editing existing template
   const { data: templateData } = useQuery({
     queryKey: ['template', templateId, currentVersion],
@@ -97,13 +101,8 @@ export default function TemplateEditor() {
       setName(templateData.name)
       setDescription(templateData.description)
       setTemplateYaml(formatTemplateAsYaml(templateData))
-      if (currentVersion === 1 && templateData.version > 1) {
-        // On initial load, set both current and latest to the fetched version
-        setCurrentVersion(templateData.version)
-        setLatestVersion(templateData.version)
-      }
     }
-  }, [templateData, currentVersion])
+  }, [templateData])
 
   // Fetch latest version on mount to determine the latest
   const { data: latestTemplateData } = useQuery({
@@ -115,12 +114,13 @@ export default function TemplateEditor() {
   useEffect(() => {
     if (latestTemplateData) {
       setLatestVersion(latestTemplateData.version)
-      // Set current to latest on first load
-      if (currentVersion === 1 && latestTemplateData.version > 1) {
+      // Set current to latest only on first load
+      if (!initialVersionResolved.current && latestTemplateData.version > 1) {
+        initialVersionResolved.current = true
         setCurrentVersion(latestTemplateData.version)
       }
     }
-  }, [latestTemplateData, currentVersion])
+  }, [latestTemplateData])
 
   // Fetch comparison version for diff mode
   const { data: compareTemplateData } = useQuery({
@@ -153,12 +153,15 @@ export default function TemplateEditor() {
     setLoading(true)
     setError('')
     try {
-      // TODO: call update API to create new version from current view
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      const result = await updateTemplate(templateId, {
+        name: templateData.name,
+        description: templateData.description,
+        steps: templateData.steps,
+        schema_requirements: templateData.schema_requirements,
+      })
       setSuccess('Version restored as new version')
-      const newVersion = latestVersion + 1
-      setCurrentVersion(newVersion)
-      setLatestVersion(newVersion)
+      setCurrentVersion(result.version)
+      setLatestVersion(result.version)
       queryClient.invalidateQueries({ queryKey: ['template', templateId, 'versions'] })
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
@@ -179,8 +182,19 @@ export default function TemplateEditor() {
     setSuccess('')
 
     try {
-      // TODO: Implement actual API call to save template
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const steps = templateData?.steps ?? [{ id: 'step1', prompt: templateYaml }]
+      const templatePayload = {
+        name,
+        description,
+        steps,
+        schema_requirements: templateData?.schema_requirements ?? [],
+      }
+
+      if (templateId) {
+        await updateTemplate(templateId, templatePayload)
+      } else {
+        await createTemplate(templatePayload)
+      }
 
       setSuccess('Template saved successfully!')
       setTimeout(() => {
