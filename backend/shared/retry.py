@@ -192,7 +192,7 @@ def retry_with_backoff(
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             cb = None
             if circuit_breaker_name:
                 cb = get_circuit_breaker(circuit_breaker_name)

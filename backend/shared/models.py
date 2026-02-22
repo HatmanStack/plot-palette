@@ -68,10 +68,10 @@ class JobConfig(BaseModel):
     user_id: str = Field(..., description="User who created the job")
     status: JobStatus = Field(default=JobStatus.QUEUED, description="Current job status")
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Job creation timestamp"
+        default_factory=lambda: datetime.now(UTC), description="Job creation timestamp"
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Last update timestamp"
+        default_factory=lambda: datetime.now(UTC), description="Last update timestamp"
     )
     config: dict[str, Any] = Field(..., description="Job configuration dictionary")
     budget_limit: float = Field(..., gt=0, description="Budget limit in USD")
@@ -202,7 +202,9 @@ class TemplateDefinition(BaseModel):
     )
     steps: list[TemplateStep] = Field(..., min_length=1, description="Generation steps")
     is_public: bool = Field(default=False, description="Whether template is shareable")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Creation timestamp"
+    )
 
     def to_dynamodb(self) -> dict[str, Any]:
         """Convert to DynamoDB item format."""
@@ -244,7 +246,7 @@ class CheckpointState(BaseModel):
     tokens_used: int = Field(default=0, ge=0, description="Total tokens consumed")
     cost_accumulated: float = Field(default=0.0, ge=0, description="Cost accumulated in USD")
     last_updated: datetime = Field(
-        default_factory=datetime.utcnow, description="Last checkpoint timestamp"
+        default_factory=lambda: datetime.now(UTC), description="Last checkpoint timestamp"
     )
     resume_state: dict[str, Any] = Field(
         default_factory=dict,
@@ -278,7 +280,7 @@ class CostBreakdown(BaseModel):
 
     job_id: str = Field(..., description="Job identifier")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Measurement timestamp"
+        default_factory=lambda: datetime.now(UTC), description="Measurement timestamp"
     )
     bedrock_tokens: int = Field(default=0, ge=0, description="Tokens consumed by Bedrock")
     fargate_hours: float = Field(default=0.0, ge=0, description="Fargate compute hours")
@@ -364,7 +366,7 @@ class QueueItem(BaseModel):
     status: JobStatus = Field(..., description="Queue status (QUEUED, RUNNING, COMPLETED)")
     job_id: str = Field(..., description="Job identifier")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Queue entry timestamp"
+        default_factory=lambda: datetime.now(UTC), description="Queue entry timestamp"
     )
     priority: int = Field(default=0, description="Priority (higher = more urgent)")
     task_arn: str | None = Field(None, description="ECS task ARN when running")

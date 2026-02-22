@@ -403,8 +403,8 @@ def extract_schema_requirements(template_definition: dict[str, Any]) -> list[str
     try:
         for step in template_definition.get("steps", []):
             prompt = step.get("prompt", "")
-            ast = env.parse(prompt)
-            variables = jinja2.meta.find_undeclared_variables(ast)
+            parsed_template = env.parse(prompt)
+            variables = jinja2.meta.find_undeclared_variables(parsed_template)
             all_variables.update(variables)
 
         built_ins = {"steps", "loop", "range", "dict", "list"}

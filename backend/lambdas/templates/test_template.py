@@ -29,7 +29,9 @@ dynamodb = get_dynamodb_resource()
 templates_table = dynamodb.Table(os.environ.get("TEMPLATES_TABLE_NAME", "plot-palette-Templates"))
 
 
-def execute_template_mock(template_def: dict[str, Any], seed_data: dict[str, Any]) -> dict[str, Any]:
+def execute_template_mock(
+    template_def: dict[str, Any], seed_data: dict[str, Any]
+) -> dict[str, Any]:
     """
     Execute template with mocked Bedrock responses (no actual API calls).
 
@@ -81,7 +83,9 @@ def execute_template_mock(template_def: dict[str, Any], seed_data: dict[str, Any
     return results
 
 
-def execute_template_real(template_def: dict[str, Any], seed_data: dict[str, Any]) -> dict[str, Any]:
+def execute_template_real(
+    template_def: dict[str, Any], seed_data: dict[str, Any]
+) -> dict[str, Any]:
     """
     Execute template with real Bedrock API calls.
 
