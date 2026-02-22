@@ -63,13 +63,13 @@ The handler should:
 - Capping at 100 jobs max per query
 
 **Verification Checklist:**
-- [ ] Returns aggregated costs grouped by day
-- [ ] Returns aggregated costs grouped by model
-- [ ] Summary stats calculated correctly
-- [ ] Period filter works (7d, 30d, 90d)
-- [ ] Only returns data for the authenticated user's jobs
-- [ ] Handles user with zero jobs gracefully (empty arrays, zero stats)
-- [ ] Caps at 100 jobs to prevent timeout
+- [x] Returns aggregated costs grouped by day
+- [x] Returns aggregated costs grouped by model
+- [x] Summary stats calculated correctly
+- [x] Period filter works (7d, 30d, 90d)
+- [x] Only returns data for the authenticated user's jobs
+- [x] Handles user with zero jobs gracefully (empty arrays, zero stats)
+- [x] Caps at 100 jobs to prevent timeout
 
 **Testing Instructions:**
 
