@@ -53,6 +53,14 @@ npm run dev          # Start frontend dev server
 npm run check        # Run all lint and tests
 ```
 
+## Detailed Setup
+
+- [Architecture Overview](docs/architecture.md) -- system diagram, job lifecycle, design decisions, database schema
+- [AWS Setup Guide](docs/aws-setup.md) -- prerequisites, Bedrock model enablement, deploy flow, cost estimates
+- [Troubleshooting](docs/troubleshooting.md) -- common issues and fixes
+- [API Reference](docs/openapi.yaml) -- OpenAPI specification
+- [Contributing](CONTRIBUTING.md) -- development setup, PR process, code style
+
 ## Deployment
 
 ```bash
