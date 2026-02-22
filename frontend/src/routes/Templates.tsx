@@ -92,11 +92,12 @@ export default function Templates() {
     forkMutation.mutate(templateId)
   }, [forkMutation])
 
+  const nextPageKey = marketplaceData?.last_key
   const handleLoadMore = useCallback(() => {
-    if (marketplaceData?.last_key) {
-      setLastKey(marketplaceData.last_key)
+    if (nextPageKey) {
+      setLastKey(nextPageKey)
     }
-  }, [marketplaceData?.last_key])
+  }, [nextPageKey])
 
   // Combine initial + more marketplace results
   const marketplaceTemplates: MarketplaceTemplate[] = [
@@ -238,7 +239,7 @@ export default function Templates() {
                 ))}
               </div>
 
-              {marketplaceData?.last_key && !lastKey && (
+              {nextPageKey && !lastKey && (
                 <div className="text-center mt-6">
                   <button
                     onClick={handleLoadMore}

@@ -17,7 +17,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 from boto3.dynamodb.conditions import Attr  # noqa: E402
 from botocore.exceptions import ClientError  # noqa: E402
 from lambda_responses import error_response, success_response  # noqa: E402
-from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger  # noqa: E402
+from utils import (  # noqa: E402
+    extract_request_id,
+    sanitize_error_message,
+    set_correlation_id,
+    setup_logger,
+)
 
 # Initialize logger
 logger = setup_logger(__name__)
