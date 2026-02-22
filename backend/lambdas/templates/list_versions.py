@@ -105,7 +105,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
         )
 
-        return success_response(200, {"versions": versions, "template_id": template_id})
+        return success_response(200, {"versions": versions, "template_id": template_id}, default=str)
 
     except KeyError as e:
         logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))

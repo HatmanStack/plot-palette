@@ -1,26 +1,23 @@
 """
-Integration tests for template version history using moto for AWS mocking.
+Integration tests for template version history — calls actual lambda_handlers against moto.
 
-Tests the list_versions and get_template (latest) handler logic with real
-DynamoDB operations against in-memory moto services.
+Uses moto's @mock_aws to create real DynamoDB Templates table,
+then invokes the actual list_versions and get_template lambda_handlers.
 """
 
 import json
 import os
-from decimal import Decimal
 
 import boto3
-import pytest
-from boto3.dynamodb.conditions import Key
 from moto import mock_aws
 
+from tests.unit.handler_import import load_handler
 
-@pytest.fixture
-def aws_credentials():
-    """Mocked AWS Credentials for moto."""
-    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
-    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+_list_mod = load_handler("lambdas/templates/list_versions.py")
+_get_mod = load_handler("lambdas/templates/get_template.py")
+
+list_versions_handler = _list_mod.lambda_handler
+get_template_handler = _get_mod.lambda_handler
 
 
 def _create_templates_table(dynamodb):
@@ -63,128 +60,137 @@ def _insert_versions(table, template_id, count, user_id="user-123", is_public=Fa
         )
 
 
+def _make_list_event(user_id="user-123", template_id="tmpl-integ-001"):
+    return {
+        "requestContext": {
+            "authorizer": {"jwt": {"claims": {"sub": user_id}}}
+        },
+        "pathParameters": {"template_id": template_id},
+    }
+
+
+def _make_get_event(user_id="user-123", template_id="tmpl-integ-001", version=None):
+    event = {
+        "requestContext": {
+            "authorizer": {"jwt": {"claims": {"sub": user_id}}}
+        },
+        "pathParameters": {"template_id": template_id},
+        "queryStringParameters": {},
+    }
+    if version is not None:
+        event["queryStringParameters"]["version"] = str(version)
+    return event
+
+
 @mock_aws
 def test_list_versions_returns_all_sorted_desc():
-    """Insert 3 versions, query all, verify sorted newest first."""
+    """Invoke actual list_versions handler: 3 versions -> sorted desc."""
     dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
     table = _create_templates_table(dynamodb)
-
     _insert_versions(table, "tmpl-integ-001", 3)
 
-    # Query all versions (same as list_versions handler)
-    response = table.query(
-        KeyConditionExpression=Key("template_id").eq("tmpl-integ-001"),
-        ScanIndexForward=False,
-    )
+    _list_mod.templates_table = table
 
-    items = response["Items"]
-    assert len(items) == 3
-    # Verify sorted newest first
-    versions = [int(item["version"]) for item in items]
+    result = list_versions_handler(_make_list_event(), None)
+
+    assert result["statusCode"] == 200
+    body = json.loads(result["body"])
+    assert len(body["versions"]) == 3
+    versions = [int(v["version"]) for v in body["versions"]]
     assert versions == [3, 2, 1]
 
-    # Verify each item has expected fields
-    for item in items:
-        assert "name" in item
-        assert "created_at" in item
-        assert "steps" in item  # Full data available at DB level
+    # Verify steps are NOT included (summary only)
+    for v in body["versions"]:
+        assert "steps" not in v
+        assert "name" in v
+        assert "created_at" in v
 
 
 @mock_aws
 def test_get_template_latest_version():
-    """Insert 3 versions, query with ScanIndexForward=False Limit=1, verify version 3."""
+    """Invoke actual get_template handler with version=latest -> returns version 3."""
     dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
     table = _create_templates_table(dynamodb)
-
     _insert_versions(table, "tmpl-integ-002", 3)
 
-    # Query for latest version (same as get_template with version=latest)
-    response = table.query(
-        KeyConditionExpression=Key("template_id").eq("tmpl-integ-002"),
-        ScanIndexForward=False,
-        Limit=1,
+    _get_mod.templates_table = table
+
+    result = get_template_handler(
+        _make_get_event(template_id="tmpl-integ-002", version="latest"), None
     )
 
-    items = response["Items"]
-    assert len(items) == 1
-    assert int(items[0]["version"]) == 3
-    assert items[0]["name"] == "Template v3"
+    assert result["statusCode"] == 200
+    body = json.loads(result["body"])
+    assert int(body["version"]) == 3
+    assert body["name"] == "Template v3"
 
 
 @mock_aws
 def test_get_template_specific_version():
-    """Insert 3 versions, get version 2 specifically, verify correct version returned."""
+    """Invoke actual get_template handler with version=2 -> returns version 2."""
     dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
     table = _create_templates_table(dynamodb)
-
     _insert_versions(table, "tmpl-integ-003", 3)
 
-    # Get specific version (same as get_template with version=2)
-    response = table.get_item(
-        Key={"template_id": "tmpl-integ-003", "version": 2}
+    _get_mod.templates_table = table
+
+    result = get_template_handler(
+        _make_get_event(template_id="tmpl-integ-003", version="2"), None
     )
 
-    assert "Item" in response
-    item = response["Item"]
-    assert int(item["version"]) == 2
-    assert item["name"] == "Template v2"
-    assert item["steps"][0]["prompt"] == "Generate content v2"
+    assert result["statusCode"] == 200
+    body = json.loads(result["body"])
+    assert int(body["version"]) == 2
+    assert body["name"] == "Template v2"
 
 
 @mock_aws
 def test_version_list_empty_for_nonexistent_template():
-    """Query for a template that doesn't exist returns empty."""
+    """Invoke actual list_versions handler: nonexistent template -> 404."""
     dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
     _create_templates_table(dynamodb)
 
-    table = dynamodb.Table("plot-palette-Templates-test")
-    response = table.query(
-        KeyConditionExpression=Key("template_id").eq("tmpl-nonexistent"),
-        ScanIndexForward=False,
+    _list_mod.templates_table = dynamodb.Table("plot-palette-Templates-test")
+
+    result = list_versions_handler(
+        _make_list_event(template_id="tmpl-nonexistent"), None
     )
 
-    assert len(response["Items"]) == 0
+    assert result["statusCode"] == 404
 
 
 @mock_aws
 def test_version_ownership_and_public_access():
-    """Verify that is_public flag controls access for non-owner."""
+    """Invoke actual list_versions handler: private -> 403, public -> 200."""
     dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
     table = _create_templates_table(dynamodb)
 
-    # Private template owned by different user
     _insert_versions(table, "tmpl-private", 2, user_id="other-user", is_public=False)
-    # Public template owned by different user
     _insert_versions(table, "tmpl-public", 2, user_id="other-user", is_public=True)
 
-    # Query private template
-    private_response = table.query(
-        KeyConditionExpression=Key("template_id").eq("tmpl-private"),
-        ScanIndexForward=False,
-    )
-    first_private = private_response["Items"][0]
-    assert first_private["user_id"] == "other-user"
-    assert first_private["is_public"] is False
+    _list_mod.templates_table = table
 
-    # Query public template
-    public_response = table.query(
-        KeyConditionExpression=Key("template_id").eq("tmpl-public"),
-        ScanIndexForward=False,
+    # Private template owned by different user -> 403
+    private_result = list_versions_handler(
+        _make_list_event(template_id="tmpl-private"), None
     )
-    first_public = public_response["Items"][0]
-    assert first_public["user_id"] == "other-user"
-    assert first_public["is_public"] is True
+    assert private_result["statusCode"] == 403
+
+    # Public template owned by different user -> 200
+    public_result = list_versions_handler(
+        _make_list_event(template_id="tmpl-public"), None
+    )
+    assert public_result["statusCode"] == 200
 
 
 @mock_aws
 def test_create_new_version_increments():
-    """Simulate creating a new version by inserting version N+1."""
+    """Verify latest query returns version 3 after inserting it."""
     dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
     table = _create_templates_table(dynamodb)
-
     _insert_versions(table, "tmpl-integ-004", 2)
 
-    # Simulate what update_template does: insert version 3
+    # Insert version 3
     table.put_item(
         Item={
             "template_id": "tmpl-integ-004",
@@ -198,12 +204,13 @@ def test_create_new_version_increments():
         }
     )
 
-    # Verify latest is now 3
-    response = table.query(
-        KeyConditionExpression=Key("template_id").eq("tmpl-integ-004"),
-        ScanIndexForward=False,
-        Limit=1,
+    _get_mod.templates_table = table
+
+    result = get_template_handler(
+        _make_get_event(template_id="tmpl-integ-004", version="latest"), None
     )
 
-    assert int(response["Items"][0]["version"]) == 3
-    assert response["Items"][0]["name"] == "Updated Template"
+    assert result["statusCode"] == 200
+    body = json.loads(result["body"])
+    assert int(body["version"]) == 3
+    assert body["name"] == "Updated Template"
