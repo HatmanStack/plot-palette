@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useJobPolling } from '../hooks/useJobPolling'
+import { useJobStream } from '../hooks/useJobStream'
 import { cancelJob, deleteJob, downloadJobExport, downloadPartialExport } from '../services/api'
 import { useToast } from '../hooks/useToast'
 import StatusBadge from '../components/StatusBadge'
@@ -8,9 +9,12 @@ import StatusBadge from '../components/StatusBadge'
 export default function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
-  const { data: job, isLoading, error } = useJobPolling(jobId!)
   const { toast } = useToast()
   const [partialDownloading, setPartialDownloading] = useState(false)
+
+  // SSE streaming with polling fallback
+  const { isConnected, useFallbackPolling } = useJobStream(jobId!)
+  const { data: job, isLoading, error } = useJobPolling(jobId!, useFallbackPolling)
 
   async function handleCancel() {
     if (!jobId || !confirm('Are you sure you want to cancel this job?')) return
@@ -232,7 +236,7 @@ export default function JobDetail() {
                   onClick={handleCancel}
                   className="w-full px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
                 >
-                  ⏸️ Cancel Job
+                  Cancel Job
                 </button>
               )}
 
@@ -241,7 +245,7 @@ export default function JobDetail() {
                   onClick={handleDelete}
                   className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
                 >
-                  🗑️ Delete Job
+                  Delete Job
                 </button>
               )}
 
@@ -249,7 +253,7 @@ export default function JobDetail() {
                 to={`/templates/${job['template_id']}`}
                 className="block w-full px-4 py-2 bg-gray-600 text-white text-center rounded-md hover:bg-gray-700 transition-colors"
               >
-                📝 View Template
+                View Template
               </Link>
             </div>
           </div>
@@ -280,10 +284,22 @@ export default function JobDetail() {
             </div>
           </div>
 
-          {/* Auto-refresh indicator */}
+          {/* Connection status indicator */}
           {(job.status === 'RUNNING' || job.status === 'QUEUED') && (
-            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">
-              <p className="font-semibold">🔄 Auto-refreshing every 5 seconds</p>
+            <div className={`border px-4 py-3 rounded text-sm ${
+              isConnected
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : useFallbackPolling
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'bg-yellow-50 border-yellow-200 text-yellow-700'
+            }`}>
+              <p className="font-semibold" data-testid="connection-status">
+                {isConnected
+                  ? 'Live updates active'
+                  : useFallbackPolling
+                    ? 'Auto-refreshing every 5 seconds'
+                    : 'Connecting...'}
+              </p>
             </div>
           )}
         </div>

@@ -13,6 +13,14 @@ vi.mock('../hooks/useJobPolling', () => ({
   useJobPolling: vi.fn(),
 }))
 
+vi.mock('../hooks/useJobStream', () => ({
+  useJobStream: vi.fn(() => ({
+    isConnected: false,
+    error: null,
+    useFallbackPolling: true,
+  })),
+}))
+
 vi.mock('../services/api', () => ({
   cancelJob: vi.fn(),
   deleteJob: vi.fn(),
