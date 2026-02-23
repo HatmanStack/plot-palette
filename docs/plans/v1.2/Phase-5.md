@@ -177,15 +177,15 @@ feat(shared): add QualityMetrics model and DynamoDB table
    - Parse response as JSON array of score objects
 
 **Verification Checklist:**
-- [ ] Samples correct number of records (min of QUALITY_SAMPLE_SIZE and total)
-- [ ] Sends scoring prompts to Bedrock
-- [ ] Parses scoring responses correctly
-- [ ] Computes aggregate scores as mean across records
-- [ ] Diversity score calculated from unique prefixes
-- [ ] Overall score is weighted average
-- [ ] Handles partial scoring failures gracefully
-- [ ] Stores COMPLETED or FAILED status
-- [ ] Tracks and reports scoring cost
+- [x] Samples correct number of records (min of QUALITY_SAMPLE_SIZE and total)
+- [x] Sends scoring prompts to Bedrock
+- [x] Parses scoring responses correctly
+- [x] Computes aggregate scores as mean across records
+- [x] Diversity score calculated from unique prefixes
+- [x] Overall score is weighted average
+- [x] Handles partial scoring failures gracefully
+- [x] Stores COMPLETED or FAILED status
+- [x] Tracks and reports scoring cost
 
 **Testing Instructions:**
 
