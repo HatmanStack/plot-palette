@@ -3,12 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { createJob, generateUploadUrl, fetchTemplateVersions } from '../services/api'
 import { estimateCostRange } from '../constants/pricing'
+import SeedDataGenerator from '../components/SeedDataGenerator'
 import axios from 'axios'
 
 interface WizardData {
   templateId: string
   templateVersion: number | 'latest'
   seedDataFile: File | null
+  seedDataMode: 'upload' | 'generate'
+  generatedS3Key: string
   budgetLimit: number
   numRecords: number
   outputFormat: 'JSONL' | 'CSV' | 'PARQUET'
@@ -24,6 +27,8 @@ export default function CreateJob() {
     templateId: '',
     templateVersion: 'latest',
     seedDataFile: null,
+    seedDataMode: 'upload',
+    generatedS3Key: '',
     budgetLimit: 10,
     numRecords: 100,
     outputFormat: 'JSONL',
@@ -42,8 +47,16 @@ export default function CreateJob() {
   }, [data.templateId])
 
   async function handleSubmit() {
-    if (!data.templateId || !data.seedDataFile) {
-      setError('Please complete all required fields')
+    if (!data.templateId) {
+      setError('Please select a template')
+      return
+    }
+    if (data.seedDataMode === 'upload' && !data.seedDataFile) {
+      setError('Please upload seed data or generate from schema')
+      return
+    }
+    if (data.seedDataMode === 'generate' && !data.generatedS3Key) {
+      setError('Please generate seed data first')
       return
     }
 
@@ -51,20 +64,22 @@ export default function CreateJob() {
     setError('')
 
     try {
-      // Step 1: Get presigned upload URL from backend
-      const { upload_url, s3_key } = await generateUploadUrl(
-        data.seedDataFile.name,
-        data.seedDataFile.type || 'application/json'
-      )
+      let s3_key: string
 
-      // Step 2: Upload file to S3 using presigned URL
-      await axios.put(upload_url, data.seedDataFile, {
-        headers: {
-          'Content-Type': data.seedDataFile.type || 'application/json',
-        },
-      })
+      if (data.seedDataMode === 'upload' && data.seedDataFile) {
+        // Upload file to S3
+        const { upload_url, s3_key: uploadedKey } = await generateUploadUrl(
+          data.seedDataFile.name,
+          data.seedDataFile.type || 'application/json'
+        )
+        await axios.put(upload_url, data.seedDataFile, {
+          headers: { 'Content-Type': data.seedDataFile.type || 'application/json' },
+        })
+        s3_key = uploadedKey
+      } else {
+        s3_key = data.generatedS3Key
+      }
 
-      // Step 3: Create job with the S3 key
       const jobPayload: {
         template_id: string
         seed_data_path: string
@@ -80,13 +95,11 @@ export default function CreateJob() {
         output_format: data.outputFormat,
       }
 
-      // Only pass template_version when a specific version is selected
       if (data.templateVersion !== 'latest') {
         jobPayload.template_version = data.templateVersion
       }
 
       const job = await createJob(jobPayload)
-
       navigate(`/jobs/${job.job_id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create job')
@@ -150,7 +163,7 @@ export default function CreateJob() {
               </p>
             </div>
 
-            {/* Version selector — appears after template ID is entered */}
+            {/* Version selector */}
             {data.templateId && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -183,28 +196,70 @@ export default function CreateJob() {
           </div>
         )}
 
-        {/* Step 2: Seed Data Upload */}
+        {/* Step 2: Seed Data */}
         {step === 2 && (
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Upload Seed Data</h2>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Seed Data File (CSV or JSONL)
+            <h2 className="text-xl font-semibold">Seed Data</h2>
+
+            {/* Mode toggle */}
+            <div className="flex gap-4 mb-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="seedDataMode"
+                  value="upload"
+                  checked={data.seedDataMode === 'upload'}
+                  onChange={() => setData({ ...data, seedDataMode: 'upload' })}
+                />
+                <span className="text-sm font-medium">Upload File</span>
               </label>
-              <input
-                type="file"
-                accept=".csv,.jsonl,.json"
-                onChange={(e) =>
-                  setData({ ...data, seedDataFile: e.target.files?.[0] || null })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              />
-              {data.seedDataFile && (
-                <p className="text-sm text-green-600 mt-2">
-                  Selected: {data.seedDataFile.name}
-                </p>
-              )}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="seedDataMode"
+                  value="generate"
+                  checked={data.seedDataMode === 'generate'}
+                  onChange={() => setData({ ...data, seedDataMode: 'generate' })}
+                />
+                <span className="text-sm font-medium">Generate from Schema</span>
+              </label>
             </div>
+
+            {data.seedDataMode === 'upload' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Seed Data File (CSV or JSONL)
+                </label>
+                <input
+                  type="file"
+                  accept=".csv,.jsonl,.json"
+                  onChange={(e) =>
+                    setData({ ...data, seedDataFile: e.target.files?.[0] || null })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                />
+                {data.seedDataFile && (
+                  <p className="text-sm text-green-600 mt-2">
+                    Selected: {data.seedDataFile.name}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {data.seedDataMode === 'generate' && (
+              <SeedDataGenerator
+                templateId={data.templateId}
+                onGenerated={(s3Key) => {
+                  setData({ ...data, generatedS3Key: s3Key })
+                }}
+              />
+            )}
+
+            {data.generatedS3Key && data.seedDataMode === 'generate' && (
+              <p className="text-sm text-green-600">
+                Seed data ready: {data.generatedS3Key}
+              </p>
+            )}
           </div>
         )}
 
@@ -290,7 +345,11 @@ export default function CreateJob() {
               </div>
               <div className="flex justify-between">
                 <span className="font-medium">Seed Data:</span>
-                <span>{data.seedDataFile?.name}</span>
+                <span>
+                  {data.seedDataMode === 'upload'
+                    ? data.seedDataFile?.name || 'None'
+                    : `Generated (${data.generatedS3Key || 'pending'})`}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="font-medium">Budget:</span>
