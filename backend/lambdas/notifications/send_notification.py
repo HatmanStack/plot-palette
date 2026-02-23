@@ -111,8 +111,10 @@ def _send_email(email_address: str, job: dict[str, Any], status: str) -> None:
 
 
 def _validate_webhook_ip(url: str) -> None:
-    """Resolve webhook hostname and reject private/reserved IPs to prevent SSRF."""
+    """Validate webhook URL scheme and reject private/reserved resolved IPs to prevent SSRF."""
     parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Webhook URL must use https scheme, got {parsed.scheme}")
     hostname = parsed.hostname
     if not hostname:
         raise ValueError("Webhook URL has no hostname")
@@ -160,7 +162,7 @@ def _send_webhook(webhook_url: str, job: dict[str, Any], status: str, job_id: st
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 — scheme and IP validated by _validate_webhook_ip above
             logger.info(
                 json.dumps(
                     {
