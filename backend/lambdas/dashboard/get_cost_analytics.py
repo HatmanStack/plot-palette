@@ -54,7 +54,12 @@ def get_user_jobs(user_id: str, cutoff: datetime) -> list[dict[str, Any]]:
             ExpressionAttributeNames={"#s": "status"},
             Limit=MAX_JOBS,
         )
-        return response.get("Items", [])[:MAX_JOBS]
+        items = response.get("Items", [])[:MAX_JOBS]
+        if response.get("LastEvaluatedKey") and len(items) >= MAX_JOBS:
+            logger.warning(
+                json.dumps({"event": "jobs_query_truncated", "max_jobs": MAX_JOBS})
+            )
+        return items
     except ClientError as e:
         logger.error(json.dumps({"event": "query_jobs_error", "error": str(e)}))
         return []
@@ -77,6 +82,10 @@ def get_cost_records(job_id: str) -> list[dict[str, Any]]:
         pages += 1
         if not last_key:
             break
+    if last_key and pages == MAX_COST_PAGES:
+        logger.warning(
+            json.dumps({"event": "cost_pages_cap_reached", "job_id": job_id, "max_pages": MAX_COST_PAGES})
+        )
     return records
 
 
@@ -253,7 +262,11 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Collect all cost records across jobs
         all_records: list[dict[str, Any]] = []
         for job in jobs:
-            records = get_cost_records(job["job_id"])
+            job_id = job.get("job_id")
+            if not job_id:
+                logger.warning(json.dumps({"event": "job_missing_id", "item_keys": list(job.keys())}))
+                continue
+            records = get_cost_records(job_id)
             all_records.extend(records)
 
         # Deduplicate: keep only the latest cost record per job.
@@ -262,6 +275,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         latest_by_job: dict[str, dict[str, Any]] = {}
         for record in all_records:
             jid = record.get("job_id", "")
+            if not jid:
+                continue
             ts = record.get("timestamp", "")
             if jid not in latest_by_job or ts > latest_by_job[jid].get("timestamp", ""):
                 latest_by_job[jid] = record

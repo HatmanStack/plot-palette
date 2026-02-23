@@ -109,8 +109,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         logger.info(json.dumps({"event": "create_batch_request", "user_id": user_id}))
 
         try:
-            body = json.loads(event["body"])
-        except json.JSONDecodeError:
+            body = json.loads(event.get("body") or "")
+        except (json.JSONDecodeError, TypeError):
             return error_response(400, "Invalid JSON in request body")
 
         # Validate request
