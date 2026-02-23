@@ -60,8 +60,12 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
         total_cost: response.total_cost,
       })
 
-      onGenerated(response.s3_key, response.records_generated)
-      toast(`Generated ${response.records_generated} seed records`, 'success')
+      if (response.records_generated > 0) {
+        onGenerated(response.s3_key, response.records_generated)
+        toast(`Generated ${response.records_generated} seed records`, 'success')
+      } else {
+        toast('No valid records were generated', 'error')
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to generate seed data', 'error')
     } finally {
@@ -72,22 +76,25 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor="seed-count" className="block text-sm font-medium text-gray-700 mb-2">
           Number of Records (1-100)
         </label>
         <input
+          id="seed-count"
           type="number"
           min="1"
           max="100"
+          step="1"
           value={count}
-          onChange={(e) => setCount(Math.min(100, Math.max(1, Number(e.target.value))))}
+          onChange={(e) => setCount(Math.min(100, Math.max(1, Math.floor(Number(e.target.value)))))}
           className="w-full px-3 py-2 border border-gray-300 rounded-md"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Model Tier</label>
+        <label htmlFor="seed-model-tier" className="block text-sm font-medium text-gray-700 mb-2">Model Tier</label>
         <select
+          id="seed-model-tier"
           value={modelTier}
           onChange={(e) => setModelTier(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -101,10 +108,11 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor="seed-example-data" className="block text-sm font-medium text-gray-700 mb-2">
           Example Data (optional, JSON)
         </label>
         <textarea
+          id="seed-example-data"
           value={exampleData}
           onChange={(e) => setExampleData(e.target.value)}
           placeholder='{"author": {"name": "...", "biography": "..."}}'
@@ -114,10 +122,11 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor="seed-instructions" className="block text-sm font-medium text-gray-700 mb-2">
           Instructions (optional)
         </label>
         <textarea
+          id="seed-instructions"
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
           placeholder="Generate diverse authors from different eras and cultures"

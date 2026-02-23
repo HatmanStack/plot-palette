@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchBatchDetail, deleteBatch } from '../services/api'
 import { useToast } from '../hooks/useToast'
 import BatchJobTable from '../components/BatchJobTable'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const statusColors: Record<string, string> = {
   PENDING: 'bg-gray-100 text-gray-800',
@@ -18,6 +18,18 @@ export default function BatchDetail() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [showConfirm, setShowConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const confirmRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!showConfirm) return
+    confirmRef.current?.focus()
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowConfirm(false)
+    }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [showConfirm])
 
   const { data: batch, isLoading, error } = useQuery({
     queryKey: ['batch', batchId],
@@ -33,7 +45,8 @@ export default function BatchDetail() {
   })
 
   async function handleDelete() {
-    if (!batchId) return
+    if (!batchId || isDeleting) return
+    setIsDeleting(true)
     try {
       await deleteBatch(batchId)
       queryClient.invalidateQueries({ queryKey: ['batches'] })
@@ -41,6 +54,8 @@ export default function BatchDetail() {
       navigate('/jobs')
     } catch {
       toast('Failed to delete batch', 'error')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -68,7 +83,8 @@ export default function BatchDetail() {
           </span>
           <button
             onClick={() => setShowConfirm(true)}
-            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
+            disabled={isDeleting}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm disabled:opacity-50"
           >
             Delete Batch
           </button>
@@ -77,13 +93,24 @@ export default function BatchDetail() {
 
       {/* Confirmation Dialog */}
       {showConfirm && (
-        <div className="bg-red-50 border border-red-200 p-4 rounded-md mb-6">
-          <p className="text-red-800 mb-3">
+        <div
+          role="alertdialog"
+          aria-labelledby="confirm-delete-title"
+          aria-describedby="confirm-delete-desc"
+          className="bg-red-50 border border-red-200 p-4 rounded-md mb-6"
+        >
+          <p id="confirm-delete-title" className="sr-only">Confirm batch deletion</p>
+          <p id="confirm-delete-desc" className="text-red-800 mb-3">
             This will cancel all running jobs and delete the batch. This action cannot be undone.
           </p>
           <div className="flex gap-2">
-            <button onClick={handleDelete} className="px-4 py-2 bg-red-600 text-white rounded text-sm">
-              Confirm Delete
+            <button
+              ref={confirmRef}
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="px-4 py-2 bg-red-600 text-white rounded text-sm disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting...' : 'Confirm Delete'}
             </button>
             <button onClick={() => setShowConfirm(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded text-sm">
               Cancel
@@ -104,6 +131,11 @@ export default function BatchDetail() {
           <div
             className="bg-blue-600 h-3 rounded-full transition-all"
             style={{ width: `${progress}%` }}
+            role="progressbar"
+            aria-valuenow={progress}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Batch progress: ${progress}%`}
           />
         </div>
         <div className="flex gap-6 mt-4 text-sm text-gray-600">

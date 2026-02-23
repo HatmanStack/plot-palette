@@ -50,6 +50,10 @@ function PreferencesForm({ initialPrefs }: { initialPrefs: NotificationPreferenc
   }
 
   function handleSave() {
+    if (form.webhook_enabled && !form.webhook_url?.trim()) {
+      setWebhookError('Webhook URL is required when webhooks are enabled')
+      return
+    }
     if (form.webhook_enabled && form.webhook_url && !form.webhook_url.startsWith('https://')) {
       setWebhookError('Webhook URL must start with https://')
       return
