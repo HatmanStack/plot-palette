@@ -177,12 +177,22 @@ class TestDeleteBatch:
         self.mock_batches = MagicMock()
         self.mock_jobs = MagicMock()
         self.mock_sfn = MagicMock()
+        self.mock_s3 = MagicMock()
+        self.mock_cost_table = MagicMock()
+        # S3 paginator must return finite pages (not infinite MagicMock iteration)
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.return_value = [{}]
+        self.mock_s3.get_paginator.return_value = mock_paginator
+        # Cost tracking query must return finite results
+        self.mock_cost_table.query.return_value = {"Items": [], "Count": 0}
         _delete_mod.batches_table = self.mock_batches
         _delete_mod.jobs_table = self.mock_jobs
         _delete_mod.sfn_client = self.mock_sfn
+        _delete_mod.s3_client = self.mock_s3
+        _delete_mod.cost_tracking_table = self.mock_cost_table
 
     def test_delete_batch_cancels_running(self):
-        """Batch with 1 RUNNING, 1 COMPLETED job: RUNNING cancelled, COMPLETED deleted."""
+        """Batch with 1 RUNNING, 1 COMPLETED job: RUNNING cancelled, COMPLETED cleaned up."""
         batch = _make_batch()
         batch["job_ids"] = ["job-1", "job-2"]
         self.mock_batches.get_item.return_value = {"Item": batch}
@@ -203,7 +213,14 @@ class TestDeleteBatch:
 
         assert response["statusCode"] == 200
         body = json.loads(response["body"])
-        assert body["jobs_cancelled"] + body["jobs_deleted"] >= 2
+        assert body["jobs_cancelled"] == 1
+        assert body["jobs_deleted"] == 1
+        # RUNNING job updated to CANCELLED
+        self.mock_jobs.update_item.assert_called_once()
+        # COMPLETED job record deleted
+        self.mock_jobs.delete_item.assert_called_once()
+        # Batch record deleted
+        self.mock_batches.delete_item.assert_called_once()
 
     def test_delete_batch_removes_record(self):
         """Batch record is deleted from table."""
