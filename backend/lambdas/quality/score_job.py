@@ -164,6 +164,20 @@ def _compute_overall_score(aggregate_scores: dict[str, float], diversity_score: 
     return round(total, 4)
 
 
+def _convert_record_scores(scores: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert float values in record scores to Decimal for DynamoDB."""
+    converted = []
+    for s in scores:
+        converted.append({
+            "record_index": s.get("record_index", 0),
+            "coherence": Decimal(str(round(float(s.get("coherence", 0)), 4))),
+            "relevance": Decimal(str(round(float(s.get("relevance", 0)), 4))),
+            "format_compliance": Decimal(str(round(float(s.get("format_compliance", 0)), 4))),
+            "detail": s.get("detail", ""),
+        })
+    return converted
+
+
 def _store_quality_metrics(
     job_id: str,
     status: QualityStatus,
@@ -188,7 +202,7 @@ def _store_quality_metrics(
         },
         "diversity_score": Decimal(str(round(diversity_score, 4))),
         "overall_score": Decimal(str(round(overall_score, 4))),
-        "record_scores": record_scores or [],
+        "record_scores": _convert_record_scores(record_scores or []),
         "scoring_cost": Decimal(str(round(scoring_cost, 6))),
         "status": status.value,
         "ttl": int(datetime.now(UTC).timestamp() + (90 * 24 * 60 * 60)),

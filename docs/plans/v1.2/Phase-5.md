@@ -536,11 +536,11 @@ feat(infra): add quality scoring SAM resources
    - Invoke trigger_scoring on already-scored job — assert 409
 
 **Verification Checklist:**
-- [ ] Scoring pipeline reads export from S3
-- [ ] Scoring results stored in QualityMetrics table
-- [ ] Aggregate scores are means of per-record scores
-- [ ] GET endpoint returns stored metrics
-- [ ] Trigger endpoint rejects already-scored jobs
+- [x] Scoring pipeline reads export from S3
+- [x] Scoring results stored in QualityMetrics table
+- [x] Aggregate scores are means of per-record scores
+- [x] GET endpoint returns stored metrics
+- [x] Trigger endpoint rejects already-scored jobs
 
 **Commit Message Template:**
 ```
