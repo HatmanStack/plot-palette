@@ -31,6 +31,7 @@ from constants import (  # noqa: E402
 from utils import (  # noqa: E402
     calculate_bedrock_cost,
     estimate_tokens,
+    sanitize_error_message,
     setup_logger,
 )
 
@@ -263,8 +264,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         try:
             all_records = _load_export_records(job_id, output_format)
         except Exception as e:
-            error_msg = f"Failed to load export file: {str(e)}"
-            logger.error(json.dumps({"event": "export_load_error", "job_id": job_id, "error": str(e)}))
+            error_msg = f"Failed to load export file: {sanitize_error_message(str(e))}"
+            logger.error(json.dumps({"event": "export_load_error", "job_id": job_id, "error": sanitize_error_message(str(e))}))
             _store_quality_metrics(
                 job_id=job_id,
                 status=QualityStatus.FAILED,

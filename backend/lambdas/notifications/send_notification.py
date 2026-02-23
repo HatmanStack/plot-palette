@@ -10,6 +10,7 @@ import json
 import os
 import sys
 from typing import Any
+from urllib.parse import urlparse
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -37,6 +38,20 @@ STATUS_TO_PREF = {
     "FAILED": "notify_on_failure",
     "BUDGET_EXCEEDED": "notify_on_budget_exceeded",
 }
+
+
+def _mask_email(email: str) -> str:
+    """Mask email address for logging (user@example.com -> u***@example.com)."""
+    parts = email.split("@")
+    if len(parts) != 2 or not parts[0]:
+        return "***"
+    return f"{parts[0][0]}***@{parts[1]}"
+
+
+def _sanitize_url(url: str) -> str:
+    """Redact path and query from URL for logging."""
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}/..."
 
 
 def _build_email_body(job: dict[str, Any], status: str) -> str:
@@ -79,13 +94,13 @@ def _send_email(email_address: str, job: dict[str, Any], status: str) -> None:
         )
         logger.info(json.dumps({
             "event": "email_sent",
-            "to": email_address,
+            "to": _mask_email(email_address),
             "status": status,
         }))
     except ClientError as e:
         logger.error(json.dumps({
             "event": "email_send_error",
-            "to": email_address,
+            "to": _mask_email(email_address),
             "error": str(e),
         }))
 
@@ -115,13 +130,13 @@ def _send_webhook(webhook_url: str, job: dict[str, Any], status: str, job_id: st
         with urllib.request.urlopen(req, timeout=5) as resp:
             logger.info(json.dumps({
                 "event": "webhook_sent",
-                "url": webhook_url,
+                "url": _sanitize_url(webhook_url),
                 "status_code": resp.status,
             }))
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
         logger.error(json.dumps({
             "event": "webhook_send_error",
-            "url": webhook_url,
+            "url": _sanitize_url(webhook_url),
             "error": str(e),
         }))
 
@@ -173,10 +188,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Check if notification is wanted for this status
         pref_key = STATUS_TO_PREF.get(status)
-        if pref_key and not prefs.get(pref_key, True):
+        if pref_key is None:
+            logger.info(json.dumps({
+                "event": "unknown_status_skipped",
+                "status": status,
+            }))
+            return _sfn_response(f"Unknown status {status}, skipping notification")
+        if not prefs.get(pref_key, True):
             logger.info(json.dumps({
                 "event": "notification_skipped",
-                "user_id": user_id,
                 "status": status,
                 "pref_key": pref_key,
             }))

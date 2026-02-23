@@ -67,7 +67,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             limit = DEFAULT_LIMIT
 
         if sort_by not in ("popular", "recent", "name"):
-            return error_response(400, f"Invalid sort: {sort_by}. Must be one of: popular, recent, name")
+            return error_response(400, f"Invalid sort: {sanitize_error_message(sort_by)}. Must be one of: popular, recent, name")
 
         logger.info(
             json.dumps({

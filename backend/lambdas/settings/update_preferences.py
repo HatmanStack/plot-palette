@@ -89,6 +89,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "notify_on_budget_exceeded": True,
             }
 
+        # Capture original updated_at before merging for optimistic locking
+        original_updated_at = existing.get("updated_at") if "Item" in existing_response else None
+
         # Merge updates
         existing.update(updates)
         existing["user_id"] = user_id
@@ -110,7 +113,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return error_response(400, str(e))
 
         # Save to DynamoDB with optimistic locking
-        expected_updated_at = existing.get("updated_at") if "Item" in existing_response else None
+        expected_updated_at = original_updated_at
         put_kwargs: dict[str, Any] = {"Item": prefs.to_table_item()}
         if expected_updated_at:
             put_kwargs["ConditionExpression"] = Attr("updated_at").eq(expected_updated_at)

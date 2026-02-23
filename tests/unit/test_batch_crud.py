@@ -104,26 +104,26 @@ class TestGetBatch:
     def setup_method(self):
         self.mock_batches = MagicMock()
         self.mock_jobs = MagicMock()
+        self.mock_dynamodb = MagicMock()
         _get_mod.batches_table = self.mock_batches
         _get_mod.jobs_table = self.mock_jobs
+        _get_mod.dynamodb = self.mock_dynamodb
 
     def test_get_batch_with_jobs(self):
         """Batch with 3 jobs returns job details."""
         batch = _make_batch()
         self.mock_batches.get_item.return_value = {"Item": batch}
 
-        # The handler reads the table name from env and passes it to batch_get_item.
-        # Since the mock's meta.client.batch_get_item returns whatever we configure,
-        # we need the Responses key to match the JOBS_TABLE_NAME env var.
         table_name = os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs")
-        self.mock_jobs.meta.client.batch_get_item.return_value = {
+        self.mock_dynamodb.batch_get_item.return_value = {
             "Responses": {
                 table_name: [
                     _make_job("job-1", "COMPLETED"),
                     _make_job("job-2", "RUNNING"),
                     _make_job("job-3", "QUEUED"),
                 ]
-            }
+            },
+            "UnprocessedKeys": {},
         }
 
         event = {

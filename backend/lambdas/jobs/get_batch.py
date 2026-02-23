@@ -67,10 +67,17 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             # batch_get_item supports max 100 keys, we have max 20
             try:
                 keys = [{"job_id": jid} for jid in job_ids]
-                batch_response = jobs_table.meta.client.batch_get_item(
+                batch_response = dynamodb.batch_get_item(
                     RequestItems={table_name: {"Keys": keys}}
                 )
                 raw_jobs = batch_response.get("Responses", {}).get(table_name, [])
+                # Retry unprocessed keys once
+                unprocessed = batch_response.get("UnprocessedKeys", {})
+                if unprocessed:
+                    retry_response = dynamodb.batch_get_item(RequestItems=unprocessed)
+                    raw_jobs.extend(
+                        retry_response.get("Responses", {}).get(table_name, [])
+                    )
                 for job in raw_jobs:
                     jobs.append({
                         "job_id": job["job_id"],
@@ -85,38 +92,45 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 logger.error(json.dumps({"event": "batch_get_jobs_error", "error": str(e)}))
                 jobs_load_error = True
 
-        # Compute live batch status from job statuses
-        terminal_statuses = {"COMPLETED", "FAILED", "CANCELLED", "BUDGET_EXCEEDED"}
-        completed_count = sum(1 for j in jobs if j["status"] == "COMPLETED")
-        failed_count = sum(1 for j in jobs if j["status"] in {"FAILED", "CANCELLED", "BUDGET_EXCEEDED"})
-        total_cost = sum(j.get("cost_estimate", 0) for j in jobs)
-        all_terminal = all(j["status"] in terminal_statuses for j in jobs) if jobs else False
+        # Compute live batch status from job statuses (only when jobs loaded)
+        if not jobs_load_error:
+            terminal_statuses = {"COMPLETED", "FAILED", "CANCELLED", "BUDGET_EXCEEDED"}
+            completed_count = sum(1 for j in jobs if j["status"] == "COMPLETED")
+            failed_count = sum(1 for j in jobs if j["status"] in {"FAILED", "CANCELLED", "BUDGET_EXCEEDED"})
+            total_cost = sum(j.get("cost_estimate", 0) for j in jobs)
+            all_terminal = all(j["status"] in terminal_statuses for j in jobs) if jobs else False
 
-        if all_terminal and jobs:
-            computed_status = "COMPLETED" if failed_count == 0 else "PARTIAL_FAILURE"
+            if all_terminal and jobs:
+                computed_status = "COMPLETED" if failed_count == 0 else "PARTIAL_FAILURE"
+            else:
+                computed_status = batch["status"]
+
+            # Update batch record if status changed
+            if (
+                computed_status != batch["status"]
+                or completed_count != int(batch.get("completed_jobs", 0))
+            ):
+                try:
+                    batches_table.update_item(
+                        Key={"batch_id": batch_id},
+                        UpdateExpression="SET #s = :status, completed_jobs = :comp, failed_jobs = :fail, total_cost = :cost, updated_at = :now",
+                        ExpressionAttributeNames={"#s": "status"},
+                        ExpressionAttributeValues={
+                            ":status": computed_status,
+                            ":comp": completed_count,
+                            ":fail": failed_count,
+                            ":cost": round(total_cost, 4),
+                            ":now": datetime.now(UTC).isoformat(),
+                        },
+                    )
+                except ClientError:
+                    pass  # Best effort — don't fail the read
         else:
+            # Preserve existing batch values when jobs failed to load
             computed_status = batch["status"]
-
-        # Update batch record if status changed
-        if (
-            computed_status != batch["status"]
-            or completed_count != int(batch.get("completed_jobs", 0))
-        ):
-            try:
-                batches_table.update_item(
-                    Key={"batch_id": batch_id},
-                    UpdateExpression="SET #s = :status, completed_jobs = :comp, failed_jobs = :fail, total_cost = :cost, updated_at = :now",
-                    ExpressionAttributeNames={"#s": "status"},
-                    ExpressionAttributeValues={
-                        ":status": computed_status,
-                        ":comp": completed_count,
-                        ":fail": failed_count,
-                        ":cost": round(total_cost, 4),
-                        ":now": datetime.now(UTC).isoformat(),
-                    },
-                )
-            except ClientError:
-                pass  # Best effort — don't fail the read
+            completed_count = int(batch.get("completed_jobs", 0))
+            failed_count = int(batch.get("failed_jobs", 0))
+            total_cost = float(batch.get("total_cost", 0))
 
         result = {
             "batch_id": batch["batch_id"],

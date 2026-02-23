@@ -40,6 +40,7 @@ cost_tracking_table = dynamodb.Table(
 
 PERIOD_DAYS = {"7d": 7, "30d": 30, "90d": 90}
 MAX_JOBS = 100
+MAX_COST_PAGES = 10
 
 
 def get_user_jobs(user_id: str, cutoff: datetime) -> list[dict[str, Any]]:
@@ -51,6 +52,7 @@ def get_user_jobs(user_id: str, cutoff: datetime) -> list[dict[str, Any]]:
             & Key("created_at").gte(cutoff.isoformat()),
             ProjectionExpression="job_id, #s, budget_limit, records_generated, created_at",
             ExpressionAttributeNames={"#s": "status"},
+            Limit=MAX_JOBS,
         )
         return response.get("Items", [])[:MAX_JOBS]
     except ClientError as e:
@@ -62,7 +64,8 @@ def get_cost_records(job_id: str) -> list[dict[str, Any]]:
     """Query all cost tracking records for a job, with pagination."""
     records: list[dict[str, Any]] = []
     last_key = None
-    while True:
+    pages = 0
+    while pages < MAX_COST_PAGES:
         query_kwargs: dict[str, Any] = {
             "KeyConditionExpression": Key("job_id").eq(job_id),
         }
@@ -71,6 +74,7 @@ def get_cost_records(job_id: str) -> list[dict[str, Any]]:
         response = cost_tracking_table.query(**query_kwargs)
         records.extend(response.get("Items", []))
         last_key = response.get("LastEvaluatedKey")
+        pages += 1
         if not last_key:
             break
     return records
@@ -97,6 +101,8 @@ def aggregate_by_day(all_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
     for record in all_records:
         ts = record.get("timestamp", "")
+        if len(ts) < 10:
+            continue
         date_key = ts[:10]  # YYYY-MM-DD
         costs = extract_cost(record)
         for k in ("bedrock", "fargate", "s3", "total"):
@@ -228,7 +234,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         logger.info(
             json.dumps({
                 "event": "cost_analytics_request",
-                "user_id": user_id,
                 "period": period,
                 "group_by": group_by,
             })
@@ -268,7 +273,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         logger.info(
             json.dumps({
                 "event": "cost_analytics_success",
-                "user_id": user_id,
                 "job_count": len(jobs),
                 "record_count": len(all_records),
             })
