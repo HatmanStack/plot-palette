@@ -613,10 +613,10 @@ feat(infra): add batch jobs and seed generation SAM resources
    - Read uploaded file and verify record structure matches schema
 
 **Verification Checklist:**
-- [ ] Batch creates correct number of jobs
-- [ ] Batch record links to all job IDs
-- [ ] Generated seed data uploaded to S3 in JSONL format
-- [ ] Seed data records match template schema
+- [x] Batch creates correct number of jobs
+- [x] Batch record links to all job IDs
+- [x] Generated seed data uploaded to S3 in JSONL format
+- [x] Seed data records match template schema
 
 **Commit Message Template:**
 ```
