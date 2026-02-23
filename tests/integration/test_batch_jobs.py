@@ -254,6 +254,7 @@ def test_get_batch_returns_batch_with_jobs():
     # Wire get_batch handler — set JOBS_TABLE_NAME so batch_get_item finds the table
     _get_mod.batches_table = batches_table
     _get_mod.jobs_table = jobs_table
+    _get_mod.dynamodb = dynamodb
 
     with patch.dict(os.environ, {"JOBS_TABLE_NAME": "plot-palette-Jobs-test"}):
         get_event = _make_get_event("user-A", batch_id)
