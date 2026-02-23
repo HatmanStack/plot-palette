@@ -585,3 +585,73 @@ npm run check
 ### What Phase 3 Builds On
 - Phase 3's notifications feature will add notification preference storage to the Settings page
 - Phase 3's SSE progress streaming will integrate with the cost analytics (real-time cost updates)
+
+---
+
+## Review Feedback (Iteration 1)
+
+### Task 1: Cost Aggregation Lambda — Data Model Semantics
+
+> **Consider:** In `backend/ecs_tasks/worker/worker.py`, the `update_cost_tracking()` method writes `estimated_cost` as a *cumulative* snapshot — each record contains the total cost from job start to that checkpoint. For a 500-record job with `CHECKPOINT_INTERVAL=50`, the worker writes 10 CostTracking records where `estimated_cost.total` goes $1, $2, $3, ..., $10.
+>
+> **Think about:** In `get_cost_analytics.py:92-107`, `aggregate_by_day` sums `extract_cost(record)["total"]` across all records. If a job has 10 cumulative cost records all on the same day, what does the daily total become? $1+$2+...+$10=$55 instead of the actual $10. Is this the intended behavior?
+>
+> **Reflect:** The same overcounting affects `compute_summary` (lines 172, 185-190) — `total_spend`, `avg_cost_per_job`, `budget_efficiency`, and `most_expensive_job` all sum cumulative snapshots. Should the handler use only the *last* cost record per job (highest timestamp = final cumulative value)? Or should the cost tracking model write deltas instead?
+
+**Resolution:** Fixed. Deduplication block at `get_cost_analytics.py:253-262` now keeps only the latest cost record per job (by highest timestamp) before aggregation, since records are cumulative snapshots.
+
+### Task 3: Search Templates — No-Op Test
+
+> **Consider:** In `tests/unit/test_search_templates.py:84-105`, the test `test_search_returns_only_public` creates public and private templates, invokes the handler, but ends with `pass`. It asserts nothing. The "corrected" version at line 107 properly tests this scenario.
+>
+> **Think about:** Does a test that never asserts anything provide value, or does it inflate the test count? The corrected version below it covers the intent — should the no-op version be removed?
+
+**Resolution:** Fixed. No-op test removed. Single `test_search_returns_only_public` at line 84 now has proper assertions.
+
+### Task 5: Frontend API — Missing Zod Validation
+
+> **Consider:** In `frontend/src/services/api.ts:254-258`, the `forkTemplate` function returns `data` without Zod validation.
+>
+> **Reflect:** Phase 0 (ADR: API Service Pattern) states "All API responses are validated with Zod schemas before being returned to components." Every other API function in this file uses `.parse()`. Should `forkTemplate` follow the same pattern?
+
+**Resolution:** Fixed. `ForkResultSchema` defined and `ForkResultSchema.parse(data)` used in `forkTemplate`.
+
+---
+
+## Code Review — Phase 2
+
+### Verification Summary
+
+- Tests: 54 new (27 backend + 27 frontend), all passing
+- Full suite: 572 passed, 49 skipped, 0 failures
+- Backend coverage: 76.61% (above 70%)
+- Frontend coverage: 81.67% statements (above 70%)
+- Lint: Ruff, ESLint, tsc, cfn-lint all pass
+- Build: `npm run check` passes
+- Commits: 7 commits + fixes, conventional format
+
+### Review Complete
+
+**Implementation Quality:** High
+**Spec Compliance:** 100%
+**Test Coverage:** Adequate
+**Code Quality:** High
+
+#### Files Changed (Phase 2)
+- `backend/lambdas/dashboard/get_cost_analytics.py` — Cost aggregation endpoint
+- `backend/lambdas/templates/search_templates.py` — Marketplace search endpoint
+- `backend/lambdas/templates/fork_template.py` — Template fork endpoint
+- `backend/template.yaml` — SAM resources for 3 new Lambdas
+- `frontend/src/routes/CostAnalytics.tsx` — Cost analytics dashboard page
+- `frontend/src/routes/Templates.tsx` — Marketplace with tabs, search, fork
+- `frontend/src/components/CostChart.tsx` — Pure CSS stacked bar chart
+- `frontend/src/components/CostSummaryCards.tsx` — Summary statistics cards
+- `frontend/src/components/ModelCostBreakdown.tsx` — Per-model cost table
+- `frontend/src/components/TemplateCard.tsx` — Template card (owned/marketplace variants)
+- `frontend/src/components/TemplatePreview.tsx` — Template preview modal
+- `frontend/src/services/api.ts` — Zod schemas + API functions for cost analytics, marketplace, fork
+- `frontend/src/components/Sidebar.tsx` — Cost Analytics nav link
+- `frontend/src/App.tsx` — /cost-analytics route
+- 7 test files (unit + integration, backend + frontend)
+
+**APPROVED**

@@ -661,3 +661,39 @@ npm run check
 ### What Phase 5 Builds On
 - Phase 5's quality scoring will benefit from batch jobs (score and compare across model tiers)
 - Phase 5's quality metrics can be displayed in the BatchDetail comparison table
+
+---
+
+## Review Feedback (Iteration 1)
+
+### Task 1: Batch Data Model
+
+> **Consider:** The plan's code snippet on line 48 defines `status: str` with a comment listing valid values. But the implementation correctly uses `status: BatchStatus` with the enum from `constants.py`. Should a zero-context engineer implement raw strings or the type-safe enum? Which one does the codebase's `JobConfig` model use for its `status` field — a raw string or a `JobStatus` enum?
+
+### Task 3: Delete Batch — Cleanup Gap
+
+> **Think about:** The plan says to "reuse delete_job logic" for terminal jobs. Look at `delete_job.py:41-66` (`delete_s3_job_data`) and `delete_job.py:69-107` (`delete_cost_tracking_records`). Now look at `delete_batch.py:99-102`. When a terminal job is deleted in a batch, what happens to its S3 data under `jobs/{job_id}/`? What happens to its CostTracking records? Are they cleaned up, or do they become orphaned resources?
+>
+> **Reflect:** Now look at Task 7's `DeleteBatchFunction` IAM policies in `template.yaml:857-881`. Does it have `S3CrudPolicy` for the DataBucket? Does it have `DynamoDBCrudPolicy` for the CostTrackingTable? If someone tried to add S3 cleanup to `delete_batch.py`, would it work at runtime?
+>
+> **Consider:** Should the plan either (a) explicitly instruct the implementer to extract `delete_s3_job_data()` and `delete_cost_tracking_records()` into `shared/utils.py` for reuse, and add the corresponding IAM policies in Task 7, or (b) acknowledge that batch deletion intentionally skips S3/cost cleanup as an MVP trade-off?
+
+### Task 4: Dashboard Integration — Missing
+
+> **Think about:** The plan at line 306-308 says: "Add 'Batches' section or tab to Dashboard page showing recent batches. Each batch links to BatchDetail page." Now read `frontend/src/routes/Dashboard.tsx`. Does it import `listBatches` from the API service? Does it render any batch-related UI? Is this requirement tracked in the verification checklist?
+
+### Task 5: Bedrock Invocation — Ambiguous Guidance
+
+> **Consider:** The plan at line 396 says "Call Bedrock via `ecs_tasks/worker/template_engine.py`'s `_invoke_bedrock()` method (reuse existing model invocation logic — copy or import the function)." But `_invoke_bedrock` is an instance method of `TemplateEngine` decorated with `@retry_with_backoff`. Can you import an instance method from a worker package into a Lambda handler? The implementation chose to duplicate the Bedrock invocation logic in `generate_seed_data.py:82-129`. Should the plan explicitly recommend this approach and acknowledge the code duplication trade-off?
+
+### Task 5: Seed Generation Cost — Always Zero
+
+> **Think about:** The plan at line 401 says the endpoint returns `total_cost`. Look at `generate_seed_data.py:300`: `"total_cost": 0.0`. The `invoke_bedrock()` function in this file doesn't track tokens or calculate costs. Should the plan specify how to estimate the cost (using `estimate_tokens()` and `calculate_bedrock_cost()` from `shared/utils.py`), or should it acknowledge that cost tracking for seed generation is deferred?
+
+### Batch Lifecycle — Missing Status Transition
+
+> **Reflect:** The plan defines `BatchStatus` with four states: PENDING, RUNNING, COMPLETED, PARTIAL_FAILURE. At creation time, the batch is set to RUNNING (line 231). But what mechanism transitions a batch from RUNNING to COMPLETED when all its jobs finish? There is no Step Functions integration for batches, no DynamoDB Stream trigger, and no cron job. When a user polls the `GET /jobs/batches/{batch_id}` endpoint, it returns live job statuses, but the batch record itself stays RUNNING forever. Should the plan add an explicit mechanism (e.g., the `get_batch` handler computes and updates batch status on read, or the notification Lambda updates batch status when a job completes)?
+
+### Task 4: BatchJobTable — Missing "Time" Column
+
+> **Consider:** The plan at line 302 specifies columns: "Sweep Value, Status, Records, Cost, Time." Look at `BatchJobTable.tsx`. Which of these columns are actually rendered? Is the "Time" column present?
