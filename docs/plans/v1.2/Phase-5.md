@@ -430,12 +430,12 @@ feat(frontend): add quality scoring report to job and batch views
 2. **Add `${ScoreJobFunctionArn}` substitution** to the state machine definition in `backend/template.yaml` where it passes substitutions to the ASL file.
 
 **Verification Checklist:**
-- [ ] `ScoreJobQuality` state added to `job-lifecycle.asl.json` (not template.yaml)
-- [ ] State references `${ScoreJobFunctionArn}` (substituted by SAM template)
-- [ ] Catch block handles all errors (quality failure doesn't fail the job)
-- [ ] ResultPath: null (don't pollute state with scoring output)
-- [ ] Timeout is 180 seconds
-- [ ] Flow order: MarkJobCompleted → ScoreJobQuality → SendNotificationCompleted → EndCompleted
+- [x] `ScoreJobQuality` state added to `job-lifecycle.asl.json` (not template.yaml)
+- [x] State references `${ScoreJobFunctionArn}` (substituted by SAM template)
+- [x] Catch block handles all errors (quality failure doesn't fail the job)
+- [x] ResultPath: null (don't pollute state with scoring output)
+- [x] Timeout is 180 seconds
+- [x] Flow order: MarkJobCompleted → ScoreJobQuality → SendNotificationCompleted → EndCompleted
 - [ ] `cfn-lint backend/template.yaml` passes
 
 **Testing Instructions:**

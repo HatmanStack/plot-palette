@@ -204,6 +204,24 @@
         }
       },
       "ResultPath": null,
+      "Next": "ScoreJobQuality"
+    },
+
+    "ScoreJobQuality": {
+      "Type": "Task",
+      "Resource": "${ScoreJobFunctionArn}",
+      "Parameters": {
+        "job_id.$": "$.job_id"
+      },
+      "ResultPath": null,
+      "TimeoutSeconds": 180,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "SendNotificationCompleted"
+        }
+      ],
       "Next": "SendNotificationCompleted"
     },
 
