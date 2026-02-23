@@ -936,6 +936,82 @@ Resources:
             Path: /seed-data/generate
             Method: POST
 
+  # ============================================================
+  # Lambda Functions - Quality Scoring (Phase 5)
+  # ============================================================
+  ScoreJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-score-job-${Environment}
+      CodeUri: lambdas/quality/
+      Handler: score_job.lambda_handler
+      MemorySize: 1024
+      Timeout: 120
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QualityMetricsTable
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+      Environment:
+        Variables:
+          SCORE_JOB_FUNCTION_NAME: !Sub plot-palette-score-job-${Environment}
+
+  GetQualityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-quality-${Environment}
+      CodeUri: lambdas/quality/
+      Handler: get_quality.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref QualityMetricsTable
+      Events:
+        GetQuality:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/quality
+            Method: GET
+
+  TriggerScoringFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-trigger-scoring-${Environment}
+      CodeUri: lambdas/quality/
+      Handler: trigger_scoring.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref QualityMetricsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt ScoreJobFunction.Arn
+      Environment:
+        Variables:
+          SCORE_JOB_FUNCTION_NAME: !Sub plot-palette-score-job-${Environment}
+      Events:
+        TriggerScoring:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/quality
+            Method: POST
+
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL
@@ -972,3 +1048,11 @@ Outputs:
   BatchesTableName:
     Description: DynamoDB Batches table name
     Value: !Ref BatchesTable
+
+  QualityMetricsTableName:
+    Description: DynamoDB QualityMetrics table name
+    Value: !Ref QualityMetricsTable
+
+  ScoreJobFunctionArn:
+    Description: Score Job Lambda function ARN
+    Value: !GetAtt ScoreJobFunction.Arn

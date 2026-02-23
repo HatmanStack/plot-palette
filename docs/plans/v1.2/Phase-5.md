@@ -436,7 +436,7 @@ feat(frontend): add quality scoring report to job and batch views
 - [x] ResultPath: null (don't pollute state with scoring output)
 - [x] Timeout is 180 seconds
 - [x] Flow order: MarkJobCompleted → ScoreJobQuality → SendNotificationCompleted → EndCompleted
-- [ ] `cfn-lint backend/template.yaml` passes
+- [x] `cfn-lint backend/template.yaml` passes
 
 **Testing Instructions:**
 
@@ -493,11 +493,11 @@ feat(infra): add quality scoring step to job lifecycle state machine
    - TriggerScoringFunction needs: Lambda InvokeFunction on ScoreJobFunction ARN
 
 **Verification Checklist:**
-- [ ] `cfn-lint backend/template.yaml` passes
-- [ ] All functions have correct timeouts and memory
-- [ ] Bedrock permissions granted
-- [ ] Lambda invoke permissions for trigger → scorer
-- [ ] State machine references correct function ARN
+- [x] `cfn-lint backend/template.yaml` passes
+- [x] All functions have correct timeouts and memory
+- [x] Bedrock permissions granted
+- [x] Lambda invoke permissions for trigger → scorer
+- [x] State machine references correct function ARN
 
 **Commit Message Template:**
 ```
