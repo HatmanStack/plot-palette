@@ -632,10 +632,10 @@ feat(infra): add notification infrastructure and SSE streaming endpoint
    - Test terminal state — assert `event: complete` line present
 
 **Verification Checklist:**
-- [ ] Notification sends email when preferences say to
-- [ ] Notification skips when preferences say not to
-- [ ] SSE response is valid format
-- [ ] SSE terminal event sent for completed jobs
+- [x] Notification sends email when preferences say to
+- [x] Notification skips when preferences say not to
+- [x] SSE response is valid format
+- [x] SSE terminal event sent for completed jobs
 
 **Commit Message Template:**
 ```

@@ -92,13 +92,13 @@ def _send_email(email_address: str, job: dict[str, Any], status: str) -> None:
 
 def _send_webhook(webhook_url: str, job: dict[str, Any], status: str, job_id: str) -> None:
     """Send webhook notification via HTTP POST."""
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     payload = {
         "job_id": job_id,
         "status": status,
-        "records_generated": job.get("records_generated", 0),
+        "records_generated": int(job.get("records_generated", 0)),
         "cost_estimate": float(job.get("cost_estimate", 0)),
         "template_id": job.get("config", {}).get("template_id", ""),
     }
