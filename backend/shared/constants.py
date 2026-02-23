@@ -199,7 +199,9 @@ DEFAULT_AWS_REGION = "us-east-1"
 # Quality Scoring Configuration
 QUALITY_SAMPLE_SIZE = 20  # Default records to sample for scoring
 QUALITY_MAX_SAMPLE = 50  # Maximum allowed sample size
-QUALITY_SCORING_MODEL = "anthropic.claude-3-5-sonnet-20241022-v2:0"  # Premium model for accurate scoring
+QUALITY_SCORING_MODEL = (
+    "anthropic.claude-3-5-sonnet-20241022-v2:0"  # Premium model for accurate scoring
+)
 QUALITY_DIMENSIONS = ["coherence", "relevance", "format_compliance"]
 QUALITY_WEIGHTS = {
     "coherence": 0.35,

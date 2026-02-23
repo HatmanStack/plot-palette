@@ -52,8 +52,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     try:
         set_correlation_id(extract_request_id(event))
 
-        user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
-
         params = event.get("queryStringParameters") or {}
         query = params.get("q", "").strip()
         sort_by = params.get("sort", "recent")
@@ -67,16 +65,20 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             limit = DEFAULT_LIMIT
 
         if sort_by not in ("popular", "recent", "name"):
-            return error_response(400, f"Invalid sort: {sanitize_error_message(sort_by)}. Must be one of: popular, recent, name")
+            return error_response(
+                400,
+                f"Invalid sort: {sanitize_error_message(sort_by)}. Must be one of: popular, recent, name",
+            )
 
         logger.info(
-            json.dumps({
-                "event": "search_templates_request",
-                "user_id": user_id,
-                "query": query,
-                "sort": sort_by,
-                "limit": limit,
-            })
+            json.dumps(
+                {
+                    "event": "search_templates_request",
+                    "query": query,
+                    "sort": sort_by,
+                    "limit": limit,
+                }
+            )
         )
 
         # Scan for public templates (DynamoDB FilterExpression)
@@ -107,7 +109,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Group by template_id, keep latest version only
         template_dict: dict[str, dict[str, Any]] = {}
         for template in all_public:
-            tid = template["template_id"]
+            tid = template.get("template_id")
+            if not tid:
+                continue
             version = template.get("version", 1)
             if tid not in template_dict or version > template_dict[tid].get("version", 0):
                 template_dict[tid] = template
@@ -118,7 +122,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if query:
             query_lower = query.lower()
             results = [
-                t for t in results
+                t
+                for t in results
                 if query_lower in t.get("name", "").lower()
                 or query_lower in t.get("description", "").lower()
             ]
@@ -136,7 +141,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if last_key_b64:
             try:
                 last_key_data = json.loads(base64.b64decode(last_key_b64))
-                start_idx = last_key_data.get("offset", 0)
+                start_idx = max(0, int(last_key_data.get("offset", 0)))
             except (json.JSONDecodeError, ValueError, KeyError):
                 pass
 
@@ -152,24 +157,28 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Format response: strip template_definition for security
         formatted = []
         for template in paginated:
-            formatted.append({
-                "template_id": template["template_id"],
-                "name": template.get("name", ""),
-                "description": template.get("description", ""),
-                "user_id": template.get("user_id", ""),
-                "version": template.get("version", 1),
-                "schema_requirements": template.get("schema_requirements", []),
-                "step_count": len(template.get("template_definition", {}).get("steps", [])),
-                "created_at": template.get("created_at", ""),
-            })
+            formatted.append(
+                {
+                    "template_id": template["template_id"],
+                    "name": template.get("name", ""),
+                    "description": template.get("description", ""),
+                    "user_id": template.get("user_id", ""),
+                    "version": template.get("version", 1),
+                    "schema_requirements": template.get("schema_requirements", []),
+                    "step_count": len(template.get("template_definition", {}).get("steps", [])),
+                    "created_at": template.get("created_at", ""),
+                }
+            )
 
         logger.info(
-            json.dumps({
-                "event": "search_templates_success",
-                "total_public": len(template_dict),
-                "filtered": len(results),
-                "returned": len(formatted),
-            })
+            json.dumps(
+                {
+                    "event": "search_templates_success",
+                    "total_public": len(template_dict),
+                    "filtered": len(results),
+                    "returned": len(formatted),
+                }
+            )
         )
 
         response_body: dict[str, Any] = {

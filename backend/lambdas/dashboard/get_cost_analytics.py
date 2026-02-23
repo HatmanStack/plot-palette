@@ -83,6 +83,8 @@ def get_cost_records(job_id: str) -> list[dict[str, Any]]:
 def extract_cost(item: dict[str, Any]) -> dict[str, float]:
     """Extract cost components from a cost tracking record."""
     estimated_cost = item.get("estimated_cost", {})
+    if estimated_cost is None:
+        return {"bedrock": 0.0, "fargate": 0.0, "s3": 0.0, "total": 0.0}
     if isinstance(estimated_cost, dict):
         return {
             "bedrock": float(estimated_cost.get("bedrock", 0)),
@@ -139,9 +141,7 @@ def aggregate_by_week(all_records: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 def aggregate_by_model(all_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Group cost records by model_id and sum totals."""
-    model_data: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"total": 0.0, "job_ids": set()}
-    )
+    model_data: dict[str, dict[str, Any]] = defaultdict(lambda: {"total": 0.0, "job_ids": set()})
     for record in all_records:
         model_id = record.get("model_id", "unknown")
         costs = extract_cost(record)
@@ -229,14 +229,18 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return error_response(400, f"Invalid period: {period}. Must be one of: 7d, 30d, 90d")
 
         if group_by not in ("day", "week", "model"):
-            return error_response(400, f"Invalid group_by: {group_by}. Must be one of: day, week, model")
+            return error_response(
+                400, f"Invalid group_by: {group_by}. Must be one of: day, week, model"
+            )
 
         logger.info(
-            json.dumps({
-                "event": "cost_analytics_request",
-                "period": period,
-                "group_by": group_by,
-            })
+            json.dumps(
+                {
+                    "event": "cost_analytics_request",
+                    "period": period,
+                    "group_by": group_by,
+                }
+            )
         )
 
         cutoff = datetime.now(UTC) - timedelta(days=PERIOD_DAYS[period])
@@ -271,18 +275,24 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         summary = compute_summary(jobs, all_records)
 
         logger.info(
-            json.dumps({
-                "event": "cost_analytics_success",
-                "job_count": len(jobs),
-                "record_count": len(all_records),
-            })
+            json.dumps(
+                {
+                    "event": "cost_analytics_success",
+                    "job_count": len(jobs),
+                    "record_count": len(all_records),
+                }
+            )
         )
 
-        return success_response(200, {
-            "summary": summary,
-            "time_series": time_series,
-            "by_model": by_model,
-        }, default=str)
+        return success_response(
+            200,
+            {
+                "summary": summary,
+                "time_series": time_series,
+                "by_model": by_model,
+            },
+            default=str,
+        )
 
     except KeyError as e:
         logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))

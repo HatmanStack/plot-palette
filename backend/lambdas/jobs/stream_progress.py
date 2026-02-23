@@ -67,11 +67,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         job_id = event["pathParameters"]["job_id"]
 
-        logger.info(json.dumps({
-            "event": "stream_progress_request",
-            "user_id": user_id,
-            "job_id": job_id,
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "stream_progress_request",
+                    "user_id": user_id,
+                    "job_id": job_id,
+                }
+            )
+        )
 
         # Fetch job from DynamoDB
         response = jobs_table.get_item(Key={"job_id": job_id})
@@ -83,11 +87,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Authorization check - ensure user owns this job
         if job.get("user_id") != user_id:
-            logger.warning(json.dumps({
-                "event": "unauthorized_stream_attempt",
-                "user_id": user_id,
-                "job_id": job_id,
-            }))
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "unauthorized_stream_attempt",
+                        "user_id": user_id,
+                        "job_id": job_id,
+                    }
+                )
+            )
             return error_response(403, "Access denied - you do not own this job")
 
         # Build progress data

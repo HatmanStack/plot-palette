@@ -45,26 +45,32 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         if "Item" not in response:
             # Return defaults
-            return success_response(200, {
-                "email_enabled": False,
-                "email_address": None,
-                "webhook_enabled": False,
-                "webhook_url": None,
-                "notify_on_complete": True,
-                "notify_on_failure": True,
-                "notify_on_budget_exceeded": True,
-            })
+            return success_response(
+                200,
+                {
+                    "email_enabled": False,
+                    "email_address": None,
+                    "webhook_enabled": False,
+                    "webhook_url": None,
+                    "notify_on_complete": True,
+                    "notify_on_failure": True,
+                    "notify_on_budget_exceeded": True,
+                },
+            )
 
         item = response["Item"]
-        return success_response(200, {
-            "email_enabled": item.get("email_enabled", False),
-            "email_address": item.get("email_address"),
-            "webhook_enabled": item.get("webhook_enabled", False),
-            "webhook_url": item.get("webhook_url"),
-            "notify_on_complete": item.get("notify_on_complete", True),
-            "notify_on_failure": item.get("notify_on_failure", True),
-            "notify_on_budget_exceeded": item.get("notify_on_budget_exceeded", True),
-        })
+        return success_response(
+            200,
+            {
+                "email_enabled": item.get("email_enabled", False),
+                "email_address": item.get("email_address"),
+                "webhook_enabled": item.get("webhook_enabled", False),
+                "webhook_url": item.get("webhook_url"),
+                "notify_on_complete": item.get("notify_on_complete", True),
+                "notify_on_failure": item.get("notify_on_failure", True),
+                "notify_on_budget_exceeded": item.get("notify_on_budget_exceeded", True),
+            },
+        )
 
     except KeyError as e:
         logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))

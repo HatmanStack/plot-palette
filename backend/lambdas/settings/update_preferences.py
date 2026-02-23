@@ -11,8 +11,8 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
-from boto3.dynamodb.conditions import Attr  # noqa: E402
-from botocore.exceptions import ClientError  # noqa: E402
+from boto3.dynamodb.conditions import Attr
+from botocore.exceptions import ClientError
 
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
@@ -95,7 +95,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Merge updates
         existing.update(updates)
         existing["user_id"] = user_id
-        existing["updated_at"] = datetime.now(UTC).isoformat()
+        updated_at = datetime.now(UTC)
+        existing["updated_at"] = updated_at.isoformat()
 
         # Validate full model
         try:
@@ -108,6 +109,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 notify_on_complete=existing.get("notify_on_complete", True),
                 notify_on_failure=existing.get("notify_on_failure", True),
                 notify_on_budget_exceeded=existing.get("notify_on_budget_exceeded", True),
+                updated_at=updated_at,
             )
         except ValueError as e:
             return error_response(400, str(e))
@@ -128,15 +130,18 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         logger.info(json.dumps({"event": "preferences_updated", "user_id": user_id}))
 
-        return success_response(200, {
-            "email_enabled": prefs.email_enabled,
-            "email_address": prefs.email_address,
-            "webhook_enabled": prefs.webhook_enabled,
-            "webhook_url": prefs.webhook_url,
-            "notify_on_complete": prefs.notify_on_complete,
-            "notify_on_failure": prefs.notify_on_failure,
-            "notify_on_budget_exceeded": prefs.notify_on_budget_exceeded,
-        })
+        return success_response(
+            200,
+            {
+                "email_enabled": prefs.email_enabled,
+                "email_address": prefs.email_address,
+                "webhook_enabled": prefs.webhook_enabled,
+                "webhook_url": prefs.webhook_url,
+                "notify_on_complete": prefs.notify_on_complete,
+                "notify_on_failure": prefs.notify_on_failure,
+                "notify_on_budget_exceeded": prefs.notify_on_budget_exceeded,
+            },
+        )
 
     except KeyError as e:
         logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))

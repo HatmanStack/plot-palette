@@ -70,12 +70,7 @@ def _build_email_body(job: dict[str, Any], status: str) -> str:
 
     message = status_messages.get(status, f"Your job {job_id} has reached status: {status}.")
 
-    return (
-        f"{message}\n\n"
-        f"Records generated: {records}\n"
-        f"Cost: ${cost:.2f}\n"
-        f"Status: {status}\n"
-    )
+    return f"{message}\n\nRecords generated: {records}\nCost: ${cost:.2f}\nStatus: {status}\n"
 
 
 def _send_email(email_address: str, job: dict[str, Any], status: str) -> None:
@@ -92,17 +87,25 @@ def _send_email(email_address: str, job: dict[str, Any], status: str) -> None:
                 "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
             },
         )
-        logger.info(json.dumps({
-            "event": "email_sent",
-            "to": _mask_email(email_address),
-            "status": status,
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "email_sent",
+                    "to": _mask_email(email_address),
+                    "status": status,
+                }
+            )
+        )
     except ClientError as e:
-        logger.error(json.dumps({
-            "event": "email_send_error",
-            "to": _mask_email(email_address),
-            "error": str(e),
-        }))
+        logger.error(
+            json.dumps(
+                {
+                    "event": "email_send_error",
+                    "to": _mask_email(email_address),
+                    "error": str(e),
+                }
+            )
+        )
 
 
 def _send_webhook(webhook_url: str, job: dict[str, Any], status: str, job_id: str) -> None:
@@ -128,17 +131,25 @@ def _send_webhook(webhook_url: str, job: dict[str, Any], status: str, job_id: st
 
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
-            logger.info(json.dumps({
-                "event": "webhook_sent",
-                "url": _sanitize_url(webhook_url),
-                "status_code": resp.status,
-            }))
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "webhook_sent",
+                        "url": _sanitize_url(webhook_url),
+                        "status_code": resp.status,
+                    }
+                )
+            )
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
-        logger.error(json.dumps({
-            "event": "webhook_send_error",
-            "url": _sanitize_url(webhook_url),
-            "error": str(e),
-        }))
+        logger.error(
+            json.dumps(
+                {
+                    "event": "webhook_send_error",
+                    "url": _sanitize_url(webhook_url),
+                    "error": str(e),
+                }
+            )
+        )
 
 
 def _sfn_response(body: str) -> dict[str, Any]:
@@ -160,28 +171,40 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         user_id = event.get("user_id", "")
 
         if not job_id or not status or not user_id:
-            logger.warning(json.dumps({
-                "event": "missing_input_fields",
-                "job_id": job_id,
-                "status": status,
-                "user_id": user_id,
-            }))
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "missing_input_fields",
+                        "job_id": job_id,
+                        "status": status,
+                        "user_id": user_id,
+                    }
+                )
+            )
             return _sfn_response("Missing input fields, skipping notification")
 
-        logger.info(json.dumps({
-            "event": "send_notification_request",
-            "job_id": job_id,
-            "status": status,
-            "user_id": user_id,
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "send_notification_request",
+                    "job_id": job_id,
+                    "status": status,
+                    "user_id": user_id,
+                }
+            )
+        )
 
         # Fetch notification preferences
         prefs_response = prefs_table.get_item(Key={"user_id": user_id})
         if "Item" not in prefs_response:
-            logger.info(json.dumps({
-                "event": "no_preferences_found",
-                "user_id": user_id,
-            }))
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "no_preferences_found",
+                        "user_id": user_id,
+                    }
+                )
+            )
             return _sfn_response("No preferences, skipping notification")
 
         prefs = prefs_response["Item"]
@@ -189,17 +212,25 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Check if notification is wanted for this status
         pref_key = STATUS_TO_PREF.get(status)
         if pref_key is None:
-            logger.info(json.dumps({
-                "event": "unknown_status_skipped",
-                "status": status,
-            }))
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "unknown_status_skipped",
+                        "status": status,
+                    }
+                )
+            )
             return _sfn_response(f"Unknown status {status}, skipping notification")
         if not prefs.get(pref_key, True):
-            logger.info(json.dumps({
-                "event": "notification_skipped",
-                "status": status,
-                "pref_key": pref_key,
-            }))
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "notification_skipped",
+                        "status": status,
+                        "pref_key": pref_key,
+                    }
+                )
+            )
             return _sfn_response(f"Notification disabled for {status}")
 
         # Fetch job details
@@ -222,8 +253,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     except Exception as e:
         # Never fail — notifications are best-effort
-        logger.error(json.dumps({
-            "event": "notification_error",
-            "error": str(e),
-        }), exc_info=True)
-        return _sfn_response(f"Notification error (non-fatal): {str(e)}")
+        logger.error(
+            json.dumps(
+                {
+                    "event": "notification_error",
+                    "error": str(e),
+                }
+            ),
+            exc_info=True,
+        )
+        return _sfn_response("Notification error (non-fatal)")

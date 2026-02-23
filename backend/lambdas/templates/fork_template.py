@@ -52,11 +52,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         source_template_id = event["pathParameters"]["template_id"]
 
         logger.info(
-            json.dumps({
-                "event": "fork_template_request",
-                "user_id": user_id,
-                "source_template_id": source_template_id,
-            })
+            json.dumps(
+                {
+                    "event": "fork_template_request",
+                    "user_id": user_id,
+                    "source_template_id": source_template_id,
+                }
+            )
         )
 
         # Parse optional body for name override
@@ -87,11 +89,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Authorization: must be public or owned by the user
         if not source.get("is_public", False) and source.get("user_id") != user_id:
             logger.warning(
-                json.dumps({
-                    "event": "fork_unauthorized",
-                    "user_id": user_id,
-                    "source_template_id": source_template_id,
-                })
+                json.dumps(
+                    {
+                        "event": "fork_unauthorized",
+                        "user_id": user_id,
+                        "source_template_id": source_template_id,
+                    }
+                )
             )
             return error_response(403, "Cannot fork a private template you do not own")
 
@@ -126,20 +130,25 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return error_response(500, "Error creating forked template")
 
         logger.info(
-            json.dumps({
-                "event": "template_forked",
-                "source_template_id": source_template_id,
-                "new_template_id": new_template_id,
-                "user_id": user_id,
-            })
+            json.dumps(
+                {
+                    "event": "template_forked",
+                    "source_template_id": source_template_id,
+                    "new_template_id": new_template_id,
+                    "user_id": user_id,
+                }
+            )
         )
 
-        return success_response(201, {
-            "template_id": new_template_id,
-            "name": fork_name,
-            "version": 1,
-            "message": "Template forked successfully",
-        })
+        return success_response(
+            201,
+            {
+                "template_id": new_template_id,
+                "name": fork_name,
+                "version": 1,
+                "message": "Template forked successfully",
+            },
+        )
 
     except KeyError as e:
         logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))

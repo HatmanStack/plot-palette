@@ -33,6 +33,8 @@ _STYLE_PATTERNS = {
     "verbose": re.compile(r"\b(elaborate|detailed|extensive)\b", re.IGNORECASE),
     "dramatic": re.compile(r"\b(drama|theatrical|intense)\b", re.IGNORECASE),
 }
+
+
 def random_sentence(text: str) -> str:
     """
     Extract a random sentence from text.

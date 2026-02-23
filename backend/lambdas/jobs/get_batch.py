@@ -37,9 +37,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
         batch_id = event["pathParameters"]["batch_id"]
 
-        logger.info(
-            json.dumps({"event": "get_batch_request", "user_id": user_id, "batch_id": batch_id})
-        )
+        logger.info(json.dumps({"event": "get_batch_request", "batch_id": batch_id}))
 
         # Fetch batch
         try:
@@ -67,27 +65,25 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             # batch_get_item supports max 100 keys, we have max 20
             try:
                 keys = [{"job_id": jid} for jid in job_ids]
-                batch_response = dynamodb.batch_get_item(
-                    RequestItems={table_name: {"Keys": keys}}
-                )
+                batch_response = dynamodb.batch_get_item(RequestItems={table_name: {"Keys": keys}})
                 raw_jobs = batch_response.get("Responses", {}).get(table_name, [])
                 # Retry unprocessed keys once
                 unprocessed = batch_response.get("UnprocessedKeys", {})
                 if unprocessed:
                     retry_response = dynamodb.batch_get_item(RequestItems=unprocessed)
-                    raw_jobs.extend(
-                        retry_response.get("Responses", {}).get(table_name, [])
-                    )
+                    raw_jobs.extend(retry_response.get("Responses", {}).get(table_name, []))
                 for job in raw_jobs:
-                    jobs.append({
-                        "job_id": job["job_id"],
-                        "status": job["status"],
-                        "records_generated": job.get("records_generated", 0),
-                        "cost_estimate": float(job.get("cost_estimate", 0)),
-                        "budget_limit": float(job.get("budget_limit", 0)),
-                        "created_at": job.get("created_at", ""),
-                        "updated_at": job.get("updated_at", ""),
-                    })
+                    jobs.append(
+                        {
+                            "job_id": job["job_id"],
+                            "status": job["status"],
+                            "records_generated": job.get("records_generated", 0),
+                            "cost_estimate": float(job.get("cost_estimate", 0)),
+                            "budget_limit": float(job.get("budget_limit", 0)),
+                            "created_at": job.get("created_at", ""),
+                            "updated_at": job.get("updated_at", ""),
+                        }
+                    )
             except ClientError as e:
                 logger.error(json.dumps({"event": "batch_get_jobs_error", "error": str(e)}))
                 jobs_load_error = True
@@ -96,7 +92,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if not jobs_load_error:
             terminal_statuses = {"COMPLETED", "FAILED", "CANCELLED", "BUDGET_EXCEEDED"}
             completed_count = sum(1 for j in jobs if j["status"] == "COMPLETED")
-            failed_count = sum(1 for j in jobs if j["status"] in {"FAILED", "CANCELLED", "BUDGET_EXCEEDED"})
+            failed_count = sum(
+                1 for j in jobs if j["status"] in {"FAILED", "CANCELLED", "BUDGET_EXCEEDED"}
+            )
             total_cost = sum(j.get("cost_estimate", 0) for j in jobs)
             all_terminal = all(j["status"] in terminal_statuses for j in jobs) if jobs else False
 
@@ -106,9 +104,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 computed_status = batch["status"]
 
             # Update batch record if status changed
-            if (
-                computed_status != batch["status"]
-                or completed_count != int(batch.get("completed_jobs", 0))
+            if computed_status != batch["status"] or completed_count != int(
+                batch.get("completed_jobs", 0)
             ):
                 try:
                     batches_table.update_item(

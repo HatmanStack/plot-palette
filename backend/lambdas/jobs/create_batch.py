@@ -55,7 +55,10 @@ def validate_batch_request(body: dict[str, Any]) -> tuple[bool, str]:
 
     output_format = base_config["output_format"]
     if output_format not in [fmt.value for fmt in ExportFormat]:
-        return False, f"output_format must be one of: {', '.join(fmt.value for fmt in ExportFormat)}"
+        return (
+            False,
+            f"output_format must be one of: {', '.join(fmt.value for fmt in ExportFormat)}",
+        )
 
     num_records = base_config["num_records"]
     if not isinstance(num_records, int) or num_records <= 0 or num_records > 1_000_000:
@@ -77,7 +80,10 @@ def validate_batch_request(body: dict[str, Any]) -> tuple[bool, str]:
         return False, "Sweep values must be a non-empty list"
 
     if len(sweep_values) > MAX_BATCH_SIZE:
-        return False, f"Sweep produces {len(sweep_values)} jobs, exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})"
+        return (
+            False,
+            f"Sweep produces {len(sweep_values)} jobs, exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})",
+        )
 
     # Validate sweep values by type
     if sweep_key == "model_tier":

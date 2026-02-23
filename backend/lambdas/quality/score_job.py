@@ -20,6 +20,8 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from aws_clients import get_bedrock_client, get_dynamodb_resource, get_s3_client  # noqa: E402
+from boto3.dynamodb.conditions import Attr  # noqa: E402
+from botocore.exceptions import ClientError  # noqa: E402
 from constants import (  # noqa: E402
     QUALITY_BATCH_SIZE,
     QUALITY_DIMENSIONS,
@@ -118,9 +120,14 @@ def _invoke_bedrock_scoring(prompt: str) -> tuple[list[dict[str, Any]], int, int
     if isinstance(content, list) and len(content) > 0:
         text = next((c.get("text", "") for c in content if isinstance(c, dict)), "")
 
-    # Estimate tokens
-    input_tokens = estimate_tokens(prompt, model_id)
-    output_tokens = estimate_tokens(text, model_id)
+    # Use actual token counts from Bedrock when available
+    usage = response_body.get("usage", {})
+    if isinstance(usage, dict) and isinstance(usage.get("input_tokens"), int):
+        input_tokens = usage["input_tokens"]
+        output_tokens = int(usage.get("output_tokens", 0))
+    else:
+        input_tokens = estimate_tokens(prompt, model_id)
+        output_tokens = estimate_tokens(text, model_id)
 
     # Parse JSON from response (strip markdown wrappers)
     cleaned = re.sub(r"```(?:json)?\s*", "", text).strip()
@@ -169,13 +176,15 @@ def _convert_record_scores(scores: list[dict[str, Any]]) -> list[dict[str, Any]]
     """Convert float values in record scores to Decimal for DynamoDB."""
     converted = []
     for s in scores:
-        converted.append({
-            "record_index": s.get("record_index", 0),
-            "coherence": Decimal(str(round(float(s.get("coherence", 0)), 4))),
-            "relevance": Decimal(str(round(float(s.get("relevance", 0)), 4))),
-            "format_compliance": Decimal(str(round(float(s.get("format_compliance", 0)), 4))),
-            "detail": s.get("detail", ""),
-        })
+        converted.append(
+            {
+                "record_index": s.get("record_index", 0),
+                "coherence": Decimal(str(round(float(s.get("coherence", 0)), 4))),
+                "relevance": Decimal(str(round(float(s.get("relevance", 0)), 4))),
+                "format_compliance": Decimal(str(round(float(s.get("format_compliance", 0)), 4))),
+                "detail": s.get("detail", ""),
+            }
+        )
     return converted
 
 
@@ -211,7 +220,24 @@ def _store_quality_metrics(
     if error_message is not None:
         item["error_message"] = error_message
 
-    quality_table.put_item(Item=item)
+    # Only write if item doesn't exist or status is non-terminal
+    terminal_statuses = {QualityStatus.COMPLETED.value, QualityStatus.FAILED.value}
+    try:
+        quality_table.put_item(
+            Item=item,
+            ConditionExpression=(
+                Attr("job_id").not_exists() | Attr("status").is_in(["PENDING", "SCORING"])
+            ),
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            # Terminal state already written, don't overwrite
+            if status.value not in terminal_statuses:
+                return
+            # If we're writing a terminal state, force it
+            quality_table.put_item(Item=item)
+        else:
+            raise
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -236,18 +262,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if job.get("status") != "COMPLETED":
         logger.warning(
-            json.dumps({"event": "job_not_completed", "job_id": job_id, "status": job.get("status")})
+            json.dumps(
+                {"event": "job_not_completed", "job_id": job_id, "status": job.get("status")}
+            )
         )
         return {"error": f"Job is not COMPLETED (status: {job.get('status')})"}
 
-    # Create PENDING record
-    _store_quality_metrics(
-        job_id=job_id,
-        status=QualityStatus.PENDING,
-        total_records=int(job.get("records_generated", 0)),
-    )
-
-    # Update to SCORING
+    # Set SCORING status
     _store_quality_metrics(
         job_id=job_id,
         status=QualityStatus.SCORING,
@@ -265,7 +286,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             all_records = _load_export_records(job_id, output_format)
         except Exception as e:
             error_msg = f"Failed to load export file: {sanitize_error_message(str(e))}"
-            logger.error(json.dumps({"event": "export_load_error", "job_id": job_id, "error": sanitize_error_message(str(e))}))
+            logger.error(
+                json.dumps(
+                    {
+                        "event": "export_load_error",
+                        "job_id": job_id,
+                        "error": sanitize_error_message(str(e)),
+                    }
+                )
+            )
             _store_quality_metrics(
                 job_id=job_id,
                 status=QualityStatus.FAILED,
@@ -304,7 +333,11 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 template_name = tmpl.get("name", "Unknown")
                 schema_requirements = tmpl.get("schema_requirements", [])
         except Exception as e:
-            logger.warning(json.dumps({"event": "template_fetch_warning", "error": str(e)}))
+            logger.warning(
+                json.dumps(
+                    {"event": "template_fetch_warning", "error": sanitize_error_message(str(e))}
+                )
+            )
 
         # Score in batches
         all_scores: list[dict[str, Any]] = []
@@ -336,7 +369,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         {
                             "event": "scoring_batch_error",
                             "batch_idx": batch_idx,
-                            "error": str(e),
+                            "error": sanitize_error_message(str(e)),
                         }
                     )
                 )
@@ -421,13 +454,19 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     except Exception as e:
         logger.error(
-            json.dumps({"event": "score_job_unexpected_error", "job_id": job_id, "error": str(e)}),
+            json.dumps(
+                {
+                    "event": "score_job_unexpected_error",
+                    "job_id": job_id,
+                    "error": sanitize_error_message(str(e)),
+                }
+            ),
             exc_info=True,
         )
         _store_quality_metrics(
             job_id=job_id,
             status=QualityStatus.FAILED,
             total_records=int(job.get("records_generated", 0)),
-            error_message=f"Unexpected error: {str(e)}",
+            error_message=f"Unexpected error: {sanitize_error_message(str(e))}",
         )
         raise

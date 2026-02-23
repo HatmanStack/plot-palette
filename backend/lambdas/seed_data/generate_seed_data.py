@@ -235,9 +235,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             records = extract_json_array(llm_output)
         except ValueError:
             logger.error(
-                json.dumps(
-                    {"event": "json_parse_error", "output_preview": llm_output[:500]}
-                )
+                json.dumps({"event": "json_parse_error", "output_preview": llm_output[:500]})
             )
             return error_response(
                 500,

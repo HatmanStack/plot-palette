@@ -386,9 +386,13 @@ class NotificationPreferences(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     user_id: str = Field(..., description="User identifier")
-    email_enabled: bool = Field(default=False, description="Whether email notifications are enabled")
+    email_enabled: bool = Field(
+        default=False, description="Whether email notifications are enabled"
+    )
     email_address: str | None = Field(None, description="Email address for notifications")
-    webhook_enabled: bool = Field(default=False, description="Whether webhook notifications are enabled")
+    webhook_enabled: bool = Field(
+        default=False, description="Whether webhook notifications are enabled"
+    )
     webhook_url: str | None = Field(None, description="Webhook URL for notifications (HTTPS only)")
     notify_on_complete: bool = Field(default=True, description="Notify when job completes")
     notify_on_failure: bool = Field(default=True, description="Notify when job fails")
@@ -594,9 +598,7 @@ class QualityMetrics(BaseModel):
     )
     sample_size: int = Field(..., ge=0, description="Number of records sampled for scoring")
     total_records: int = Field(..., ge=0, description="Total records in the job output")
-    model_used_for_scoring: str = Field(
-        ..., description="Which LLM performed the scoring"
-    )
+    model_used_for_scoring: str = Field(..., description="Which LLM performed the scoring")
     aggregate_scores: dict[str, float] = Field(
         default_factory=dict, description="Mean scores per dimension"
     )
@@ -623,9 +625,7 @@ class QualityMetrics(BaseModel):
             "sample_size": self.sample_size,
             "total_records": self.total_records,
             "model_used_for_scoring": self.model_used_for_scoring,
-            "aggregate_scores": {
-                k: Decimal(str(v)) for k, v in self.aggregate_scores.items()
-            },
+            "aggregate_scores": {k: Decimal(str(v)) for k, v in self.aggregate_scores.items()},
             "diversity_score": Decimal(str(self.diversity_score)),
             "overall_score": Decimal(str(self.overall_score)),
             "record_scores": [rs.model_dump() for rs in self.record_scores],

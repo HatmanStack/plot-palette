@@ -86,7 +86,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             try:
                 version = int(version_str)
                 if version < 1:
-                    return error_response(400, "Invalid version parameter: must be a positive integer")
+                    return error_response(
+                        400, "Invalid version parameter: must be a positive integer"
+                    )
             except (ValueError, TypeError):
                 return error_response(400, "Invalid version parameter: must be a positive integer")
 

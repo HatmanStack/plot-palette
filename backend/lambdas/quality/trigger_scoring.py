@@ -34,9 +34,7 @@ quality_table = dynamodb.Table(
 )
 lambda_client = get_lambda_client()
 
-SCORE_JOB_FUNCTION_NAME = os.environ.get(
-    "SCORE_JOB_FUNCTION_NAME", "plot-palette-score-job"
-)
+SCORE_JOB_FUNCTION_NAME = os.environ.get("SCORE_JOB_FUNCTION_NAME", "plot-palette-score-job")
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -60,7 +58,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return error_response(403, "Not authorized to trigger scoring for this job")
 
         if job.get("status") != "COMPLETED":
-            return error_response(400, f"Job must be COMPLETED to score (current: {job.get('status')})")
+            return error_response(
+                400, f"Job must be COMPLETED to score (current: {job.get('status')})"
+            )
 
         # Check if already scored
         quality_response = quality_table.get_item(Key={"job_id": job_id})
@@ -100,10 +100,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             json.dumps({"event": "scoring_triggered", "job_id": job_id, "user_id": user_id})
         )
 
-        return success_response(202, {
-            "message": "Quality scoring started",
-            "job_id": job_id,
-        })
+        return success_response(
+            202,
+            {
+                "message": "Quality scoring started",
+                "job_id": job_id,
+            },
+        )
 
     except KeyError as e:
         return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")

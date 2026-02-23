@@ -66,16 +66,18 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         batches = []
         for item in response.get("Items", []):
-            batches.append({
-                "batch_id": item["batch_id"],
-                "name": item["name"],
-                "status": item["status"],
-                "total_jobs": item.get("total_jobs", 0),
-                "completed_jobs": item.get("completed_jobs", 0),
-                "failed_jobs": item.get("failed_jobs", 0),
-                "created_at": item["created_at"],
-                "total_cost": float(item.get("total_cost", 0)),
-            })
+            batches.append(
+                {
+                    "batch_id": item["batch_id"],
+                    "name": item["name"],
+                    "status": item["status"],
+                    "total_jobs": item.get("total_jobs", 0),
+                    "completed_jobs": item.get("completed_jobs", 0),
+                    "failed_jobs": item.get("failed_jobs", 0),
+                    "created_at": item["created_at"],
+                    "total_cost": float(item.get("total_cost", 0)),
+                }
+            )
 
         result: dict[str, Any] = {"batches": batches}
 
