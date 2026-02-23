@@ -565,10 +565,10 @@ feat(frontend): add seed data generation to job creation wizard
    - `bedrock:InvokeModel` on `*` (same as existing worker permissions)
 
 **Verification Checklist:**
-- [ ] `cfn-lint backend/template.yaml` passes
-- [ ] All functions have correct routes, timeouts, and memory
-- [ ] Batches table has correct schema and GSI
-- [ ] Bedrock permissions granted to generate function
+- [x] `cfn-lint backend/template.yaml` passes
+- [x] All functions have correct routes, timeouts, and memory
+- [x] Batches table has correct schema and GSI
+- [x] Bedrock permissions granted to generate function
 
 **Commit Message Template:**
 ```

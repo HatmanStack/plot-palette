@@ -62,6 +62,7 @@ Globals:
         SECURITY_GROUP_ID: !Ref SecurityGroupId
         STATE_MACHINE_ARN: !Ref StateMachineArn
         NOTIFICATION_PREFERENCES_TABLE_NAME: !Ref NotificationPreferencesTable
+        BATCHES_TABLE_NAME: !Ref BatchesTable
         SENDER_EMAIL: !Ref SenderEmail
         ALLOWED_ORIGIN: !Select [0, !Ref AllowedOrigins]
     LoggingConfig:
@@ -187,6 +188,33 @@ Resources:
           KeyType: HASH
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+
+  BatchesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-Batches-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: batch_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: batch_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
 
   # ============================================================
   # S3 Bucket
@@ -759,6 +787,133 @@ Resources:
             Path: /jobs/{job_id}/stream
             Method: GET
 
+  # ============================================================
+  # Lambda Functions - Batch Jobs (Phase 4)
+  # ============================================================
+  CreateBatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-create-batch-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: create_batch.lambda_handler
+      MemorySize: 512
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BatchesTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - states:StartExecution
+              Resource: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:plot-palette-*'
+      Events:
+        CreateBatch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/batch
+            Method: POST
+
+  ListBatchesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-list-batches-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: list_batches.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BatchesTable
+      Events:
+        ListBatches:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/batches
+            Method: GET
+
+  GetBatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-batch-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: get_batch.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BatchesTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+      Events:
+        GetBatch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/batches/{batch_id}
+            Method: GET
+
+  DeleteBatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-delete-batch-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: delete_batch.lambda_handler
+      MemorySize: 256
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BatchesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QueueTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - states:StopExecution
+              Resource: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:plot-palette-*:*'
+      Events:
+        DeleteBatch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/batches/{batch_id}
+            Method: DELETE
+
+  # ============================================================
+  # Lambda Functions - Seed Data Generation (Phase 4)
+  # ============================================================
+  GenerateSeedDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-generate-seed-data-${Environment}
+      CodeUri: lambdas/seed_data/
+      Handler: generate_seed_data.lambda_handler
+      MemorySize: 512
+      Timeout: 60
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/meta.llama*'
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/mistral.*'
+      Events:
+        GenerateSeedData:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /seed-data/generate
+            Method: POST
+
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL
@@ -791,3 +946,7 @@ Outputs:
   SendNotificationFunctionArn:
     Description: Send Notification Lambda function ARN
     Value: !GetAtt SendNotificationFunction.Arn
+
+  BatchesTableName:
+    Description: DynamoDB Batches table name
+    Value: !Ref BatchesTable
