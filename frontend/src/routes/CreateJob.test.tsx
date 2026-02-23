@@ -4,13 +4,16 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import CreateJob from './CreateJob'
+import { ToastProvider } from '../contexts/ToastContext'
 import * as api from '../services/api'
+import type { SeedDataGenerationResult } from '../services/api'
 
 // Mock the API module
 vi.mock('../services/api', () => ({
   createJob: vi.fn(),
   generateUploadUrl: vi.fn(),
   fetchTemplateVersions: vi.fn(),
+  generateSeedData: vi.fn(),
 }))
 
 // Mock axios for S3 upload
@@ -33,6 +36,7 @@ vi.mock('react-router-dom', async () => {
 const mockCreateJob = vi.mocked(api.createJob)
 const mockGenerateUploadUrl = vi.mocked(api.generateUploadUrl)
 const mockFetchTemplateVersions = vi.mocked(api.fetchTemplateVersions)
+const mockGenerateSeedData = vi.mocked(api.generateSeedData)
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -56,7 +60,9 @@ describe('CreateJob', () => {
     return render(
       <QueryClientProvider client={createTestQueryClient()}>
         <MemoryRouter>
-          <CreateJob />
+          <ToastProvider>
+            <CreateJob />
+          </ToastProvider>
         </MemoryRouter>
       </QueryClientProvider>
     )
@@ -88,7 +94,7 @@ describe('CreateJob', () => {
 
       await user.click(screen.getByRole('button', { name: 'Next' }))
 
-      expect(screen.getByRole('heading', { name: 'Upload Seed Data' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Seed Data' })).toBeInTheDocument()
     })
 
     it('navigates to step 3 from step 2', async () => {
@@ -117,7 +123,7 @@ describe('CreateJob', () => {
       renderCreateJob()
 
       await user.click(screen.getByRole('button', { name: 'Next' }))
-      expect(screen.getByRole('heading', { name: 'Upload Seed Data' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Seed Data' })).toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: 'Previous' }))
       expect(screen.getByRole('heading', { name: 'Select Template' })).toBeInTheDocument()
@@ -231,7 +237,7 @@ describe('CreateJob', () => {
       await user.click(screen.getByRole('button', { name: 'Create Job' }))
 
       await waitFor(() => {
-        expect(screen.getByText('Please complete all required fields')).toBeInTheDocument()
+        expect(screen.getByText('Please select a template')).toBeInTheDocument()
       })
     })
   })
@@ -381,6 +387,37 @@ describe('CreateJob', () => {
         const payload = mockCreateJob.mock.calls[0][0]
         expect(payload).not.toHaveProperty('template_version')
       })
+    })
+  })
+
+  describe('Seed data mode toggle', () => {
+    it('step 2 shows upload and generate options', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      expect(screen.getByLabelText('Upload File')).toBeInTheDocument()
+      expect(screen.getByLabelText('Generate from Schema')).toBeInTheDocument()
+    })
+
+    it('switching to generate mode shows SeedDataGenerator', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      // Enter template ID first (needed for SeedDataGenerator)
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'tmpl-123')
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      // Default mode is upload
+      expect(screen.getByText(/Seed Data File/)).toBeInTheDocument()
+
+      // Switch to generate mode
+      await user.click(screen.getByLabelText('Generate from Schema'))
+
+      // Should show SeedDataGenerator elements
+      expect(screen.getByText(/Number of Records/)).toBeInTheDocument()
+      expect(screen.getByText(/Model Tier/)).toBeInTheDocument()
     })
   })
 

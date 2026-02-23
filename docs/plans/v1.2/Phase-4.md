@@ -502,12 +502,12 @@ feat(lambdas): add seed data generation from template schema
    - When generation completes, `seed_data_path` is set to the returned `s3_key`
 
 **Verification Checklist:**
-- [ ] Two options available in seed data step
-- [ ] Generate mode shows count, model tier, and optional fields
-- [ ] Generation progress shown during API call
-- [ ] Success shows record count and cost
-- [ ] Generated s3_key used as seed_data_path for job creation
-- [ ] Can switch between upload and generate modes
+- [x] Two options available in seed data step
+- [x] Generate mode shows count, model tier, and optional fields
+- [x] Generation progress shown during API call
+- [x] Success shows record count and cost
+- [x] Generated s3_key used as seed_data_path for job creation
+- [x] Can switch between upload and generate modes
 
 **Testing Instructions:**
 
