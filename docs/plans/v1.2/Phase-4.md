@@ -428,14 +428,14 @@ feat(frontend): add batch job creation and comparison UI
    - If that fails, return error with raw output for debugging.
 
 **Verification Checklist:**
-- [ ] Generates correct number of seed records
-- [ ] Records match template schema requirements
-- [ ] Invalid records filtered out (not uploaded)
-- [ ] S3 path follows pattern `seed-data/{user_id}/generated-{timestamp}.jsonl`
-- [ ] Handles LLM markdown wrapper around JSON
-- [ ] Returns cost estimate for the generation
-- [ ] Works with example_data and instructions
-- [ ] Works without example_data (schema-only)
+- [x] Generates correct number of seed records
+- [x] Records match template schema requirements
+- [x] Invalid records filtered out (not uploaded)
+- [x] S3 path follows pattern `seed-data/{user_id}/generated-{timestamp}.jsonl`
+- [x] Handles LLM markdown wrapper around JSON
+- [x] Returns cost estimate for the generation
+- [x] Works with example_data and instructions
+- [x] Works without example_data (schema-only)
 
 **Testing Instructions:**
 
