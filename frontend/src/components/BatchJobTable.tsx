@@ -69,6 +69,7 @@ export default function BatchJobTable({ jobs, sweepConfig }: BatchJobTableProps)
             >
               Cost {sortKey === 'cost_estimate' ? (sortAsc ? '▲' : '▼') : ''}
             </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
           </tr>
         </thead>
@@ -87,6 +88,16 @@ export default function BatchJobTable({ jobs, sweepConfig }: BatchJobTableProps)
               </td>
               <td className="px-4 py-3 text-sm text-gray-700">{job.records_generated}</td>
               <td className="px-4 py-3 text-sm text-gray-700">${job.cost_estimate.toFixed(2)}</td>
+              <td className="px-4 py-3 text-sm text-gray-700">
+                {job.created_at && job.updated_at
+                  ? (() => {
+                      const ms = new Date(job.updated_at).getTime() - new Date(job.created_at).getTime()
+                      if (ms < 0 || isNaN(ms)) return '-'
+                      const secs = Math.floor(ms / 1000)
+                      return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`
+                    })()
+                  : '-'}
+              </td>
               <td className="px-4 py-3 text-sm">
                 <Link to={`/jobs/${job.job_id}`} className="text-blue-600 hover:underline">
                   View
@@ -96,7 +107,7 @@ export default function BatchJobTable({ jobs, sweepConfig }: BatchJobTableProps)
           ))}
           {jobs.length === 0 && (
             <tr>
-              <td colSpan={sweepKey ? 5 : 4} className="px-4 py-8 text-center text-gray-500">
+              <td colSpan={sweepKey ? 6 : 5} className="px-4 py-8 text-center text-gray-500">
                 No jobs in this batch
               </td>
             </tr>

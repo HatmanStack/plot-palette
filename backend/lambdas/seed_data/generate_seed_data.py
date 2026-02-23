@@ -18,6 +18,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
 from utils import (
+    calculate_bedrock_cost,
+    estimate_tokens,
     extract_request_id,
     resolve_model_id,
     sanitize_error_message,
@@ -279,6 +281,16 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             logger.error(json.dumps({"event": "s3_upload_error", "error": str(e)}))
             return error_response(500, "Failed to upload generated seed data")
 
+        # Estimate cost from prompt + output tokens
+        try:
+            input_tokens = estimate_tokens(prompt, model_id)
+            output_tokens = estimate_tokens(llm_output, model_id)
+            input_cost = calculate_bedrock_cost(input_tokens, model_id, is_input=True)
+            output_cost = calculate_bedrock_cost(output_tokens, model_id, is_input=False)
+            total_cost = round(input_cost + output_cost, 6)
+        except (ValueError, KeyError):
+            total_cost = 0.0
+
         logger.info(
             json.dumps(
                 {
@@ -287,6 +299,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "records_generated": len(valid_records),
                     "records_invalid": invalid_count,
                     "s3_key": s3_key,
+                    "estimated_cost": total_cost,
                 }
             )
         )
@@ -297,7 +310,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "s3_key": s3_key,
                 "records_generated": len(valid_records),
                 "records_invalid": invalid_count,
-                "total_cost": 0.0,  # Cost estimation is approximate
+                "total_cost": total_cost,
             },
         )
 

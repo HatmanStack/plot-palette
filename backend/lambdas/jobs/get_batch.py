@@ -8,6 +8,7 @@ including job-level summaries.
 import json
 import os
 import sys
+from datetime import UTC, datetime
 from typing import Any
 
 # Add shared library to Python path
@@ -84,19 +85,52 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 # Return batch without job details rather than failing
                 pass
 
+        # Compute live batch status from job statuses
+        terminal_statuses = {"COMPLETED", "FAILED", "CANCELLED", "BUDGET_EXCEEDED"}
+        completed_count = sum(1 for j in jobs if j["status"] == "COMPLETED")
+        failed_count = sum(1 for j in jobs if j["status"] in {"FAILED", "CANCELLED", "BUDGET_EXCEEDED"})
+        total_cost = sum(j.get("cost_estimate", 0) for j in jobs)
+        all_terminal = all(j["status"] in terminal_statuses for j in jobs) if jobs else False
+
+        if all_terminal and jobs:
+            computed_status = "COMPLETED" if failed_count == 0 else "PARTIAL_FAILURE"
+        else:
+            computed_status = batch["status"]
+
+        # Update batch record if status changed
+        if (
+            computed_status != batch["status"]
+            or completed_count != int(batch.get("completed_jobs", 0))
+        ):
+            try:
+                batches_table.update_item(
+                    Key={"batch_id": batch_id},
+                    UpdateExpression="SET #s = :status, completed_jobs = :comp, failed_jobs = :fail, total_cost = :cost, updated_at = :now",
+                    ExpressionAttributeNames={"#s": "status"},
+                    ExpressionAttributeValues={
+                        ":status": computed_status,
+                        ":comp": completed_count,
+                        ":fail": failed_count,
+                        ":cost": round(total_cost, 4),
+                        ":now": datetime.now(UTC).isoformat(),
+                    },
+                )
+            except ClientError:
+                pass  # Best effort — don't fail the read
+
         result = {
             "batch_id": batch["batch_id"],
             "name": batch["name"],
-            "status": batch["status"],
+            "status": computed_status,
             "created_at": batch["created_at"],
             "updated_at": batch["updated_at"],
             "total_jobs": batch.get("total_jobs", 0),
-            "completed_jobs": batch.get("completed_jobs", 0),
-            "failed_jobs": batch.get("failed_jobs", 0),
+            "completed_jobs": completed_count,
+            "failed_jobs": failed_count,
             "template_id": batch["template_id"],
             "template_version": batch.get("template_version", 1),
             "sweep_config": batch.get("sweep_config", {}),
-            "total_cost": float(batch.get("total_cost", 0)),
+            "total_cost": round(total_cost, 4),
             "jobs": jobs,
         }
 

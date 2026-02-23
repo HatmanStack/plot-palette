@@ -1,14 +1,19 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useJobs } from '../hooks/useJobs'
 import JobCard from '../components/JobCard'
-import { deleteJob } from '../services/api'
+import { deleteJob, listBatches } from '../services/api'
 
 type FilterType = 'ALL' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 type SortType = 'created' | 'status' | 'cost'
 
 export default function Dashboard() {
   const { data: jobs, isLoading, error, refetch } = useJobs()
+  const { data: batches } = useQuery({
+    queryKey: ['batches'],
+    queryFn: listBatches,
+  })
   const [filter, setFilter] = useState<FilterType>('ALL')
   const [sort, setSort] = useState<SortType>('created')
 
@@ -128,6 +133,51 @@ export default function Dashboard() {
           {filteredAndSortedJobs.map((job) => (
             <JobCard key={job['job_id']} job={job} onDelete={handleDelete} />
           ))}
+        </div>
+      )}
+
+      {/* Recent Batches */}
+      {batches && batches.length > 0 && (
+        <div className="mt-8">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Recent Batches</h2>
+            <Link
+              to="/jobs/batch/new"
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Create Batch
+            </Link>
+          </div>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jobs</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {batches.slice(0, 5).map((batch) => (
+                  <tr key={batch.batch_id}>
+                    <td className="px-4 py-3 text-sm">
+                      <Link to={`/jobs/batches/${batch.batch_id}`} className="text-blue-600 hover:underline">
+                        {batch.name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-sm">{batch.status}</td>
+                    <td className="px-4 py-3 text-sm">{batch.completed_jobs}/{batch.total_jobs}</td>
+                    <td className="px-4 py-3 text-sm">${batch.total_cost.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {new Date(batch.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
