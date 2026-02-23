@@ -85,12 +85,13 @@ def validate_job_config(config: dict[str, Any]) -> tuple[bool, str]:
     return True, ""
 
 
-def start_job_execution(job_id: str) -> str:
+def start_job_execution(job_id: str, user_id: str = "") -> str:
     """
     Start Step Functions execution for job processing.
 
     Args:
         job_id: Job ID to process
+        user_id: User ID (propagated through state machine for notifications)
 
     Returns:
         str: Execution ARN
@@ -107,7 +108,7 @@ def start_job_execution(job_id: str) -> str:
         response = sfn_client.start_execution(
             stateMachineArn=state_machine_arn,
             name=f"job-{job_id}",
-            input=json.dumps({"job_id": job_id, "retry_count": 0}),
+            input=json.dumps({"job_id": job_id, "user_id": user_id, "retry_count": 0}),
         )
 
         execution_arn = response["executionArn"]
@@ -207,27 +208,42 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if not is_valid:
             return error_response(400, error_msg)
 
-        # Validate template exists
+        # Validate template exists and resolve version
         template_id = body["template_id"]
-        template_version_raw = body.get("template_version", 1)
-        try:
-            template_version = int(template_version_raw)
-            if template_version < 1:
-                return error_response(400, "template_version must be a positive integer")
-        except (ValueError, TypeError):
-            return error_response(400, "template_version must be a positive integer")
+        template_version_raw = body.get("template_version")
 
         try:
-            template_response = templates_table.get_item(
-                Key={"template_id": template_id, "version": template_version}
-            )
+            if template_version_raw is None:
+                # Resolve to latest version when not specified
+                template_response = templates_table.query(
+                    KeyConditionExpression=Key("template_id").eq(template_id),
+                    ScanIndexForward=False,
+                    Limit=1,
+                )
+                items = template_response.get("Items", [])
+                if not items:
+                    return error_response(404, "Template not found")
+                template_version = int(items[0]["version"])
+            else:
+                try:
+                    template_version = int(template_version_raw)
+                    if template_version < 1:
+                        return error_response(400, "template_version must be a positive integer")
+                except (ValueError, TypeError):
+                    return error_response(400, "template_version must be a positive integer")
 
-            if "Item" not in template_response:
-                return error_response(404, "Template not found")
+                template_response = templates_table.get_item(
+                    Key={"template_id": template_id, "version": template_version}
+                )
+                if "Item" not in template_response:
+                    return error_response(404, "Template not found")
 
         except ClientError as e:
             logger.error(json.dumps({"event": "template_lookup_error", "error": str(e)}))
             return error_response(500, "Error validating template")
+
+        # Store resolved version in config for reproducibility
+        body["template_version"] = template_version
 
         # Generate job ID
         job_id = generate_job_id()
@@ -284,7 +300,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Start Step Functions execution for the job
         try:
-            execution_arn = start_job_execution(job_id)
+            execution_arn = start_job_execution(job_id, user_id)
             # Store execution ARN on job record
             jobs_table.update_item(
                 Key={"job_id": job_id},

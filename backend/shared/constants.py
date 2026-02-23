@@ -29,6 +29,26 @@ class ExportFormat(StrEnum):
     CSV = "CSV"
 
 
+# Batch Status Values
+class BatchStatus(StrEnum):
+    """Batch status enumeration."""
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    PARTIAL_FAILURE = "PARTIAL_FAILURE"
+
+
+# Quality Scoring Status Values
+class QualityStatus(StrEnum):
+    """Quality scoring status enumeration."""
+
+    PENDING = "PENDING"
+    SCORING = "SCORING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 # AWS Bedrock Model Pricing (per 1M tokens)
 # Source: https://aws.amazon.com/bedrock/pricing/ (as of 2025-01)
 MODEL_PRICING = {
@@ -109,11 +129,13 @@ COST_TRACKING_TTL_DAYS = 90  # Days to retain cost tracking records
 
 # Concurrency Configuration
 MAX_CONCURRENT_JOBS = 5  # Maximum number of concurrent generation jobs
+MAX_BATCH_SIZE = 20  # Maximum jobs per batch
 MAX_RETRIES = 3  # Maximum retries for Bedrock API calls
 RETRY_BACKOFF_BASE = 2  # Exponential backoff base (seconds)
 
 # Presigned URL Configuration
 PRESIGNED_URL_EXPIRATION = 900  # Presigned URL expiration time (15 minutes)
+DOWNLOAD_URL_EXPIRATION = 3600  # Download presigned URL expiration (1 hour)
 
 # Template Engine Configuration
 MAX_TEMPLATE_STEPS = 10  # Maximum number of steps in a multi-step template
@@ -138,6 +160,7 @@ TABLE_NAMES = {
     "queue": "Queue",
     "templates": "Templates",
     "cost_tracking": "CostTracking",
+    "batches": "Batches",
 }
 
 # DynamoDB GSI Names
@@ -172,3 +195,18 @@ SPOT_INTERRUPTION_SIGNAL = 15  # SIGTERM (120 seconds before termination)
 
 # Default AWS Region
 DEFAULT_AWS_REGION = "us-east-1"
+
+# Quality Scoring Configuration
+QUALITY_SAMPLE_SIZE = 20  # Default records to sample for scoring
+QUALITY_MAX_SAMPLE = 50  # Maximum allowed sample size
+QUALITY_SCORING_MODEL = (
+    "anthropic.claude-3-5-sonnet-20241022-v2:0"  # Premium model for accurate scoring
+)
+QUALITY_DIMENSIONS = ["coherence", "relevance", "format_compliance"]
+QUALITY_WEIGHTS = {
+    "coherence": 0.35,
+    "relevance": 0.35,
+    "format_compliance": 0.15,
+    "diversity": 0.15,
+}
+QUALITY_BATCH_SIZE = 5  # Records per scoring prompt batch

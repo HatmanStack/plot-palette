@@ -1,8 +1,30 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '../test/test-utils'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, createTestQueryClient, mockAuthContextAuthenticated } from '../test/test-utils'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
+import { AuthContext } from '../contexts/AuthContext'
+import { ToastProvider } from '../contexts/ToastContext'
 import Jobs from './Jobs'
 import Templates from './Templates'
 import Settings from './Settings'
+
+vi.mock('../services/api', async () => {
+  const actual = await vi.importActual('../services/api')
+  return {
+    ...actual,
+    fetchUserTemplates: vi.fn().mockResolvedValue([]),
+    searchMarketplaceTemplates: vi.fn().mockResolvedValue({ templates: [], count: 0, total: 0 }),
+    fetchNotificationPreferences: vi.fn().mockResolvedValue({
+      email_enabled: false,
+      email_address: null,
+      webhook_enabled: false,
+      webhook_url: null,
+      notify_on_complete: true,
+      notify_on_failure: true,
+      notify_on_budget_exceeded: true,
+    }),
+  }
+})
 
 describe('Jobs stub page', () => {
   it('renders heading', () => {
@@ -11,16 +33,44 @@ describe('Jobs stub page', () => {
   })
 })
 
-describe('Templates stub page', () => {
+describe('Templates page', () => {
   it('renders heading', () => {
-    render(<Templates />)
+    const client = createTestQueryClient()
+    render(<Templates />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>
+          <AuthContext.Provider value={mockAuthContextAuthenticated}>
+            <ToastProvider>
+              <MemoryRouter initialEntries={['/templates']}>
+                {children}
+              </MemoryRouter>
+            </ToastProvider>
+          </AuthContext.Provider>
+        </QueryClientProvider>
+      ),
+      withRouter: false,
+    })
     expect(screen.getByText('Templates')).toBeInTheDocument()
   })
 })
 
-describe('Settings stub page', () => {
+describe('Settings page', () => {
   it('renders heading', () => {
-    render(<Settings />)
+    const client = createTestQueryClient()
+    render(<Settings />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>
+          <AuthContext.Provider value={mockAuthContextAuthenticated}>
+            <ToastProvider>
+              <MemoryRouter initialEntries={['/settings']}>
+                {children}
+              </MemoryRouter>
+            </ToastProvider>
+          </AuthContext.Provider>
+        </QueryClientProvider>
+      ),
+      withRouter: false,
+    })
     expect(screen.getByText('Settings')).toBeInTheDocument()
   })
 })

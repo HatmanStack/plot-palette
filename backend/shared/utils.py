@@ -12,10 +12,8 @@ import re
 import sys
 import uuid
 from datetime import datetime
-from functools import lru_cache
 from typing import Any
 
-import boto3
 from botocore.exceptions import ClientError
 
 from .constants import (
@@ -275,32 +273,6 @@ def get_nested_field(data: dict[str, Any], field_path: str) -> Any:
     return current
 
 
-def set_nested_field(data: dict[str, Any], field_path: str, value: Any) -> None:
-    """
-    Set value in nested dictionary using dot notation.
-
-    Args:
-        data: Dictionary to modify (modified in-place)
-        field_path: Path in dot notation
-        value: Value to set
-
-    Examples:
-        >>> data = {}
-        >>> set_nested_field(data, "author.name", "Jane Doe")
-        >>> data
-        {'author': {'name': 'Jane Doe'}}
-    """
-    keys = field_path.split(".")
-    current = data
-
-    for key in keys[:-1]:
-        if key not in current:
-            current[key] = {}
-        current = current[key]
-
-    current[keys[-1]] = value
-
-
 def create_presigned_url(
     bucket: str,
     key: str,
@@ -509,47 +481,73 @@ def format_timestamp(dt: datetime) -> str:
     return dt.isoformat()
 
 
-def parse_timestamp(timestamp_str: str) -> datetime:
+def delete_s3_job_data(s3_client: Any, bucket: str, job_id: str, logger: Any = None) -> None:
     """
-    Parse ISO 8601 timestamp string.
+    Delete all S3 data for a job.
 
     Args:
-        timestamp_str: ISO 8601 formatted string
-
-    Returns:
-        datetime: Parsed datetime object
-
-    Examples:
-        >>> parse_timestamp('2025-11-19T10:30:00')
-        datetime.datetime(2025, 11, 19, 10, 30, 0)
+        s3_client: Boto3 S3 client
+        bucket: S3 bucket name
+        job_id: Job identifier
+        logger: Optional logger instance
     """
-    return datetime.fromisoformat(timestamp_str)
+    prefix = f"jobs/{job_id}/"
+    paginator = s3_client.get_paginator("list_objects_v2")
+
+    try:
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            if "Contents" in page:
+                objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                if objects:
+                    s3_client.delete_objects(Bucket=bucket, Delete={"Objects": objects})
+                    if logger:
+                        logger.info(
+                            f'{{"event": "s3_objects_deleted", "job_id": "{job_id}", "count": {len(objects)}}}'
+                        )
+    except ClientError as e:
+        if logger:
+            logger.error(f'{{"event": "s3_delete_error", "job_id": "{job_id}", "error": "{e}"}}')
 
 
-@lru_cache(maxsize=128)
-def get_aws_account_id() -> str:
+def delete_cost_tracking_records(cost_tracking_table: Any, job_id: str, logger: Any = None) -> None:
     """
-    Get AWS account ID (cached).
+    Delete all cost tracking records for a job (paginated).
 
-    Returns:
-        str: AWS account ID
-
-    Raises:
-        ClientError: If unable to retrieve account ID
+    Args:
+        cost_tracking_table: DynamoDB Table resource for CostTracking
+        job_id: Job identifier
+        logger: Optional logger instance
     """
-    from .aws_clients import get_sts_client
+    from boto3.dynamodb.conditions import Key as DDBKey
 
-    sts_client = get_sts_client()
-    return sts_client.get_caller_identity()["Account"]
+    try:
+        deleted_count = 0
+        last_evaluated_key = None
 
+        while True:
+            query_kwargs: dict[str, Any] = {"KeyConditionExpression": DDBKey("job_id").eq(job_id)}
+            if last_evaluated_key:
+                query_kwargs["ExclusiveStartKey"] = last_evaluated_key
 
-@lru_cache(maxsize=128)
-def get_aws_region() -> str:
-    """
-    Get current AWS region (cached).
+            response = cost_tracking_table.query(**query_kwargs)
 
-    Returns:
-        str: AWS region name
-    """
-    session = boto3.session.Session()
-    return session.region_name or "us-east-1"
+            for item in response.get("Items", []):
+                cost_tracking_table.delete_item(
+                    Key={"job_id": job_id, "timestamp": item["timestamp"]}
+                )
+                deleted_count += 1
+
+            last_evaluated_key = response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+
+        if logger:
+            logger.info(
+                f'{{"event": "cost_tracking_deleted", "job_id": "{job_id}", "count": {deleted_count}}}'
+            )
+
+    except ClientError as e:
+        if logger:
+            logger.error(
+                f'{{"event": "cost_tracking_delete_error", "job_id": "{job_id}", "error": "{e}"}}'
+            )

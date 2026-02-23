@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import CreateJob from './CreateJob'
+import { ToastProvider } from '../contexts/ToastContext'
 import * as api from '../services/api'
 
 // Mock the API module
 vi.mock('../services/api', () => ({
   createJob: vi.fn(),
   generateUploadUrl: vi.fn(),
+  fetchTemplateVersions: vi.fn(),
+  generateSeedData: vi.fn(),
 }))
 
 // Mock axios for S3 upload
@@ -30,17 +34,35 @@ vi.mock('react-router-dom', async () => {
 
 const mockCreateJob = vi.mocked(api.createJob)
 const mockGenerateUploadUrl = vi.mocked(api.generateUploadUrl)
+const mockFetchTemplateVersions = vi.mocked(api.fetchTemplateVersions)
+
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+    },
+  })
+}
 
 describe('CreateJob', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockFetchTemplateVersions.mockResolvedValue([
+      { version: 3, name: 'v3', description: '', created_at: '2025-01-03T00:00:00' },
+      { version: 2, name: 'v2', description: '', created_at: '2025-01-02T00:00:00' },
+      { version: 1, name: 'v1', description: '', created_at: '2025-01-01T00:00:00' },
+    ])
   })
 
   const renderCreateJob = () => {
     return render(
-      <MemoryRouter>
-        <CreateJob />
-      </MemoryRouter>
+      <QueryClientProvider client={createTestQueryClient()}>
+        <MemoryRouter>
+          <ToastProvider>
+            <CreateJob />
+          </ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
     )
   }
 
@@ -70,7 +92,7 @@ describe('CreateJob', () => {
 
       await user.click(screen.getByRole('button', { name: 'Next' }))
 
-      expect(screen.getByRole('heading', { name: 'Upload Seed Data' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Seed Data' })).toBeInTheDocument()
     })
 
     it('navigates to step 3 from step 2', async () => {
@@ -99,7 +121,7 @@ describe('CreateJob', () => {
       renderCreateJob()
 
       await user.click(screen.getByRole('button', { name: 'Next' }))
-      expect(screen.getByRole('heading', { name: 'Upload Seed Data' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Seed Data' })).toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: 'Previous' }))
       expect(screen.getByRole('heading', { name: 'Select Template' })).toBeInTheDocument()
@@ -115,6 +137,46 @@ describe('CreateJob', () => {
     })
   })
 
+  describe('Template version selection', () => {
+    it('shows version dropdown after template ID is entered', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Template Version')).toBeInTheDocument()
+      })
+    })
+
+    it('defaults to Latest version', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      await waitFor(() => {
+        const select = screen.getByLabelText('Template Version') as HTMLSelectElement
+        expect(select.value).toBe('latest')
+      })
+    })
+
+    it('shows version in review step', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      // Navigate to step 4
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      // Version is shown in review
+      expect(screen.getByText('Latest')).toBeInTheDocument()
+    })
+  })
+
   describe('Step 3: Job Configuration', () => {
     it('renders budget limit input', async () => {
       const user = userEvent.setup()
@@ -123,9 +185,7 @@ describe('CreateJob', () => {
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
 
-      // Label exists but has no for/id association, so check by text
       expect(screen.getByText(/Budget Limit/)).toBeInTheDocument()
-      // Should have number inputs (budget and records)
       const spinbuttons = screen.getAllByRole('spinbutton')
       expect(spinbuttons.length).toBeGreaterThanOrEqual(1)
     })
@@ -157,7 +217,6 @@ describe('CreateJob', () => {
       const user = userEvent.setup()
       renderCreateJob()
 
-      // Navigate to step 4
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
@@ -169,7 +228,6 @@ describe('CreateJob', () => {
       const user = userEvent.setup()
       renderCreateJob()
 
-      // Navigate to step 4 without filling required fields
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
       await user.click(screen.getByRole('button', { name: 'Next' }))
@@ -177,7 +235,7 @@ describe('CreateJob', () => {
       await user.click(screen.getByRole('button', { name: 'Create Job' }))
 
       await waitFor(() => {
-        expect(screen.getByText('Please complete all required fields')).toBeInTheDocument()
+        expect(screen.getByText('Please select a template')).toBeInTheDocument()
       })
     })
   })
@@ -212,7 +270,6 @@ describe('CreateJob', () => {
       // Go to step 2 and upload file
       await user.click(screen.getByRole('button', { name: 'Next' }))
 
-      // Create a mock file - find input by type since no label association
       const file = new File(['{"data": "test"}'], 'test.json', { type: 'application/json' })
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
       await user.upload(fileInput, file)
@@ -230,6 +287,138 @@ describe('CreateJob', () => {
     })
   })
 
+  describe('Template version in payload', () => {
+    it('passes template_version when specific version is selected', async () => {
+      const user = userEvent.setup()
+
+      mockGenerateUploadUrl.mockResolvedValueOnce({
+        upload_url: 'https://s3.example.com/upload',
+        s3_key: 'seed-data/test-file.json',
+      })
+      mockCreateJob.mockResolvedValueOnce({
+        'job_id': 'new-job-456',
+        'user_id': 'user-1',
+        status: 'QUEUED',
+        'created_at': '2024-01-01T00:00:00Z',
+        'updated_at': '2024-01-01T00:00:00Z',
+        'template_id': 'template-1',
+        'budget_limit': 10,
+        'num_records': 100,
+        'records_generated': 0,
+        'tokens_used': 0,
+        'cost_estimate': 0,
+      })
+
+      renderCreateJob()
+
+      // Fill in template ID
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      // Wait for version dropdown and select version 2
+      await waitFor(() => {
+        expect(screen.getByLabelText('Template Version')).toBeInTheDocument()
+      })
+      await user.selectOptions(screen.getByLabelText('Template Version'), '2')
+
+      // Navigate to step 2 and upload file
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      const file = new File(['{"data": "test"}'], 'test.json', { type: 'application/json' })
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      await user.upload(fileInput, file)
+
+      // Navigate to step 3 (config) and step 4 (review)
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      // Submit
+      await user.click(screen.getByRole('button', { name: 'Create Job' }))
+
+      await waitFor(() => {
+        expect(mockCreateJob).toHaveBeenCalledWith(
+          expect.objectContaining({
+            template_id: 'my-template',
+            template_version: 2,
+          })
+        )
+      })
+    })
+
+    it('omits template_version when Latest is selected', async () => {
+      const user = userEvent.setup()
+
+      mockGenerateUploadUrl.mockResolvedValueOnce({
+        upload_url: 'https://s3.example.com/upload',
+        s3_key: 'seed-data/test-file.json',
+      })
+      mockCreateJob.mockResolvedValueOnce({
+        'job_id': 'new-job-789',
+        'user_id': 'user-1',
+        status: 'QUEUED',
+        'created_at': '2024-01-01T00:00:00Z',
+        'updated_at': '2024-01-01T00:00:00Z',
+        'template_id': 'template-1',
+        'budget_limit': 10,
+        'num_records': 100,
+        'records_generated': 0,
+        'tokens_used': 0,
+        'cost_estimate': 0,
+      })
+
+      renderCreateJob()
+
+      // Fill in template ID (keeps default "Latest")
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
+
+      // Navigate through all steps
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      const file = new File(['{"data": "test"}'], 'test.json', { type: 'application/json' })
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      await user.upload(fileInput, file)
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      // Submit
+      await user.click(screen.getByRole('button', { name: 'Create Job' }))
+
+      await waitFor(() => {
+        expect(mockCreateJob).toHaveBeenCalled()
+        const payload = mockCreateJob.mock.calls[0][0]
+        expect(payload).not.toHaveProperty('template_version')
+      })
+    })
+  })
+
+  describe('Seed data mode toggle', () => {
+    it('step 2 shows upload and generate options', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      expect(screen.getByLabelText('Upload File')).toBeInTheDocument()
+      expect(screen.getByLabelText('Generate from Schema')).toBeInTheDocument()
+    })
+
+    it('switching to generate mode shows SeedDataGenerator', async () => {
+      const user = userEvent.setup()
+      renderCreateJob()
+
+      // Enter template ID first (needed for SeedDataGenerator)
+      await user.type(screen.getByPlaceholderText('Enter template ID'), 'tmpl-123')
+      await user.click(screen.getByRole('button', { name: 'Next' }))
+
+      // Default mode is upload
+      expect(screen.getByText(/Seed Data File/)).toBeInTheDocument()
+
+      // Switch to generate mode
+      await user.click(screen.getByLabelText('Generate from Schema'))
+
+      // Should show SeedDataGenerator elements
+      expect(screen.getByText(/Number of Records/)).toBeInTheDocument()
+      expect(screen.getByText(/Model Tier/)).toBeInTheDocument()
+    })
+  })
+
   describe('Error handling', () => {
     it('displays error message when API fails', async () => {
       const user = userEvent.setup()
@@ -238,7 +427,6 @@ describe('CreateJob', () => {
 
       renderCreateJob()
 
-      // Fill required fields
       await user.type(screen.getByPlaceholderText('Enter template ID'), 'my-template')
       await user.click(screen.getByRole('button', { name: 'Next' }))
 

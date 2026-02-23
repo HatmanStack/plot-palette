@@ -1,5 +1,5 @@
 {
-  "Comment": "Plot Palette Job Lifecycle — orchestrates worker ECS task with Spot retry",
+  "Comment": "Plot Palette Job Lifecycle — orchestrates worker ECS task with Spot retry and notifications",
   "StartAt": "MarkJobRunning",
   "States": {
     "MarkJobRunning": {
@@ -168,6 +168,7 @@
       "Type": "Pass",
       "Parameters": {
         "job_id.$": "$.job_id",
+        "user_id.$": "$.user_id",
         "retry_count.$": "States.MathAdd($.retry_count, 1)"
       },
       "Next": "CheckMaxRetries"
@@ -202,7 +203,49 @@
           ":now": {"S.$": "$$.State.EnteredTime"}
         }
       },
-      "End": true
+      "ResultPath": null,
+      "Next": "ScoreJobQuality"
+    },
+
+    "ScoreJobQuality": {
+      "Type": "Task",
+      "Resource": "${ScoreJobFunctionArn}",
+      "Parameters": {
+        "job_id.$": "$.job_id"
+      },
+      "ResultPath": null,
+      "TimeoutSeconds": 180,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "SendNotificationCompleted"
+        }
+      ],
+      "Next": "SendNotificationCompleted"
+    },
+
+    "SendNotificationCompleted": {
+      "Type": "Task",
+      "Resource": "${SendNotificationFunctionArn}",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "user_id.$": "$.user_id",
+        "status": "COMPLETED"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "EndCompleted"
+        }
+      ],
+      "Next": "EndCompleted"
+    },
+
+    "EndCompleted": {
+      "Type": "Succeed"
     },
 
     "MarkJobFailed": {
@@ -222,7 +265,31 @@
           ":now": {"S.$": "$$.State.EnteredTime"}
         }
       },
-      "End": true
+      "ResultPath": null,
+      "Next": "SendNotificationFailed"
+    },
+
+    "SendNotificationFailed": {
+      "Type": "Task",
+      "Resource": "${SendNotificationFunctionArn}",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "user_id.$": "$.user_id",
+        "status": "FAILED"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "EndFailed"
+        }
+      ],
+      "Next": "EndFailed"
+    },
+
+    "EndFailed": {
+      "Type": "Succeed"
     },
 
     "MarkJobBudgetExceeded": {
@@ -242,7 +309,31 @@
           ":now": {"S.$": "$$.State.EnteredTime"}
         }
       },
-      "End": true
+      "ResultPath": null,
+      "Next": "SendNotificationBudgetExceeded"
+    },
+
+    "SendNotificationBudgetExceeded": {
+      "Type": "Task",
+      "Resource": "${SendNotificationFunctionArn}",
+      "Parameters": {
+        "job_id.$": "$.job_id",
+        "user_id.$": "$.user_id",
+        "status": "BUDGET_EXCEEDED"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": null,
+          "Next": "EndBudgetExceeded"
+        }
+      ],
+      "Next": "EndBudgetExceeded"
+    },
+
+    "EndBudgetExceeded": {
+      "Type": "Succeed"
     }
   }
 }

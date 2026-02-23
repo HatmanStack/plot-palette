@@ -13,6 +13,7 @@ from typing import Any
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
 from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
@@ -52,12 +53,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Parse query parameters
         params = event.get("queryStringParameters") or {}
-        try:
-            version = int(params.get("version", 1))
-            if version < 1:
-                return error_response(400, "Invalid version parameter: must be a positive integer")
-        except (ValueError, TypeError):
-            return error_response(400, "Invalid version parameter: must be a positive integer")
+        version_str = params.get("version", "1")
 
         logger.info(
             json.dumps(
@@ -65,24 +61,49 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "event": "get_template_request",
                     "user_id": user_id,
                     "template_id": template_id,
-                    "version": version,
+                    "version": version_str,
                 }
             )
         )
 
-        # Get template from DynamoDB
-        try:
-            response = templates_table.get_item(
-                Key={"template_id": template_id, "version": version}
-            )
-        except ClientError as e:
-            logger.error(json.dumps({"event": "get_template_error", "error": str(e)}))
-            return error_response(500, "Error retrieving template")
+        # Fetch template: version=latest uses query, specific version uses get_item
+        if version_str == "latest":
+            try:
+                response = templates_table.query(
+                    KeyConditionExpression=Key("template_id").eq(template_id),
+                    ScanIndexForward=False,
+                    Limit=1,
+                )
+            except ClientError as e:
+                logger.error(json.dumps({"event": "get_template_error", "error": str(e)}))
+                return error_response(500, "Error retrieving template")
 
-        if "Item" not in response:
-            return error_response(404, "Template not found")
+            items = response.get("Items", [])
+            if not items:
+                return error_response(404, "Template not found")
+            template = items[0]
+        else:
+            try:
+                version = int(version_str)
+                if version < 1:
+                    return error_response(
+                        400, "Invalid version parameter: must be a positive integer"
+                    )
+            except (ValueError, TypeError):
+                return error_response(400, "Invalid version parameter: must be a positive integer")
 
-        template = response["Item"]
+            try:
+                response = templates_table.get_item(
+                    Key={"template_id": template_id, "version": version}
+                )
+            except ClientError as e:
+                logger.error(json.dumps({"event": "get_template_error", "error": str(e)}))
+                return error_response(500, "Error retrieving template")
+
+            if "Item" not in response:
+                return error_response(404, "Template not found")
+
+            template = response["Item"]
 
         # Authorization check - only owner or public templates can be accessed
         if template["user_id"] != user_id and not template.get("is_public", False):

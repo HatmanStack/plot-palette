@@ -5,7 +5,9 @@ export default function Sidebar() {
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: '📊' },
+    { path: '/cost-analytics', label: 'Cost Analytics', icon: '💰' },
     { path: '/jobs', label: 'Jobs', icon: '📋' },
+    { path: '/jobs/batch/new', label: 'Create Batch', icon: '📦' },
     { path: '/templates', label: 'Templates', icon: '📝' },
     { path: '/settings', label: 'Settings', icon: '⚙️' },
   ]

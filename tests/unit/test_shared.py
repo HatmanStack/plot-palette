@@ -6,11 +6,17 @@ Tests models, constants, and utility functions.
 
 import pytest
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 import json
 
+from pydantic import ValidationError
+
 from backend.shared.models import (
+    BatchConfig,
     JobConfig,
+    QualityMetrics,
+    RecordScore,
     TemplateDefinition,
     TemplateStep,
     CheckpointState,
@@ -19,12 +25,20 @@ from backend.shared.models import (
     QueueItem,
 )
 from backend.shared.constants import (
+    BatchStatus,
     JobStatus,
     ExportFormat,
+    MAX_BATCH_SIZE,
     MODEL_PRICING,
     MODEL_TIERS,
     FARGATE_SPOT_PRICING,
     CHECKPOINT_INTERVAL,
+    QualityStatus,
+    QUALITY_SAMPLE_SIZE,
+    QUALITY_MAX_SAMPLE,
+    QUALITY_SCORING_MODEL,
+    QUALITY_DIMENSIONS,
+    QUALITY_WEIGHTS,
 )
 from backend.shared.utils import (
     generate_job_id,
@@ -33,13 +47,11 @@ from backend.shared.utils import (
     calculate_fargate_cost,
     calculate_s3_cost,
     get_nested_field,
-    set_nested_field,
     parse_etag,
     resolve_model_id,
     validate_seed_data,
     format_cost,
     format_timestamp,
-    parse_timestamp,
 )
 
 
@@ -285,15 +297,6 @@ class TestUtilityFunctions:
         assert get_nested_field(data, "author.missing") is None
         assert get_nested_field(data, "missing.field") is None
 
-    def test_set_nested_field(self):
-        """Test setting nested dictionary values."""
-        data = {}
-        set_nested_field(data, "author.name", "Jane Doe")
-        set_nested_field(data, "author.biography", "Test bio")
-
-        assert data["author"]["name"] == "Jane Doe"
-        assert data["author"]["biography"] == "Test bio"
-
     def test_parse_etag(self):
         """Test ETag parsing (quote removal)."""
         assert parse_etag('"abc123"') == "abc123"
@@ -337,17 +340,6 @@ class TestUtilityFunctions:
         formatted = format_timestamp(dt)
         assert formatted == "2025-11-19T10:30:00"
 
-    def test_parse_timestamp(self):
-        """Test timestamp parsing."""
-        timestamp_str = "2025-11-19T10:30:00"
-        dt = parse_timestamp(timestamp_str)
-        assert dt.year == 2025
-        assert dt.month == 11
-        assert dt.day == 19
-        assert dt.hour == 10
-        assert dt.minute == 30
-
-
 class TestConstants:
     """Test constants are properly defined."""
 
@@ -375,6 +367,304 @@ class TestConstants:
     def test_checkpoint_interval(self):
         """Test checkpoint interval constant."""
         assert CHECKPOINT_INTERVAL == 50
+
+
+class TestBatchConfig:
+    """Test BatchConfig model."""
+
+    def test_batch_config_creation(self):
+        """Test creating a BatchConfig instance with all fields."""
+        batch = BatchConfig(
+            batch_id="batch-123",
+            user_id="user-456",
+            name="Model comparison A/B test",
+            status=BatchStatus.PENDING,
+            created_at=datetime(2025, 12, 1, 10, 0, 0),
+            updated_at=datetime(2025, 12, 1, 10, 0, 0),
+            job_ids=["job-1", "job-2", "job-3"],
+            total_jobs=3,
+            completed_jobs=0,
+            failed_jobs=0,
+            template_id="tmpl-789",
+            template_version=1,
+            sweep_config={"model_tier": ["tier-1", "tier-2", "tier-3"]},
+            total_cost=0.0,
+        )
+
+        assert batch.batch_id == "batch-123"
+        assert batch.user_id == "user-456"
+        assert batch.name == "Model comparison A/B test"
+        assert batch.status == BatchStatus.PENDING
+        assert batch.total_jobs == 3
+        assert len(batch.job_ids) == 3
+        assert batch.template_id == "tmpl-789"
+        assert batch.template_version == 1
+        assert batch.total_cost == 0.0
+
+    def test_batch_config_to_dynamodb(self):
+        """Test BatchConfig serialization to DynamoDB table item format."""
+        batch = BatchConfig(
+            batch_id="batch-abc",
+            user_id="user-xyz",
+            name="Seed sweep",
+            status=BatchStatus.RUNNING,
+            created_at=datetime(2025, 12, 1, 10, 0, 0),
+            updated_at=datetime(2025, 12, 1, 11, 0, 0),
+            job_ids=["job-a", "job-b"],
+            total_jobs=2,
+            completed_jobs=1,
+            failed_jobs=0,
+            template_id="tmpl-111",
+            template_version=2,
+            sweep_config={"seed_data_path": ["path-a", "path-b"]},
+            total_cost=5.25,
+        )
+
+        item = batch.to_table_item()
+
+        assert item["batch_id"] == "batch-abc"
+        assert item["user_id"] == "user-xyz"
+        assert item["status"] == "RUNNING"
+        assert item["total_jobs"] == 2
+        assert item["completed_jobs"] == 1
+        assert item["job_ids"] == ["job-a", "job-b"]
+        assert item["template_id"] == "tmpl-111"
+        assert item["template_version"] == 2
+
+    def test_batch_config_from_dynamodb(self):
+        """Test BatchConfig deserialization from DynamoDB table item."""
+        item = {
+            "batch_id": "batch-abc",
+            "user_id": "user-xyz",
+            "name": "Record count sweep",
+            "status": "COMPLETED",
+            "created_at": "2025-12-01T10:00:00",
+            "updated_at": "2025-12-01T12:00:00",
+            "job_ids": ["job-1", "job-2"],
+            "total_jobs": 2,
+            "completed_jobs": 2,
+            "failed_jobs": 0,
+            "template_id": "tmpl-222",
+            "template_version": 1,
+            "sweep_config": {"num_records": [100, 500]},
+            "total_cost": 8.50,
+        }
+
+        batch = BatchConfig.from_dynamodb(item)
+
+        assert batch.batch_id == "batch-abc"
+        assert batch.status == BatchStatus.COMPLETED
+        assert batch.total_jobs == 2
+        assert batch.completed_jobs == 2
+        assert batch.template_version == 1
+        assert batch.total_cost == 8.50
+
+    def test_batch_config_empty_job_ids(self):
+        """Test BatchConfig handles empty job_ids list."""
+        batch = BatchConfig(
+            batch_id="batch-empty",
+            user_id="user-1",
+            name="Empty batch",
+            total_jobs=1,
+            template_id="tmpl-1",
+            template_version=1,
+        )
+        assert batch.job_ids == []
+
+    def test_batch_status_enum(self):
+        """Test BatchStatus enum has all 4 required states."""
+        assert BatchStatus.PENDING == "PENDING"
+        assert BatchStatus.RUNNING == "RUNNING"
+        assert BatchStatus.COMPLETED == "COMPLETED"
+        assert BatchStatus.PARTIAL_FAILURE == "PARTIAL_FAILURE"
+        assert len(BatchStatus) == 4
+
+    def test_max_batch_size_constant(self):
+        """Test MAX_BATCH_SIZE constant is defined."""
+        assert MAX_BATCH_SIZE == 20
+
+
+class TestQualityMetrics:
+    """Test QualityMetrics and RecordScore models."""
+
+    def test_quality_metrics_creation(self):
+        """Test creating a QualityMetrics instance with all fields."""
+        metrics = QualityMetrics(
+            job_id="job-123",
+            scored_at=datetime(2025, 12, 1, 10, 0, 0),
+            sample_size=20,
+            total_records=100,
+            model_used_for_scoring="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            aggregate_scores={"coherence": 0.85, "relevance": 0.90, "format_compliance": 0.95},
+            diversity_score=0.75,
+            overall_score=0.86,
+            record_scores=[
+                RecordScore(
+                    record_index=0,
+                    coherence=0.9,
+                    relevance=0.85,
+                    format_compliance=1.0,
+                    detail="Well structured output",
+                )
+            ],
+            scoring_cost=0.05,
+            status=QualityStatus.COMPLETED,
+        )
+
+        assert metrics.job_id == "job-123"
+        assert metrics.sample_size == 20
+        assert metrics.total_records == 100
+        assert metrics.diversity_score == 0.75
+        assert metrics.overall_score == 0.86
+        assert metrics.status == QualityStatus.COMPLETED
+        assert len(metrics.record_scores) == 1
+        assert metrics.scoring_cost == 0.05
+
+    def test_quality_metrics_to_dynamodb(self):
+        """Test QualityMetrics serialization to DynamoDB table item format."""
+        metrics = QualityMetrics(
+            job_id="job-456",
+            scored_at=datetime(2025, 12, 1, 10, 0, 0),
+            sample_size=10,
+            total_records=50,
+            model_used_for_scoring="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            aggregate_scores={"coherence": 0.80},
+            diversity_score=0.70,
+            overall_score=0.78,
+            record_scores=[],
+            scoring_cost=0.03,
+            status=QualityStatus.COMPLETED,
+        )
+
+        item = metrics.to_table_item()
+
+        assert item["job_id"] == "job-456"
+        assert item["sample_size"] == 10
+        assert item["status"] == "COMPLETED"
+        assert "ttl" in item
+        assert isinstance(item["diversity_score"], Decimal)
+        assert isinstance(item["overall_score"], Decimal)
+
+    def test_quality_metrics_from_dynamodb(self):
+        """Test QualityMetrics deserialization from DynamoDB table item."""
+        item = {
+            "job_id": "job-789",
+            "scored_at": "2025-12-01T10:00:00",
+            "sample_size": 15,
+            "total_records": 80,
+            "model_used_for_scoring": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "aggregate_scores": {"coherence": Decimal("0.85"), "relevance": Decimal("0.9")},
+            "diversity_score": Decimal("0.7"),
+            "overall_score": Decimal("0.82"),
+            "record_scores": [
+                {
+                    "record_index": 0,
+                    "coherence": Decimal("0.9"),
+                    "relevance": Decimal("0.85"),
+                    "format_compliance": Decimal("1.0"),
+                    "detail": "Good",
+                }
+            ],
+            "scoring_cost": Decimal("0.04"),
+            "status": "COMPLETED",
+        }
+
+        metrics = QualityMetrics.from_dynamodb(item)
+
+        assert metrics.job_id == "job-789"
+        assert metrics.sample_size == 15
+        assert metrics.aggregate_scores["coherence"] == 0.85
+        assert metrics.diversity_score == 0.7
+        assert metrics.overall_score == 0.82
+        assert len(metrics.record_scores) == 1
+        assert metrics.record_scores[0].coherence == 0.9
+        assert metrics.status == QualityStatus.COMPLETED
+
+    def test_record_score_validation(self):
+        """Test RecordScore validates score ranges (0.0-1.0)."""
+        # Valid
+        score = RecordScore(
+            record_index=0, coherence=0.5, relevance=0.5, format_compliance=0.5
+        )
+        assert score.coherence == 0.5
+
+        # Score > 1.0 should raise
+        with pytest.raises(ValidationError):
+            RecordScore(
+                record_index=0, coherence=1.5, relevance=0.5, format_compliance=0.5
+            )
+
+        # Score < 0.0 should raise
+        with pytest.raises(ValidationError):
+            RecordScore(
+                record_index=0, coherence=-0.1, relevance=0.5, format_compliance=0.5
+            )
+
+    def test_quality_metrics_overall_score(self):
+        """Test that weighted average calculation can produce correct overall scores."""
+        # Verify QUALITY_WEIGHTS sum to 1.0
+        total_weight = sum(QUALITY_WEIGHTS.values())
+        assert total_weight == pytest.approx(1.0)
+
+        # Compute expected weighted average manually
+        scores = {"coherence": 0.8, "relevance": 0.9, "format_compliance": 1.0}
+        diversity = 0.7
+        expected = (
+            scores["coherence"] * QUALITY_WEIGHTS["coherence"]
+            + scores["relevance"] * QUALITY_WEIGHTS["relevance"]
+            + scores["format_compliance"] * QUALITY_WEIGHTS["format_compliance"]
+            + diversity * QUALITY_WEIGHTS["diversity"]
+        )
+
+        metrics = QualityMetrics(
+            job_id="job-wt",
+            sample_size=20,
+            total_records=100,
+            model_used_for_scoring="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            aggregate_scores=scores,
+            diversity_score=diversity,
+            overall_score=round(expected, 4),
+            status=QualityStatus.COMPLETED,
+        )
+
+        assert metrics.overall_score == pytest.approx(expected, abs=1e-3)
+
+    def test_quality_status_enum(self):
+        """Test QualityStatus enum has all 4 values."""
+        assert QualityStatus.PENDING == "PENDING"
+        assert QualityStatus.SCORING == "SCORING"
+        assert QualityStatus.COMPLETED == "COMPLETED"
+        assert QualityStatus.FAILED == "FAILED"
+        assert len(QualityStatus) == 4
+
+    def test_quality_constants(self):
+        """Test quality scoring constants are defined correctly."""
+        assert QUALITY_SAMPLE_SIZE == 20
+        assert QUALITY_MAX_SAMPLE == 50
+        assert QUALITY_SCORING_MODEL == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        assert "coherence" in QUALITY_DIMENSIONS
+        assert "relevance" in QUALITY_DIMENSIONS
+        assert "format_compliance" in QUALITY_DIMENSIONS
+        assert len(QUALITY_WEIGHTS) == 4
+
+    def test_quality_metrics_failed_status(self):
+        """Test QualityMetrics with FAILED status and error message."""
+        metrics = QualityMetrics(
+            job_id="job-fail",
+            sample_size=0,
+            total_records=0,
+            model_used_for_scoring="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            status=QualityStatus.FAILED,
+            error_message="Export file not found",
+        )
+
+        item = metrics.to_table_item()
+        assert item["status"] == "FAILED"
+        assert item["error_message"] == "Export file not found"
+
+        restored = QualityMetrics.from_dynamodb(item)
+        assert restored.status == QualityStatus.FAILED
+        assert restored.error_message == "Export file not found"
 
 
 if __name__ == "__main__":

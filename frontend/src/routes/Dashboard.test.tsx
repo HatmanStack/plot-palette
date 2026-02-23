@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../contexts/ToastContext'
 import Dashboard from './Dashboard'
 import type { Job } from '../services/api'
@@ -18,6 +19,7 @@ const mockDeleteJob = vi.fn()
 vi.mock('../services/api', () => ({
   deleteJob: (...args: unknown[]) => mockDeleteJob(...args),
   downloadJobExport: vi.fn(),
+  listBatches: vi.fn().mockResolvedValue([]),
 }))
 
 // Factory to create mock jobs
@@ -51,12 +53,17 @@ describe('Dashboard', () => {
   })
 
   const renderDashboard = () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    })
     return render(
-      <MemoryRouter>
-        <ToastProvider>
-          <Dashboard />
-        </ToastProvider>
-      </MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <ToastProvider>
+            <Dashboard />
+          </ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
     )
   }
 

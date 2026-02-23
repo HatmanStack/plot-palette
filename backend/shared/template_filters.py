@@ -5,14 +5,11 @@ This module provides custom filters for LLM prompt generation including
 text manipulation, token operations, and data extraction.
 """
 
-import json
 import logging
 import random
 import re
 from collections import Counter
 from typing import Any
-
-from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +33,6 @@ _STYLE_PATTERNS = {
     "verbose": re.compile(r"\b(elaborate|detailed|extensive)\b", re.IGNORECASE),
     "dramatic": re.compile(r"\b(drama|theatrical|intense)\b", re.IGNORECASE),
 }
-_MD_HEADER_RE = re.compile(r"#+\s+")
-_MD_BOLD_RE = re.compile(r"\*\*(.*?)\*\*")
-_MD_ITALIC_RE = re.compile(r"\*(.*?)\*")
-_MD_LINK_RE = re.compile(r"\[(.*?)\]\(.*?\)")
-_MD_CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
-_MD_INLINE_CODE_RE = re.compile(r"`(.*?)`")
 
 
 def random_sentence(text: str) -> str:
@@ -61,31 +52,6 @@ def random_sentence(text: str) -> str:
     sentences = [s.strip() for s in sentences if s.strip()]
 
     return random.choice(sentences) if sentences else text
-
-
-def random_word(text: str, count: int = 1) -> str:
-    """
-    Extract random word(s) from text.
-
-    Args:
-        text: Input text
-        count: Number of words to extract
-
-    Returns:
-        str: Randomly selected word(s)
-    """
-    if not text:
-        return ""
-
-    words = text.split()
-    if not words:
-        return ""
-
-    if count == 1:
-        return random.choice(words)
-    else:
-        selected = random.sample(words, min(count, len(words)))
-        return " ".join(selected)
 
 
 def writing_style(biography: str) -> str:
@@ -208,90 +174,6 @@ def extract_keywords(text: str, count: int = 5) -> list[str]:
     return [word for word, _ in word_freq.most_common(count)]
 
 
-def summarize_text(text: str, max_sentences: int = 3) -> str:
-    """
-    Extract first N sentences as summary.
-
-    Args:
-        text: Input text
-        max_sentences: Number of sentences to extract
-
-    Returns:
-        str: Summary with first N sentences
-    """
-    if not text:
-        return ""
-
-    sentences = _SENTENCE_SPLIT_RE.split(text)
-    sentences = [s.strip() for s in sentences if s.strip()]
-
-    if not sentences:
-        return text
-
-    return ". ".join(sentences[:max_sentences]) + "."
-
-
-def capitalize_first(text: str) -> str:
-    """
-    Capitalize first letter of each sentence.
-
-    Args:
-        text: Input text
-
-    Returns:
-        str: Text with capitalized sentences
-    """
-    if not text:
-        return ""
-
-    return ". ".join(s.strip().capitalize() for s in text.split(". "))
-
-
-def remove_markdown(text: str) -> str:
-    """
-    Remove markdown formatting from text.
-
-    Args:
-        text: Markdown-formatted text
-
-    Returns:
-        str: Plain text without markdown
-    """
-    if not text:
-        return ""
-
-    # Remove headers
-    text = _MD_HEADER_RE.sub("", text)
-    # Remove bold
-    text = _MD_BOLD_RE.sub(r"\1", text)
-    # Remove italic
-    text = _MD_ITALIC_RE.sub(r"\1", text)
-    # Remove links
-    text = _MD_LINK_RE.sub(r"\1", text)
-    # Remove code blocks
-    text = _MD_CODE_BLOCK_RE.sub("", text)
-    # Remove inline code
-    text = _MD_INLINE_CODE_RE.sub(r"\1", text)
-
-    return text
-
-
-def json_safe(obj: Any) -> str:
-    """
-    Convert object to JSON-safe string.
-
-    Args:
-        obj: Any Python object
-
-    Returns:
-        str: JSON-formatted string
-    """
-    try:
-        return json.dumps(obj, ensure_ascii=False)
-    except (TypeError, ValueError):
-        return str(obj)
-
-
 def validate_template_syntax(template_def: dict[str, Any]) -> tuple[bool, str]:
     """
     Validate Jinja2 syntax in template definition.
@@ -347,92 +229,10 @@ def validate_template_syntax(template_def: dict[str, Any]) -> tuple[bool, str]:
         return False, f"Template validation error: {sanitize_error_message(str(e))}"
 
 
-def validate_template_includes(
-    template_def: dict[str, Any], templates_table: Any
-) -> tuple[bool, str]:
-    """
-    Validate that all included templates exist in DynamoDB.
-
-    Args:
-        template_def: Template definition dictionary with steps
-        templates_table: boto3 DynamoDB Table resource
-
-    Returns:
-        Tuple[bool, str]: (is_valid, error_message)
-    """
-    try:
-        # Collect all include names across all steps
-        all_includes = set()
-
-        for step in template_def.get("steps", []):
-            prompt = step.get("prompt", "")
-
-            # Find all {% include 'template-name' %} references
-            all_includes.update(re.findall(r"{%\s*include\s+'([^']+)'\s*%}", prompt))
-            all_includes.update(re.findall(r'{%\s*include\s+"([^"]+)"\s*%}', prompt))
-
-        if not all_includes:
-            return True, "No includes to validate"
-
-        # Batch lookup in chunks of 100 (DynamoDB BatchGetItem limit)
-        found_ids = set()
-        include_list = list(all_includes)
-
-        for i in range(0, len(include_list), 100):
-            chunk = include_list[i : i + 100]
-
-            try:
-                for name in chunk:
-                    resp = templates_table.get_item(Key={"template_id": name, "version": 1})
-                    if "Item" in resp:
-                        found_ids.add(name)
-            except ClientError as e:
-                error_code = e.response.get("Error", {}).get("Code", "")
-                if error_code in (
-                    "ThrottlingException",
-                    "InternalServerError",
-                    "ServiceUnavailable",
-                    "ProvisionedThroughputExceededException",
-                ):
-                    raise  # Propagate infrastructure errors
-                logger.error(f"Error checking include: {str(e)}")
-
-        missing_includes = all_includes - found_ids
-        if missing_includes:
-            return False, f"Missing included templates: {', '.join(sorted(missing_includes))}"
-
-        return True, "All includes valid"
-
-    except ClientError as e:
-        # Propagate infrastructure errors (throttling, internal server errors)
-        error_code = e.response.get("Error", {}).get("Code", "")
-        if error_code in (
-            "ThrottlingException",
-            "InternalServerError",
-            "ServiceUnavailable",
-            "ProvisionedThroughputExceededException",
-        ):
-            raise
-        logger.error(f"Include validation error: {str(e)}", exc_info=True)
-        from .utils import sanitize_error_message
-
-        return False, f"Include validation error: {sanitize_error_message(str(e))}"
-    except Exception as e:
-        logger.error(f"Include validation error: {str(e)}", exc_info=True)
-        from .utils import sanitize_error_message
-
-        return False, f"Include validation error: {sanitize_error_message(str(e))}"
-
-
 # Register all custom filters
 CUSTOM_FILTERS = {
     "random_sentence": random_sentence,
-    "random_word": random_word,
     "writing_style": writing_style,
     "truncate_tokens": truncate_tokens,
     "extract_keywords": extract_keywords,
-    "summarize_text": summarize_text,
-    "capitalize_first": capitalize_first,
-    "remove_markdown": remove_markdown,
-    "json_safe": json_safe,
 }

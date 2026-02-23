@@ -37,6 +37,10 @@ Parameters:
     Type: String
     Default: ""
     Description: Step Functions state machine ARN for job lifecycle (optional)
+  SenderEmail:
+    Type: String
+    Default: "noreply@plotpalette.example.com"
+    Description: Verified SES sender email address for notifications
 
 Globals:
   Function:
@@ -57,6 +61,10 @@ Globals:
         SUBNET_IDS: !Ref SubnetIds
         SECURITY_GROUP_ID: !Ref SecurityGroupId
         STATE_MACHINE_ARN: !Ref StateMachineArn
+        NOTIFICATION_PREFERENCES_TABLE_NAME: !Ref NotificationPreferencesTable
+        BATCHES_TABLE_NAME: !Ref BatchesTable
+        QUALITY_METRICS_TABLE_NAME: !Ref QualityMetricsTable
+        SENDER_EMAIL: !Ref SenderEmail
         ALLOWED_ORIGIN: !Select [0, !Ref AllowedOrigins]
     LoggingConfig:
       LogGroup: !Ref LambdaLogGroup
@@ -162,6 +170,64 @@ Resources:
           KeyType: HASH
         - AttributeName: timestamp
           KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  NotificationPreferencesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-NotificationPreferences-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  BatchesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-Batches-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: batch_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: batch_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  QualityMetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-QualityMetrics-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       TimeToLiveSpecification:
@@ -347,6 +413,27 @@ Resources:
             Path: /jobs/{job_id}/download
             Method: GET
 
+  DownloadPartialFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-download-partial-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: download_partial.lambda_handler
+      MemorySize: 512
+      Timeout: 30
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+      Events:
+        DownloadPartial:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/download-partial
+            Method: GET
+
   # ============================================================
   # Lambda Functions - Templates
   # ============================================================
@@ -496,6 +583,23 @@ Resources:
             Path: /templates/{template_id}/export
             Method: GET
 
+  ListTemplateVersionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-list-template-versions-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: list_versions.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        ListTemplateVersions:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}/versions
+            Method: GET
+
   # ============================================================
   # Lambda Functions - Seed Data
   # ============================================================
@@ -558,6 +662,356 @@ Resources:
             Path: /dashboard/{job_id}
             Method: GET
 
+  # ============================================================
+  # Lambda Functions - Cost Analytics (Phase 2)
+  # ============================================================
+  GetCostAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-cost-analytics-${Environment}
+      CodeUri: lambdas/dashboard/
+      Handler: get_cost_analytics.lambda_handler
+      MemorySize: 256
+      Timeout: 15
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref CostTrackingTable
+      Events:
+        GetCostAnalytics:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /dashboard/cost-analytics
+            Method: GET
+
+  # ============================================================
+  # Lambda Functions - Marketplace (Phase 2)
+  # ============================================================
+  SearchTemplatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-search-templates-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: search_templates.lambda_handler
+      MemorySize: 256
+      Timeout: 15
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        SearchTemplates:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/marketplace
+            Method: GET
+
+  ForkTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-fork-template-${Environment}
+      CodeUri: lambdas/templates/
+      Handler: fork_template.lambda_handler
+      MemorySize: 256
+      Timeout: 15
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TemplatesTable
+      Events:
+        ForkTemplate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /templates/{template_id}/fork
+            Method: POST
+
+  # ============================================================
+  # Lambda Functions - Settings (Phase 3)
+  # ============================================================
+  GetPreferencesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-preferences-${Environment}
+      CodeUri: lambdas/settings/
+      Handler: get_preferences.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref NotificationPreferencesTable
+      Events:
+        GetPreferences:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings/notifications
+            Method: GET
+
+  UpdatePreferencesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-update-preferences-${Environment}
+      CodeUri: lambdas/settings/
+      Handler: update_preferences.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NotificationPreferencesTable
+      Events:
+        UpdatePreferences:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings/notifications
+            Method: PUT
+
+  # ============================================================
+  # Lambda Functions - Notifications (Phase 3)
+  # ============================================================
+  SendNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-send-notification-${Environment}
+      CodeUri: lambdas/notifications/
+      Handler: send_notification.lambda_handler
+      Timeout: 30
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref NotificationPreferencesTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+              Resource: '*'
+
+  # ============================================================
+  # Lambda Functions - SSE Streaming (Phase 3)
+  # ============================================================
+  StreamProgressFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-stream-progress-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: stream_progress.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+      Events:
+        StreamProgress:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/stream
+            Method: GET
+
+  # ============================================================
+  # Lambda Functions - Batch Jobs (Phase 4)
+  # ============================================================
+  CreateBatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-create-batch-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: create_batch.lambda_handler
+      MemorySize: 512
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BatchesTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - states:StartExecution
+              Resource: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:plot-palette-*'
+      Events:
+        CreateBatch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/batch
+            Method: POST
+
+  ListBatchesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-list-batches-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: list_batches.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BatchesTable
+      Events:
+        ListBatches:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/batches
+            Method: GET
+
+  GetBatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-batch-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: get_batch.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref BatchesTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+      Events:
+        GetBatch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/batches/{batch_id}
+            Method: GET
+
+  DeleteBatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-delete-batch-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: delete_batch.lambda_handler
+      MemorySize: 256
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BatchesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QueueTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CostTrackingTable
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - states:StopExecution
+              Resource: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:plot-palette-*:*'
+      Events:
+        DeleteBatch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/batches/{batch_id}
+            Method: DELETE
+
+  # ============================================================
+  # Lambda Functions - Seed Data Generation (Phase 4)
+  # ============================================================
+  GenerateSeedDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-generate-seed-data-${Environment}
+      CodeUri: lambdas/seed_data/
+      Handler: generate_seed_data.lambda_handler
+      MemorySize: 512
+      Timeout: 60
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/meta.llama*'
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/mistral.*'
+      Events:
+        GenerateSeedData:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /seed-data/generate
+            Method: POST
+
+  # ============================================================
+  # Lambda Functions - Quality Scoring (Phase 5)
+  # ============================================================
+  ScoreJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-score-job-${Environment}
+      CodeUri: lambdas/quality/
+      Handler: score_job.lambda_handler
+      MemorySize: 1024
+      Timeout: 120
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TemplatesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QualityMetricsTable
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-*'
+      Environment:
+        Variables:
+          SCORE_JOB_FUNCTION_NAME: !Sub plot-palette-score-job-${Environment}
+
+  GetQualityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-quality-${Environment}
+      CodeUri: lambdas/quality/
+      Handler: get_quality.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref QualityMetricsTable
+      Events:
+        GetQuality:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/quality
+            Method: GET
+
+  TriggerScoringFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-trigger-scoring-${Environment}
+      CodeUri: lambdas/quality/
+      Handler: trigger_scoring.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref QualityMetricsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt ScoreJobFunction.Arn
+      Environment:
+        Variables:
+          SCORE_JOB_FUNCTION_NAME: !Sub plot-palette-score-job-${Environment}
+      Events:
+        TriggerScoring:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/quality
+            Method: POST
+
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL
@@ -582,3 +1036,23 @@ Outputs:
   TemplatesTableName:
     Description: DynamoDB Templates table name
     Value: !Ref TemplatesTable
+
+  NotificationPreferencesTableName:
+    Description: DynamoDB NotificationPreferences table name
+    Value: !Ref NotificationPreferencesTable
+
+  SendNotificationFunctionArn:
+    Description: Send Notification Lambda function ARN
+    Value: !GetAtt SendNotificationFunction.Arn
+
+  BatchesTableName:
+    Description: DynamoDB Batches table name
+    Value: !Ref BatchesTable
+
+  QualityMetricsTableName:
+    Description: DynamoDB QualityMetrics table name
+    Value: !Ref QualityMetricsTable
+
+  ScoreJobFunctionArn:
+    Description: Score Job Lambda function ARN
+    Value: !GetAtt ScoreJobFunction.Arn

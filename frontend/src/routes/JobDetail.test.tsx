@@ -3,19 +3,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ToastProvider } from '../contexts/ToastContext'
 import JobDetail from './JobDetail'
 import type { Job } from '../services/api'
 import { useJobPolling } from '../hooks/useJobPolling'
-import { cancelJob, deleteJob, downloadJobExport } from '../services/api'
+import { cancelJob, deleteJob, downloadJobExport, downloadPartialExport } from '../services/api'
 
 vi.mock('../hooks/useJobPolling', () => ({
   useJobPolling: vi.fn(),
+}))
+
+vi.mock('../hooks/useJobStream', () => ({
+  useJobStream: vi.fn(() => ({
+    isConnected: false,
+    error: null,
+    useFallbackPolling: true,
+  })),
 }))
 
 vi.mock('../services/api', () => ({
   cancelJob: vi.fn(),
   deleteJob: vi.fn(),
   downloadJobExport: vi.fn(),
+  downloadPartialExport: vi.fn(),
+  fetchQualityMetrics: vi.fn(() => Promise.resolve(null)),
+  triggerQualityScoring: vi.fn(() => Promise.resolve()),
 }))
 
 const mockNavigate = vi.fn()
@@ -32,6 +45,8 @@ const mockUseJobPolling = vi.mocked(useJobPolling)
 const mockCancelJob = vi.mocked(cancelJob)
 const mockDeleteJob = vi.mocked(deleteJob)
 const mockDownloadJobExport = vi.mocked(downloadJobExport)
+// downloadPartialExport is mocked via vi.mock but not directly referenced in tests
+void downloadPartialExport
 
 function createMockJob(overrides: Partial<Job> = {}): Job {
   return {
@@ -51,10 +66,17 @@ function createMockJob(overrides: Partial<Job> = {}): Job {
 }
 
 function renderJobDetail() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return render(
-    <MemoryRouter>
-      <JobDetail />
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ToastProvider>
+          <JobDetail />
+        </ToastProvider>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
@@ -260,6 +282,45 @@ describe('JobDetail', () => {
       renderJobDetail()
 
       expect(screen.queryByRole('button', { name: /Download Exports/ })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Partial download button visibility', () => {
+    it('shows partial download button for RUNNING job with records > 0', () => {
+      const job = createMockJob({ status: 'RUNNING', records_generated: 50 })
+      mockUseJobPolling.mockReturnValue({ data: job, isLoading: false, error: null } as any)
+
+      renderJobDetail()
+
+      expect(screen.getByRole('button', { name: /Download Partial Results/ })).toBeInTheDocument()
+      expect(screen.getByText(/50 records/)).toBeInTheDocument()
+    })
+
+    it('hides partial download button for COMPLETED job', () => {
+      const job = createMockJob({ status: 'COMPLETED', records_generated: 100 })
+      mockUseJobPolling.mockReturnValue({ data: job, isLoading: false, error: null } as any)
+
+      renderJobDetail()
+
+      expect(screen.queryByRole('button', { name: /Download Partial Results/ })).not.toBeInTheDocument()
+    })
+
+    it('hides partial download button when records_generated is 0', () => {
+      const job = createMockJob({ status: 'RUNNING', records_generated: 0 })
+      mockUseJobPolling.mockReturnValue({ data: job, isLoading: false, error: null } as any)
+
+      renderJobDetail()
+
+      expect(screen.queryByRole('button', { name: /Download Partial Results/ })).not.toBeInTheDocument()
+    })
+
+    it('shows partial download button for FAILED job with records', () => {
+      const job = createMockJob({ status: 'FAILED', records_generated: 75 })
+      mockUseJobPolling.mockReturnValue({ data: job, isLoading: false, error: null } as any)
+
+      renderJobDetail()
+
+      expect(screen.getByRole('button', { name: /Download Partial Results/ })).toBeInTheDocument()
     })
   })
 

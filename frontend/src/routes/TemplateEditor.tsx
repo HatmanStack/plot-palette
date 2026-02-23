@@ -1,6 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Editor from '@monaco-editor/react'
+import VersionList from '../components/VersionList'
+import TemplateDiffView, { formatTemplateForDiff } from '../components/TemplateDiffView'
+import { fetchTemplate, updateTemplate, createTemplate } from '../services/api'
+import type { Template } from '../services/api'
 
 const SAMPLE_TEMPLATE = `template:
   id: creative-writing-v1
@@ -29,9 +34,39 @@ const SAMPLE_TEMPLATE = `template:
 
         Use {{ author.biography | writing_style }} style.`
 
+function formatTemplateAsYaml(template: Template): string {
+  let yaml = `template:\n`
+  yaml += `  name: "${template.name}"\n`
+  yaml += `  version: ${template.version}\n\n`
+
+  if (template.schema_requirements.length > 0) {
+    yaml += `  schema_requirements:\n`
+    for (const req of template.schema_requirements) {
+      yaml += `    - ${req}\n`
+    }
+    yaml += `\n`
+  }
+
+  if (template.steps.length > 0) {
+    yaml += `  steps:\n`
+    for (const step of template.steps) {
+      yaml += `    - id: ${step.id}\n`
+      yaml += `      model: ${step.model || step.model_tier || 'default'}\n`
+      yaml += `      prompt: |\n`
+      for (const line of step.prompt.split('\n')) {
+        yaml += `        ${line}\n`
+      }
+      yaml += `\n`
+    }
+  }
+
+  return yaml
+}
+
 export default function TemplateEditor() {
   const { templateId } = useParams()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -39,6 +74,102 @@ export default function TemplateEditor() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Version state
+  const [currentVersion, setCurrentVersion] = useState(1)
+  const [latestVersion, setLatestVersion] = useState(1)
+  const [showVersionSidebar, setShowVersionSidebar] = useState(true)
+
+  // Diff mode state
+  const [diffMode, setDiffMode] = useState(false)
+  const [diffCompareVersion, setDiffCompareVersion] = useState<number | null>(null)
+
+  // Track whether the initial version has been resolved to avoid
+  // re-triggering when the user deliberately navigates to version 1
+  const initialVersionResolved = useRef(false)
+
+  // Fetch template data when editing existing template
+  const { data: templateData } = useQuery({
+    queryKey: ['template', templateId, currentVersion],
+    queryFn: () => fetchTemplate(templateId!, currentVersion),
+    enabled: !!templateId,
+  })
+
+  // Initialize from fetched template data
+  useEffect(() => {
+    if (templateData) {
+      setName(templateData.name)
+      setDescription(templateData.description)
+      setTemplateYaml(formatTemplateAsYaml(templateData))
+    }
+  }, [templateData])
+
+  // Fetch latest version on mount to determine the latest
+  const { data: latestTemplateData } = useQuery({
+    queryKey: ['template', templateId, 'latest-ref'],
+    queryFn: () => fetchTemplate(templateId!, 'latest'),
+    enabled: !!templateId,
+  })
+
+  useEffect(() => {
+    if (latestTemplateData) {
+      setLatestVersion(latestTemplateData.version)
+      // Set current to latest only on first load
+      if (!initialVersionResolved.current && latestTemplateData.version > 1) {
+        initialVersionResolved.current = true
+        setCurrentVersion(latestTemplateData.version)
+      }
+    }
+  }, [latestTemplateData])
+
+  // Fetch comparison version for diff mode
+  const { data: compareTemplateData } = useQuery({
+    queryKey: ['template', templateId, diffCompareVersion],
+    queryFn: () => fetchTemplate(templateId!, diffCompareVersion!),
+    enabled: !!templateId && diffMode && diffCompareVersion !== null,
+  })
+
+  const isViewingHistorical = templateId && currentVersion < latestVersion
+
+  function handleSelectVersion(version: number) {
+    setDiffMode(false)
+    setDiffCompareVersion(null)
+    setCurrentVersion(version)
+    queryClient.invalidateQueries({ queryKey: ['template', templateId, version] })
+  }
+
+  function handleCompare(version: number) {
+    setDiffCompareVersion(version)
+    setDiffMode(true)
+  }
+
+  function handleExitDiff() {
+    setDiffMode(false)
+    setDiffCompareVersion(null)
+  }
+
+  async function handleRestore() {
+    if (!templateId || !templateData) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await updateTemplate(templateId, {
+        name: templateData.name,
+        description: templateData.description,
+        steps: templateData.steps,
+        schema_requirements: templateData.schema_requirements,
+      })
+      setSuccess('Version restored as new version')
+      setCurrentVersion(result.version)
+      setLatestVersion(result.version)
+      queryClient.invalidateQueries({ queryKey: ['template', templateId, 'versions'] })
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to restore version')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function handleSave() {
     if (!name || !templateYaml) {
@@ -51,9 +182,19 @@ export default function TemplateEditor() {
     setSuccess('')
 
     try {
-      // TODO: Implement actual API call to save template
-      // For now, just simulate success
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const steps = templateData?.steps ?? [{ id: 'step1', prompt: templateYaml }]
+      const templatePayload = {
+        name,
+        description,
+        steps,
+        schema_requirements: templateData?.schema_requirements ?? [],
+      }
+
+      if (templateId) {
+        await updateTemplate(templateId, templatePayload)
+      } else {
+        await createTemplate(templatePayload)
+      }
 
       setSuccess('Template saved successfully!')
       setTimeout(() => {
@@ -73,11 +214,18 @@ export default function TemplateEditor() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">
-          {templateId ? `Edit Template: ${templateId}` : 'New Template'}
-        </h1>
+        <div>
+          <h1 className="text-3xl font-bold">
+            {templateId ? `Edit Template: ${templateId}` : 'New Template'}
+          </h1>
+          {isViewingHistorical && (
+            <p className="text-sm text-amber-600 mt-1">
+              Viewing version {currentVersion} (read-only) — Latest is v{latestVersion}
+            </p>
+          )}
+        </div>
         <Link
           to="/templates"
           className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
@@ -98,7 +246,7 @@ export default function TemplateEditor() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={`grid gap-6 ${templateId ? 'grid-cols-1 lg:grid-cols-[1fr_1fr_250px]' : 'grid-cols-1 lg:grid-cols-2'}`}>
         {/* Editor Section */}
         <div className="space-y-4">
           <div className="bg-white rounded-lg shadow-md p-6">
@@ -114,7 +262,8 @@ export default function TemplateEditor() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g., Creative Writing Generator"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!!isViewingHistorical}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                 />
               </div>
 
@@ -127,54 +276,89 @@ export default function TemplateEditor() {
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Brief description of what this template does"
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!!isViewingHistorical}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Template YAML
+                  {diffMode ? 'Diff View' : 'Template YAML'}
                 </label>
-                <div className="border border-gray-300 rounded-md overflow-hidden">
-                  <Editor
-                    height="500px"
-                    defaultLanguage="yaml"
-                    value={templateYaml}
-                    onChange={(value) => setTemplateYaml(value || '')}
-                    theme="vs-light"
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 13,
-                      lineNumbers: 'on',
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      tabSize: 2,
-                      wordWrap: 'on',
-                    }}
-                  />
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  Write your template using YAML syntax with Jinja2 variables
-                </p>
+                {diffMode && templateData && compareTemplateData ? (
+                  <div>
+                    <TemplateDiffView
+                      originalContent={formatTemplateForDiff(compareTemplateData)}
+                      modifiedContent={formatTemplateForDiff(templateData)}
+                      originalVersion={diffCompareVersion!}
+                      modifiedVersion={currentVersion}
+                    />
+                    <button
+                      onClick={handleExitDiff}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Exit Diff View
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="border border-gray-300 rounded-md overflow-hidden">
+                      <Editor
+                        height="500px"
+                        defaultLanguage="yaml"
+                        value={templateYaml}
+                        onChange={(value) => setTemplateYaml(value || '')}
+                        theme="vs-light"
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          lineNumbers: 'on',
+                          scrollBeyondLastLine: false,
+                          automaticLayout: true,
+                          tabSize: 2,
+                          wordWrap: 'on',
+                          readOnly: !!isViewingHistorical,
+                        }}
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {isViewingHistorical
+                        ? 'Read-only: viewing a historical version'
+                        : 'Write your template using YAML syntax with Jinja2 variables'}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
           {/* Actions */}
           <div className="flex gap-3">
-            <button
-              onClick={handleTest}
-              className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-            >
-              🧪 Test Template
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={loading}
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {loading ? 'Saving...' : templateId ? '💾 Update' : '💾 Save'}
-            </button>
+            {isViewingHistorical ? (
+              <button
+                onClick={handleRestore}
+                disabled={loading}
+                className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                {loading ? 'Restoring...' : 'Restore This Version'}
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleTest}
+                  className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+                >
+                  Test Template
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? 'Saving...' : templateId ? 'Update' : 'Save'}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -243,12 +427,46 @@ export default function TemplateEditor() {
           </div>
 
           <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">
-            <p className="font-semibold">💡 Tip</p>
+            <p className="font-semibold">Tip</p>
             <p className="mt-1">
               Use the "Test Template" button to validate your template syntax before saving.
             </p>
           </div>
         </div>
+
+        {/* Version History Sidebar — only for existing templates */}
+        {templateId && showVersionSidebar && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-lg shadow-md p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-gray-700">Versions</h2>
+                <button
+                  onClick={() => setShowVersionSidebar(false)}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Hide
+                </button>
+              </div>
+              <VersionList
+                templateId={templateId}
+                currentVersion={currentVersion}
+                onSelectVersion={handleSelectVersion}
+                onCompare={handleCompare}
+              />
+            </div>
+          </div>
+        )}
+
+        {templateId && !showVersionSidebar && (
+          <div>
+            <button
+              onClick={() => setShowVersionSidebar(true)}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Show Version History
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

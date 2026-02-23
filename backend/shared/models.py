@@ -5,14 +5,16 @@ This module defines type-safe data models for jobs, templates, checkpoints,
 and cost tracking using Pydantic for validation and serialization.
 """
 
+import ipaddress
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, NotRequired, TypedDict
+from urllib.parse import urlparse
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .constants import JobStatus
+from .constants import BatchStatus, JobStatus, QualityStatus
 
 _serializer = TypeSerializer()
 _deserializer = TypeDeserializer()
@@ -378,6 +380,153 @@ class CostBreakdown(BaseModel):
         )
 
 
+class NotificationPreferences(BaseModel):
+    """Per-user notification preferences for job status alerts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = Field(..., description="User identifier")
+    email_enabled: bool = Field(
+        default=False, description="Whether email notifications are enabled"
+    )
+    email_address: str | None = Field(None, description="Email address for notifications")
+    webhook_enabled: bool = Field(
+        default=False, description="Whether webhook notifications are enabled"
+    )
+    webhook_url: str | None = Field(None, description="Webhook URL for notifications (HTTPS only)")
+    notify_on_complete: bool = Field(default=True, description="Notify when job completes")
+    notify_on_failure: bool = Field(default=True, description="Notify when job fails")
+    notify_on_budget_exceeded: bool = Field(default=True, description="Notify when budget exceeded")
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Last update timestamp"
+    )
+
+    @field_validator("webhook_url")
+    @classmethod
+    def validate_webhook_url(cls, v):
+        """Webhook URL must be HTTPS and not target private/reserved IP ranges."""
+        if v is None:
+            return v
+        if not v.startswith("https://"):
+            raise ValueError("Webhook URL must start with https://")
+        parsed = urlparse(v)
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("Webhook URL must have a valid hostname")
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local:
+                raise ValueError("Webhook URL must not target private or reserved IP addresses")
+        except ValueError as err:
+            if "must not" in str(err):
+                raise
+            # hostname is not an IP literal -- it's a DNS name, allow it
+        return v
+
+    def to_table_item(self) -> dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        item: dict[str, Any] = {
+            "user_id": self.user_id,
+            "email_enabled": self.email_enabled,
+            "webhook_enabled": self.webhook_enabled,
+            "notify_on_complete": self.notify_on_complete,
+            "notify_on_failure": self.notify_on_failure,
+            "notify_on_budget_exceeded": self.notify_on_budget_exceeded,
+            "updated_at": self.updated_at.isoformat(),
+        }
+        if self.email_address is not None:
+            item["email_address"] = self.email_address
+        if self.webhook_url is not None:
+            item["webhook_url"] = self.webhook_url
+        return item
+
+    @classmethod
+    def from_dynamodb(cls, item: dict[str, Any]) -> "NotificationPreferences":
+        """Create NotificationPreferences from DynamoDB table item."""
+        return cls(
+            user_id=item["user_id"],
+            email_enabled=item.get("email_enabled", False),
+            email_address=item.get("email_address"),
+            webhook_enabled=item.get("webhook_enabled", False),
+            webhook_url=item.get("webhook_url"),
+            notify_on_complete=item.get("notify_on_complete", True),
+            notify_on_failure=item.get("notify_on_failure", True),
+            notify_on_budget_exceeded=item.get("notify_on_budget_exceeded", True),
+            updated_at=datetime.fromisoformat(item["updated_at"]),
+        )
+
+    @classmethod
+    def defaults(cls, user_id: str) -> "NotificationPreferences":
+        """Return default preferences for a user with no saved preferences."""
+        return cls(user_id=user_id)
+
+
+class BatchConfig(BaseModel):
+    """Batch configuration for tracking groups of related jobs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    batch_id: str = Field(..., description="Unique batch identifier (UUID)")
+    user_id: str = Field(..., description="User who created the batch")
+    name: str = Field(..., min_length=1, max_length=200, description="Batch display name")
+    status: BatchStatus = Field(default=BatchStatus.PENDING, description="Current batch status")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Batch creation timestamp"
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Last update timestamp"
+    )
+    job_ids: list[str] = Field(default_factory=list, description="References to individual jobs")
+    total_jobs: int = Field(..., ge=1, description="Total number of jobs in batch")
+    completed_jobs: int = Field(default=0, ge=0, description="Number of completed jobs")
+    failed_jobs: int = Field(default=0, ge=0, description="Number of failed jobs")
+    template_id: str = Field(..., description="Template used for all jobs")
+    template_version: int = Field(..., ge=1, description="Template version used")
+    sweep_config: dict[str, Any] = Field(
+        default_factory=dict, description="What was varied (model_tiers, seed_data_paths, etc.)"
+    )
+    total_cost: float = Field(default=0.0, ge=0, description="Aggregate cost across all jobs")
+
+    def to_table_item(self) -> dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        return {
+            "batch_id": self.batch_id,
+            "user_id": self.user_id,
+            "name": self.name,
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "job_ids": self.job_ids,
+            "total_jobs": self.total_jobs,
+            "completed_jobs": self.completed_jobs,
+            "failed_jobs": self.failed_jobs,
+            "template_id": self.template_id,
+            "template_version": self.template_version,
+            "sweep_config": self.sweep_config,
+            "total_cost": Decimal(str(self.total_cost)),
+        }
+
+    @classmethod
+    def from_dynamodb(cls, item: dict[str, Any]) -> "BatchConfig":
+        """Create BatchConfig from DynamoDB table item."""
+        return cls(
+            batch_id=item["batch_id"],
+            user_id=item["user_id"],
+            name=item["name"],
+            status=BatchStatus(item["status"]),
+            created_at=datetime.fromisoformat(item["created_at"]),
+            updated_at=datetime.fromisoformat(item["updated_at"]),
+            job_ids=item.get("job_ids", []),
+            total_jobs=int(item["total_jobs"]),
+            completed_jobs=int(item.get("completed_jobs", 0)),
+            failed_jobs=int(item.get("failed_jobs", 0)),
+            template_id=item["template_id"],
+            template_version=int(item["template_version"]),
+            sweep_config=item.get("sweep_config", {}),
+            total_cost=float(item.get("total_cost", 0)),
+        )
+
+
 class QueueItem(BaseModel):
     """Queue item for job scheduling."""
 
@@ -421,4 +570,108 @@ class QueueItem(BaseModel):
             timestamp=datetime.fromisoformat(timestamp_str),
             priority=int(item.get("priority", {}).get("N", "0")),
             task_arn=item.get("task_arn", {}).get("S"),
+        )
+
+
+class RecordScore(BaseModel):
+    """Quality score for a single generated record."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    record_index: int = Field(..., ge=0, description="Index of the record in the sample")
+    coherence: float = Field(..., ge=0.0, le=1.0, description="Coherence score (0.0-1.0)")
+    relevance: float = Field(..., ge=0.0, le=1.0, description="Relevance score (0.0-1.0)")
+    format_compliance: float = Field(
+        ..., ge=0.0, le=1.0, description="Format compliance score (0.0-1.0)"
+    )
+    detail: str = Field(default="", description="Brief rationale from the scoring LLM")
+
+
+class QualityMetrics(BaseModel):
+    """Quality scoring results for a completed job."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str = Field(..., description="Job identifier")
+    scored_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="When scoring was performed"
+    )
+    sample_size: int = Field(..., ge=0, description="Number of records sampled for scoring")
+    total_records: int = Field(..., ge=0, description="Total records in the job output")
+    model_used_for_scoring: str = Field(..., description="Which LLM performed the scoring")
+    aggregate_scores: dict[str, float] = Field(
+        default_factory=dict, description="Mean scores per dimension"
+    )
+    diversity_score: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Diversity score (0.0-1.0)"
+    )
+    overall_score: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Weighted average of all dimensions"
+    )
+    record_scores: list[RecordScore] = Field(
+        default_factory=list, description="Per-record scoring detail"
+    )
+    scoring_cost: float = Field(default=0.0, ge=0, description="USD cost of scoring LLM calls")
+    status: QualityStatus = Field(
+        default=QualityStatus.PENDING, description="Scoring pipeline status"
+    )
+    error_message: str | None = Field(None, description="Error message if scoring failed")
+
+    def to_table_item(self) -> dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        item: dict[str, Any] = {
+            "job_id": self.job_id,
+            "scored_at": self.scored_at.isoformat(),
+            "sample_size": self.sample_size,
+            "total_records": self.total_records,
+            "model_used_for_scoring": self.model_used_for_scoring,
+            "aggregate_scores": {k: Decimal(str(v)) for k, v in self.aggregate_scores.items()},
+            "diversity_score": Decimal(str(self.diversity_score)),
+            "overall_score": Decimal(str(self.overall_score)),
+            "record_scores": [rs.model_dump() for rs in self.record_scores],
+            "scoring_cost": Decimal(str(self.scoring_cost)),
+            "status": self.status.value,
+        }
+        if self.error_message is not None:
+            item["error_message"] = self.error_message
+
+        # Add TTL (90 days from now)
+        ttl = int(datetime.now(UTC).timestamp() + (90 * 24 * 60 * 60))
+        item["ttl"] = ttl
+
+        return item
+
+    @classmethod
+    def from_dynamodb(cls, item: dict[str, Any]) -> "QualityMetrics":
+        """Create QualityMetrics from DynamoDB table item."""
+        aggregate_scores = {}
+        for k, v in item.get("aggregate_scores", {}).items():
+            aggregate_scores[k] = float(v)
+
+        record_scores_raw = item.get("record_scores", [])
+        record_scores = []
+        for rs in record_scores_raw:
+            record_scores.append(
+                RecordScore(
+                    record_index=int(rs["record_index"]),
+                    coherence=float(rs["coherence"]),
+                    relevance=float(rs["relevance"]),
+                    format_compliance=float(rs["format_compliance"]),
+                    detail=rs.get("detail", ""),
+                )
+            )
+
+        return cls(
+            job_id=item["job_id"],
+            scored_at=datetime.fromisoformat(item["scored_at"]),
+            sample_size=int(item["sample_size"]),
+            total_records=int(item["total_records"]),
+            model_used_for_scoring=item["model_used_for_scoring"],
+            aggregate_scores=aggregate_scores,
+            diversity_score=float(item.get("diversity_score", 0)),
+            overall_score=float(item.get("overall_score", 0)),
+            record_scores=record_scores,
+            scoring_cost=float(item.get("scoring_cost", 0)),
+            status=QualityStatus(item["status"]),
+            error_message=item.get("error_message"),
         )
