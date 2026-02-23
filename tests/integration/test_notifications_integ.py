@@ -191,7 +191,11 @@ def test_notification_sends_webhook():
 
     event = {"job_id": "job-1", "status": "COMPLETED", "user_id": "user-A"}
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
+    public_addrinfo = [(2, 1, 6, "", ("93.184.216.34", 443))]
+    with (
+        patch("socket.getaddrinfo", return_value=public_addrinfo),
+        patch("urllib.request.urlopen") as mock_urlopen,
+    ):
         mock_response = MagicMock()
         mock_response.status = 200
         mock_response.__enter__ = lambda s: s
@@ -235,7 +239,11 @@ def test_notification_both_email_and_webhook():
 
     event = {"job_id": "job-1", "status": "COMPLETED", "user_id": "user-A"}
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
+    public_addrinfo = [(2, 1, 6, "", ("93.184.216.34", 443))]
+    with (
+        patch("socket.getaddrinfo", return_value=public_addrinfo),
+        patch("urllib.request.urlopen") as mock_urlopen,
+    ):
         mock_response = MagicMock()
         mock_response.status = 200
         mock_response.__enter__ = lambda s: s
