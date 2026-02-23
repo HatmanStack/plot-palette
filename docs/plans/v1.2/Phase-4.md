@@ -312,12 +312,12 @@ feat(lambdas): add batch list, detail, and delete endpoints
    - Add routes: `/jobs/batch/new`, `/jobs/batches/:batchId`
 
 **Verification Checklist:**
-- [ ] Batch creation wizard walks through all 5 steps
-- [ ] Sweep configuration creates correct number of jobs
-- [ ] BatchDetail shows comparative table
-- [ ] Batch status updates via polling
-- [ ] Cancel/Delete batch works
-- [ ] Dashboard shows recent batches
+- [x] Batch creation wizard walks through all 5 steps
+- [x] Sweep configuration creates correct number of jobs
+- [x] BatchDetail shows comparative table
+- [x] Batch status updates via polling
+- [x] Cancel/Delete batch works
+- [x] Dashboard shows recent batches
 
 **Testing Instructions:**
 

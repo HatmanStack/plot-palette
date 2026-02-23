@@ -310,3 +310,91 @@ export async function generateUploadUrl(filename: string, contentType: string = 
   })
   return data
 }
+
+// Batch schemas
+export const BatchSummarySchema = z.object({
+  batch_id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  total_jobs: z.number().default(0),
+  completed_jobs: z.number().default(0),
+  failed_jobs: z.number().default(0),
+  created_at: z.string().default(''),
+  total_cost: z.number().default(0),
+})
+
+export type BatchSummary = z.infer<typeof BatchSummarySchema>
+
+const BatchJobSchema = z.object({
+  job_id: z.string(),
+  status: z.string(),
+  records_generated: z.number().default(0),
+  cost_estimate: z.number().default(0),
+  budget_limit: z.number().default(0),
+  created_at: z.string().default(''),
+  updated_at: z.string().default(''),
+})
+
+export type BatchJob = z.infer<typeof BatchJobSchema>
+
+export const BatchDetailSchema = BatchSummarySchema.extend({
+  updated_at: z.string().default(''),
+  template_id: z.string(),
+  template_version: z.number().default(1),
+  sweep_config: z.record(z.unknown()).default({}),
+  jobs: z.array(BatchJobSchema).default([]),
+})
+
+export type BatchDetail = z.infer<typeof BatchDetailSchema>
+
+export async function createBatch(config: {
+  name: string
+  template_id: string
+  template_version: number
+  seed_data_path?: string
+  base_config: {
+    budget_limit: number
+    num_records: number
+    output_format: string
+  }
+  sweep: Record<string, unknown[]>
+}): Promise<{ batch_id: string; job_count: number; job_ids: string[] }> {
+  const { data } = await apiClient.post('/jobs/batch', config)
+  return data
+}
+
+export async function listBatches(): Promise<BatchSummary[]> {
+  const { data } = await apiClient.get('/jobs/batches')
+  const batches = data.batches || []
+  return batches.map((b: unknown) => BatchSummarySchema.parse(b))
+}
+
+export async function fetchBatchDetail(batchId: string): Promise<BatchDetail> {
+  const { data } = await apiClient.get(`/jobs/batches/${batchId}`)
+  return BatchDetailSchema.parse(data)
+}
+
+export async function deleteBatch(batchId: string): Promise<void> {
+  await apiClient.delete(`/jobs/batches/${batchId}`)
+}
+
+// Seed Data Generation
+export const SeedDataGenerationResultSchema = z.object({
+  s3_key: z.string(),
+  records_generated: z.number(),
+  records_invalid: z.number().default(0),
+  total_cost: z.number().default(0),
+})
+
+export type SeedDataGenerationResult = z.infer<typeof SeedDataGenerationResultSchema>
+
+export async function generateSeedData(params: {
+  template_id: string
+  count: number
+  model_tier?: string
+  example_data?: Record<string, unknown>
+  instructions?: string
+}): Promise<SeedDataGenerationResult> {
+  const { data } = await apiClient.post('/seed-data/generate', params)
+  return SeedDataGenerationResultSchema.parse(data)
+}
