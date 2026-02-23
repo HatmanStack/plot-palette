@@ -66,11 +66,15 @@ def load_handler(handler_path: str, module_name: str | None = None):
     mock_s3 = MagicMock()
     mock_sfn = MagicMock()
     mock_ses = MagicMock()
+    mock_lambda = MagicMock()
+    mock_bedrock = MagicMock()
 
     with patch("shared.aws_clients.get_dynamodb_resource", return_value=mock_dynamodb), \
          patch("shared.aws_clients.get_s3_client", return_value=mock_s3), \
          patch("shared.aws_clients.get_sfn_client", return_value=mock_sfn), \
-         patch("shared.aws_clients.get_ses_client", return_value=mock_ses):
+         patch("shared.aws_clients.get_ses_client", return_value=mock_ses), \
+         patch("shared.aws_clients.get_lambda_client", return_value=mock_lambda), \
+         patch("shared.aws_clients.get_bedrock_client", return_value=mock_bedrock):
         spec = importlib.util.spec_from_file_location(module_name, full_path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)

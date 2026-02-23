@@ -242,12 +242,12 @@ feat(lambdas): add automated quality scoring for completed jobs
    - Return 202 Accepted: `{ message: "Quality scoring started", job_id }`
 
 **Verification Checklist:**
-- [ ] GET returns quality metrics for scored job
-- [ ] GET returns 404 for unscored job
-- [ ] POST triggers scoring asynchronously
-- [ ] POST returns 409 if already scored
-- [ ] POST returns 400 if job not COMPLETED
-- [ ] Ownership verified on both endpoints
+- [x] GET returns quality metrics for scored job
+- [x] GET returns 404 for unscored job
+- [x] POST triggers scoring asynchronously
+- [x] POST returns 409 if already scored
+- [x] POST returns 400 if job not COMPLETED
+- [x] Ownership verified on both endpoints
 
 **Testing Instructions:**
 

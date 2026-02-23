@@ -22,10 +22,7 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 from tests.unit.handler_import import load_handler
 
-# Also need to mock bedrock client during load
-_bedrock_mock = MagicMock()
-with patch("shared.aws_clients.get_bedrock_client", return_value=_bedrock_mock):
-    _mod = load_handler("lambdas/quality/score_job.py")
+_mod = load_handler("lambdas/quality/score_job.py")
 lambda_handler = _mod.lambda_handler
 
 

@@ -199,6 +199,25 @@ def get_ses_client(region_name: str | None = None):
     )
 
 
+@lru_cache(maxsize=1)
+def get_lambda_client(region_name: str | None = None):
+    """
+    Get cached Lambda client for invoking other functions.
+
+    Args:
+        region_name: Optional AWS region override
+
+    Returns:
+        boto3.client: Lambda client with optimized config
+    """
+    return boto3.client(
+        "lambda",
+        config=_standard_config,
+        region_name=region_name,
+        endpoint_url=_get_endpoint_url(),
+    )
+
+
 def clear_client_cache():
     """
     Clear all cached clients.
@@ -213,3 +232,4 @@ def clear_client_cache():
     get_sfn_client.cache_clear()
     get_sts_client.cache_clear()
     get_ses_client.cache_clear()
+    get_lambda_client.cache_clear()
