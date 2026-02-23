@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import type { BatchJob } from '../services/api'
+import { fetchQualityMetrics, triggerQualityScoring } from '../services/api'
+import QualityScoreBar from './QualityScoreBar'
 
 interface BatchJobTableProps {
   jobs: BatchJob[]
@@ -8,6 +11,41 @@ interface BatchJobTableProps {
 }
 
 type SortKey = 'status' | 'records_generated' | 'cost_estimate'
+
+function QualityCell({ jobId, status }: { jobId: string; status: string }) {
+  const { data: metrics } = useQuery({
+    queryKey: ['quality', jobId],
+    queryFn: () => fetchQualityMetrics(jobId),
+    enabled: status === 'COMPLETED',
+  })
+
+  if (status !== 'COMPLETED') return <span className="text-gray-400">-</span>
+
+  if (!metrics) {
+    return (
+      <button
+        onClick={() => triggerQualityScoring(jobId)}
+        className="text-xs text-blue-600 hover:underline"
+      >
+        Score
+      </button>
+    )
+  }
+
+  if (metrics.status === 'SCORING' || metrics.status === 'PENDING') {
+    return <span className="text-xs text-gray-500">Scoring...</span>
+  }
+
+  if (metrics.status === 'FAILED') {
+    return <span className="text-xs text-red-500">Failed</span>
+  }
+
+  return (
+    <div className="w-20">
+      <QualityScoreBar score={metrics.overall_score} label="" size="sm" />
+    </div>
+  )
+}
 
 export default function BatchJobTable({ jobs, sweepConfig }: BatchJobTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('status')
@@ -69,6 +107,7 @@ export default function BatchJobTable({ jobs, sweepConfig }: BatchJobTableProps)
             >
               Cost {sortKey === 'cost_estimate' ? (sortAsc ? '▲' : '▼') : ''}
             </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quality</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
           </tr>
@@ -88,6 +127,9 @@ export default function BatchJobTable({ jobs, sweepConfig }: BatchJobTableProps)
               </td>
               <td className="px-4 py-3 text-sm text-gray-700">{job.records_generated}</td>
               <td className="px-4 py-3 text-sm text-gray-700">${job.cost_estimate.toFixed(2)}</td>
+              <td className="px-4 py-3 text-sm">
+                <QualityCell jobId={job.job_id} status={job.status} />
+              </td>
               <td className="px-4 py-3 text-sm text-gray-700">
                 {job.created_at && job.updated_at
                   ? (() => {
@@ -107,7 +149,7 @@ export default function BatchJobTable({ jobs, sweepConfig }: BatchJobTableProps)
           ))}
           {jobs.length === 0 && (
             <tr>
-              <td colSpan={sweepKey ? 6 : 5} className="px-4 py-8 text-center text-gray-500">
+              <td colSpan={sweepKey ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
                 No jobs in this batch
               </td>
             </tr>

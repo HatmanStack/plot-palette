@@ -5,6 +5,7 @@ import { useJobStream } from '../hooks/useJobStream'
 import { cancelJob, deleteJob, downloadJobExport, downloadPartialExport } from '../services/api'
 import { useToast } from '../hooks/useToast'
 import StatusBadge from '../components/StatusBadge'
+import QualityReport from '../components/QualityReport'
 
 export default function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>()
@@ -203,6 +204,11 @@ export default function JobDetail() {
               </div>
             </div>
           </div>
+
+          {/* Quality Report (only for completed jobs) */}
+          {job.status === 'COMPLETED' && (
+            <QualityReport jobId={job['job_id']} />
+          )}
         </div>
 
         {/* Sidebar */}

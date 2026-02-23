@@ -398,3 +398,45 @@ export async function generateSeedData(params: {
   const { data } = await apiClient.post('/seed-data/generate', params)
   return SeedDataGenerationResultSchema.parse(data)
 }
+
+// Quality Metrics schemas
+export const RecordScoreSchema = z.object({
+  record_index: z.number(),
+  coherence: z.number(),
+  relevance: z.number(),
+  format_compliance: z.number(),
+  detail: z.string().default(''),
+})
+
+export type RecordScore = z.infer<typeof RecordScoreSchema>
+
+export const QualityMetricsSchema = z.object({
+  job_id: z.string(),
+  scored_at: z.string().default(''),
+  sample_size: z.number().default(0),
+  total_records: z.number().default(0),
+  model_used_for_scoring: z.string().default(''),
+  aggregate_scores: z.record(z.string(), z.number()).default({}),
+  diversity_score: z.number().default(0),
+  overall_score: z.number().default(0),
+  record_scores: z.array(RecordScoreSchema).default([]),
+  scoring_cost: z.number().default(0),
+  status: z.string().default('PENDING'),
+  error_message: z.string().nullable().default(null),
+})
+
+export type QualityMetrics = z.infer<typeof QualityMetricsSchema>
+
+export async function fetchQualityMetrics(jobId: string): Promise<QualityMetrics | null> {
+  try {
+    const { data } = await apiClient.get(`/jobs/${jobId}/quality`)
+    return QualityMetricsSchema.parse(data)
+  } catch {
+    return null
+  }
+}
+
+export async function triggerQualityScoring(jobId: string, sampleSize?: number): Promise<void> {
+  const body = sampleSize ? { sample_size: sampleSize } : undefined
+  await apiClient.post(`/jobs/${jobId}/quality`, body)
+}

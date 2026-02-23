@@ -329,14 +329,14 @@ feat(lambdas): add quality metrics retrieval and manual scoring trigger
    - Sort by quality column enables comparing model tier quality
 
 **Verification Checklist:**
-- [ ] Quality report shows all dimensions with score bars
-- [ ] "Run Quality Check" button triggers scoring
-- [ ] Loading state during scoring
-- [ ] Per-record detail is expandable
-- [ ] Scoring cost displayed
-- [ ] Batch table shows quality column
-- [ ] Color coding matches score thresholds
-- [ ] Polling stops when scoring completes
+- [x] Quality report shows all dimensions with score bars
+- [x] "Run Quality Check" button triggers scoring
+- [x] Loading state during scoring
+- [x] Per-record detail is expandable
+- [x] Scoring cost displayed
+- [x] Batch table shows quality column
+- [x] Color coding matches score thresholds
+- [x] Polling stops when scoring completes
 
 **Testing Instructions:**
 
