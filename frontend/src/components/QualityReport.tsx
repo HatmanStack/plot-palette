@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fetchQualityMetrics, triggerQualityScoring } from '../services/api'
-import type { QualityMetrics } from '../services/api'
 import { useToast } from '../hooks/useToast'
 import QualityScoreBar from './QualityScoreBar'
 

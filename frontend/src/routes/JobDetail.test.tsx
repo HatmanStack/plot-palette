@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../contexts/ToastContext'
 import JobDetail from './JobDetail'
 import type { Job } from '../services/api'
@@ -26,6 +27,8 @@ vi.mock('../services/api', () => ({
   deleteJob: vi.fn(),
   downloadJobExport: vi.fn(),
   downloadPartialExport: vi.fn(),
+  fetchQualityMetrics: vi.fn(() => Promise.resolve(null)),
+  triggerQualityScoring: vi.fn(() => Promise.resolve()),
 }))
 
 const mockNavigate = vi.fn()
@@ -63,12 +66,17 @@ function createMockJob(overrides: Partial<Job> = {}): Job {
 }
 
 function renderJobDetail() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return render(
-    <MemoryRouter>
-      <ToastProvider>
-        <JobDetail />
-      </ToastProvider>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ToastProvider>
+          <JobDetail />
+        </ToastProvider>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 

@@ -590,6 +590,39 @@ npm run check
 
 ---
 
+## Review Feedback (Iteration 1)
+
+### Critical: Frontend Test Regressions (8 failures)
+
+> **Consider:** `frontend/src/routes/JobDetail.test.tsx:3` imports `render` from `@testing-library/react` — the raw render. But `frontend/src/test/test-utils.tsx` exports a custom `render` that wraps content in `QueryClientProvider`. Now that Task 4 added `<QualityReport>` to `JobDetail.tsx:210` for COMPLETED jobs, and `QualityReport` calls `useQueryClient()` at line 14, what happens when COMPLETED-status tests render JobDetail without a QueryClient?
+>
+> **Think about:** The same problem affects `frontend/src/components/BatchJobTable.test.tsx:3` — it uses raw `render` from `@testing-library/react` plus a bare `MemoryRouter`, but `BatchJobTable.tsx` now renders `QualityCell` which calls `useQuery()`. Which 3 tests fail, and why does the "empty state" test still pass?
+>
+> **Reflect:** The custom `render` in `test-utils.tsx` already wraps in `QueryClientProvider` (line 64). Would switching the import in both test files from `@testing-library/react` to `../test/test-utils` (for JobDetail) and `./test-utils` or adding a `QueryClientProvider` wrapper (for BatchJobTable) fix all 8 failures? Do you also need to mock `fetchQualityMetrics` in those tests to prevent real API calls?
+
+### Critical: ESLint Failure (`--max-warnings=0`)
+
+> **Consider:** `frontend/src/components/QualityReport.tsx:4` has `import type { QualityMetrics } from '../services/api'`. Run `cd frontend && npm run lint` — does it pass? TypeScript infers the `QualityMetrics` type from `fetchQualityMetrics` return type, so this explicit type import is unused. Since ESLint enforces `--max-warnings=0`, this single error fails the entire lint check.
+>
+> **Reflect:** Would removing the `import type { QualityMetrics }` line and keeping only the function imports fix the lint? Or is `QualityMetrics` used elsewhere in the component that warrants keeping it?
+
+### Minor: No Quality-Specific Tests in BatchJobTable.test.tsx
+
+> **Think about:** `BatchJobTable.test.tsx` has 4 tests that verify columns, sorting, sweep values, and empty state — but none test the Quality column behavior. The `QualityCell` component (BatchJobTable.tsx:15-48) has 4 distinct states: not-completed (dash), no metrics (Score button), scoring/pending, and scored (QualityScoreBar). Are these states covered by any test? What happens if `fetchQualityMetrics` rejects — does it degrade gracefully?
+
+### Verification Summary (Pre-Fix)
+
+- Backend tests: All 26 Phase 5 tests passing (9 unit score_job + 6 unit quality_api + 8 unit step_functions + 3 integration)
+- Backend lint: `ruff check` passes, `cfn-lint` passes
+- Frontend tests: **8 failures** (5 in JobDetail.test.tsx, 3 in BatchJobTable.test.tsx) — all caused by missing QueryClientProvider
+- Frontend lint: **1 error** (unused QualityMetrics type import)
+- Commits: 8 commits in conventional format (7 planned + 1 lint fix)
+- ASL state machine: ScoreJobQuality correctly placed between MarkJobCompleted and SendNotificationCompleted
+- SAM template: All 3 quality Lambda functions defined with correct permissions, timeouts, memory
+- Models/Constants: QualityMetrics, RecordScore, QualityStatus all correctly implemented
+
+---
+
 ## All Phases Complete
 
 After Phase 5, the platform supports:
