@@ -131,7 +131,12 @@ class TestSendNotification:
         )
         _mod.ses_client = MagicMock()
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
+        # Mock DNS to return a public IP so SSRF check passes
+        public_addrinfo = [(2, 1, 6, "", ("93.184.216.34", 443))]
+        with (
+            patch("socket.getaddrinfo", return_value=public_addrinfo),
+            patch("urllib.request.urlopen") as mock_urlopen,
+        ):
             mock_resp = MagicMock()
             mock_resp.status = 200
             mock_resp.__enter__ = MagicMock(return_value=mock_resp)
@@ -156,13 +161,39 @@ class TestSendNotification:
 
         import urllib.error
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
+        public_addrinfo = [(2, 1, 6, "", ("93.184.216.34", 443))]
+        with (
+            patch("socket.getaddrinfo", return_value=public_addrinfo),
+            patch("urllib.request.urlopen") as mock_urlopen,
+        ):
             mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
 
             result = lambda_handler(_make_event(), None)
 
         # Should still succeed (notifications are best-effort)
         assert result["statusCode"] == 200
+
+    def test_webhook_ssrf_blocked(self):
+        """Webhook resolves to private IP. Assert urlopen NOT called."""
+        _setup_tables(
+            prefs_item=_make_prefs(
+                webhook_enabled=True,
+                webhook_url="https://evil.com/ssrf",
+            ),
+            job_item=_make_job(),
+        )
+        _mod.ses_client = MagicMock()
+
+        # DNS resolves to link-local (AWS metadata endpoint)
+        private_addrinfo = [(2, 1, 6, "", ("169.254.169.254", 443))]
+        with (
+            patch("socket.getaddrinfo", return_value=private_addrinfo),
+            patch("urllib.request.urlopen") as mock_urlopen,
+        ):
+            result = lambda_handler(_make_event(), None)
+
+        assert result["statusCode"] == 200
+        mock_urlopen.assert_not_called()
 
     def test_no_preferences_no_notification(self):
         """No preferences saved for user. Assert no SES/webhook calls."""
@@ -188,7 +219,11 @@ class TestSendNotification:
         _mod.ses_client = MagicMock()
         _mod.ses_client.send_email.return_value = {"MessageId": "msg-2"}
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
+        public_addrinfo = [(2, 1, 6, "", ("93.184.216.34", 443))]
+        with (
+            patch("socket.getaddrinfo", return_value=public_addrinfo),
+            patch("urllib.request.urlopen") as mock_urlopen,
+        ):
             mock_resp = MagicMock()
             mock_resp.status = 200
             mock_resp.__enter__ = MagicMock(return_value=mock_resp)

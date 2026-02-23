@@ -6,8 +6,10 @@ BUDGET_EXCEEDED). Sends email via SES and/or webhook POST based on user
 notification preferences.
 """
 
+import ipaddress
 import json
 import os
+import socket
 import sys
 from typing import Any
 from urllib.parse import urlparse
@@ -108,10 +110,38 @@ def _send_email(email_address: str, job: dict[str, Any], status: str) -> None:
         )
 
 
+def _validate_webhook_ip(url: str) -> None:
+    """Resolve webhook hostname and reject private/reserved IPs to prevent SSRF."""
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Webhook URL has no hostname")
+
+    # Resolve all addresses (IPv4 + IPv6)
+    try:
+        addr_infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as err:
+        raise ValueError(f"Could not resolve webhook hostname: {hostname}") from err
+
+    for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local:
+            raise ValueError(f"Webhook URL resolves to blocked IP: {ip}")
+
+
 def _send_webhook(webhook_url: str, job: dict[str, Any], status: str, job_id: str) -> None:
     """Send webhook notification via HTTP POST."""
     import urllib.error
     import urllib.request
+
+    # SSRF protection: validate resolved IPs before connecting
+    try:
+        _validate_webhook_ip(webhook_url)
+    except ValueError as e:
+        logger.warning(
+            json.dumps({"event": "webhook_ssrf_blocked", "url": webhook_url, "error": str(e)})
+        )
+        return
 
     payload = {
         "job_id": job_id,

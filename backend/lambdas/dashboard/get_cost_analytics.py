@@ -56,9 +56,7 @@ def get_user_jobs(user_id: str, cutoff: datetime) -> list[dict[str, Any]]:
         )
         items = response.get("Items", [])[:MAX_JOBS]
         if response.get("LastEvaluatedKey") and len(items) >= MAX_JOBS:
-            logger.warning(
-                json.dumps({"event": "jobs_query_truncated", "max_jobs": MAX_JOBS})
-            )
+            logger.warning(json.dumps({"event": "jobs_query_truncated", "max_jobs": MAX_JOBS}))
         return items
     except ClientError as e:
         logger.error(json.dumps({"event": "query_jobs_error", "error": str(e)}))
@@ -84,7 +82,9 @@ def get_cost_records(job_id: str) -> list[dict[str, Any]]:
             break
     if last_key and pages == MAX_COST_PAGES:
         logger.warning(
-            json.dumps({"event": "cost_pages_cap_reached", "job_id": job_id, "max_pages": MAX_COST_PAGES})
+            json.dumps(
+                {"event": "cost_pages_cap_reached", "job_id": job_id, "max_pages": MAX_COST_PAGES}
+            )
         )
     return records
 
@@ -264,7 +264,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         for job in jobs:
             job_id = job.get("job_id")
             if not job_id:
-                logger.warning(json.dumps({"event": "job_missing_id", "item_keys": list(job.keys())}))
+                logger.warning(
+                    json.dumps({"event": "job_missing_id", "item_keys": list(job.keys())})
+                )
                 continue
             records = get_cost_records(job_id)
             all_records.extend(records)

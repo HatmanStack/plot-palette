@@ -56,6 +56,19 @@
     "HatmanStack",
     "cfn",
     "samconfig",
-    "pyproject"
+    "pyproject",
+
+    "browsable",
+    "bursty",
+    "diffable",
+    "overcounting",
+    "pgvector",
+    "PITR",
+    "prefs",
+    "Signup",
+    "stdlib",
+    "unscored",
+    "upserts",
+    "urlopen"
   ]
 }

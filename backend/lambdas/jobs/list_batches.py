@@ -68,7 +68,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         for item in response.get("Items", []):
             batch_id = item.get("batch_id")
             if not batch_id:
-                logger.error(json.dumps({"event": "corrupt_batch_item", "item_keys": list(item.keys())}))
+                logger.error(
+                    json.dumps({"event": "corrupt_batch_item", "item_keys": list(item.keys())})
+                )
                 continue
             batches.append(
                 {
