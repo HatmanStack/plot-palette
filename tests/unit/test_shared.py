@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 import json
 
 from backend.shared.models import (
+    BatchConfig,
     JobConfig,
     TemplateDefinition,
     TemplateStep,
@@ -19,8 +20,10 @@ from backend.shared.models import (
     QueueItem,
 )
 from backend.shared.constants import (
+    BatchStatus,
     JobStatus,
     ExportFormat,
+    MAX_BATCH_SIZE,
     MODEL_PRICING,
     MODEL_TIERS,
     FARGATE_SPOT_PRICING,
@@ -375,6 +378,121 @@ class TestConstants:
     def test_checkpoint_interval(self):
         """Test checkpoint interval constant."""
         assert CHECKPOINT_INTERVAL == 50
+
+
+class TestBatchConfig:
+    """Test BatchConfig model."""
+
+    def test_batch_config_creation(self):
+        """Test creating a BatchConfig instance with all fields."""
+        batch = BatchConfig(
+            batch_id="batch-123",
+            user_id="user-456",
+            name="Model comparison A/B test",
+            status=BatchStatus.PENDING,
+            created_at=datetime(2025, 12, 1, 10, 0, 0),
+            updated_at=datetime(2025, 12, 1, 10, 0, 0),
+            job_ids=["job-1", "job-2", "job-3"],
+            total_jobs=3,
+            completed_jobs=0,
+            failed_jobs=0,
+            template_id="tmpl-789",
+            template_version=1,
+            sweep_config={"model_tier": ["tier-1", "tier-2", "tier-3"]},
+            total_cost=0.0,
+        )
+
+        assert batch.batch_id == "batch-123"
+        assert batch.user_id == "user-456"
+        assert batch.name == "Model comparison A/B test"
+        assert batch.status == BatchStatus.PENDING
+        assert batch.total_jobs == 3
+        assert len(batch.job_ids) == 3
+        assert batch.template_id == "tmpl-789"
+        assert batch.template_version == 1
+        assert batch.total_cost == 0.0
+
+    def test_batch_config_to_dynamodb(self):
+        """Test BatchConfig serialization to DynamoDB table item format."""
+        batch = BatchConfig(
+            batch_id="batch-abc",
+            user_id="user-xyz",
+            name="Seed sweep",
+            status=BatchStatus.RUNNING,
+            created_at=datetime(2025, 12, 1, 10, 0, 0),
+            updated_at=datetime(2025, 12, 1, 11, 0, 0),
+            job_ids=["job-a", "job-b"],
+            total_jobs=2,
+            completed_jobs=1,
+            failed_jobs=0,
+            template_id="tmpl-111",
+            template_version=2,
+            sweep_config={"seed_data_path": ["path-a", "path-b"]},
+            total_cost=5.25,
+        )
+
+        item = batch.to_table_item()
+
+        assert item["batch_id"] == "batch-abc"
+        assert item["user_id"] == "user-xyz"
+        assert item["status"] == "RUNNING"
+        assert item["total_jobs"] == 2
+        assert item["completed_jobs"] == 1
+        assert item["job_ids"] == ["job-a", "job-b"]
+        assert item["template_id"] == "tmpl-111"
+        assert item["template_version"] == 2
+
+    def test_batch_config_from_dynamodb(self):
+        """Test BatchConfig deserialization from DynamoDB table item."""
+        item = {
+            "batch_id": "batch-abc",
+            "user_id": "user-xyz",
+            "name": "Record count sweep",
+            "status": "COMPLETED",
+            "created_at": "2025-12-01T10:00:00",
+            "updated_at": "2025-12-01T12:00:00",
+            "job_ids": ["job-1", "job-2"],
+            "total_jobs": 2,
+            "completed_jobs": 2,
+            "failed_jobs": 0,
+            "template_id": "tmpl-222",
+            "template_version": 1,
+            "sweep_config": {"num_records": [100, 500]},
+            "total_cost": 8.50,
+        }
+
+        batch = BatchConfig.from_dynamodb(item)
+
+        assert batch.batch_id == "batch-abc"
+        assert batch.status == BatchStatus.COMPLETED
+        assert batch.total_jobs == 2
+        assert batch.completed_jobs == 2
+        assert batch.template_version == 1
+        assert batch.total_cost == 8.50
+
+    def test_batch_config_empty_job_ids(self):
+        """Test BatchConfig handles empty job_ids list."""
+        batch = BatchConfig(
+            batch_id="batch-empty",
+            user_id="user-1",
+            name="Empty batch",
+            total_jobs=1,
+            template_id="tmpl-1",
+            template_version=1,
+        )
+        assert batch.job_ids == []
+
+    def test_batch_status_enum(self):
+        """Test BatchStatus enum has all 4 required states."""
+        assert BatchStatus.PENDING == "PENDING"
+        assert BatchStatus.RUNNING == "RUNNING"
+        assert BatchStatus.COMPLETED == "COMPLETED"
+        assert BatchStatus.PARTIAL_FAILURE == "PARTIAL_FAILURE"
+        assert len(BatchStatus) == 4
+
+    def test_max_batch_size_constant(self):
+        """Test MAX_BATCH_SIZE constant is defined."""
+        assert MAX_BATCH_SIZE == 20
 
 
 if __name__ == "__main__":

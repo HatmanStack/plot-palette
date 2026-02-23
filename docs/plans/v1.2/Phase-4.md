@@ -71,10 +71,10 @@ Build two features that scale the platform from single-job workflows to experime
    - PAY_PER_REQUEST, PITR enabled
 
 **Verification Checklist:**
-- [ ] BatchConfig model serializes/deserializes correctly
-- [ ] BatchStatus enum has all 4 states
-- [ ] Table has correct PK and GSI
-- [ ] Model handles empty job_ids list
+- [x] BatchConfig model serializes/deserializes correctly
+- [x] BatchStatus enum has all 4 states
+- [x] Table has correct PK and GSI
+- [x] Model handles empty job_ids list
 
 **Testing Instructions:**
 

@@ -29,6 +29,16 @@ class ExportFormat(StrEnum):
     CSV = "CSV"
 
 
+# Batch Status Values
+class BatchStatus(StrEnum):
+    """Batch status enumeration."""
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    PARTIAL_FAILURE = "PARTIAL_FAILURE"
+
+
 # AWS Bedrock Model Pricing (per 1M tokens)
 # Source: https://aws.amazon.com/bedrock/pricing/ (as of 2025-01)
 MODEL_PRICING = {
@@ -109,6 +119,7 @@ COST_TRACKING_TTL_DAYS = 90  # Days to retain cost tracking records
 
 # Concurrency Configuration
 MAX_CONCURRENT_JOBS = 5  # Maximum number of concurrent generation jobs
+MAX_BATCH_SIZE = 20  # Maximum jobs per batch
 MAX_RETRIES = 3  # Maximum retries for Bedrock API calls
 RETRY_BACKOFF_BASE = 2  # Exponential backoff base (seconds)
 
@@ -139,6 +150,7 @@ TABLE_NAMES = {
     "queue": "Queue",
     "templates": "Templates",
     "cost_tracking": "CostTracking",
+    "batches": "Batches",
 }
 
 # DynamoDB GSI Names

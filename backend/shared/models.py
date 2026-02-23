@@ -12,7 +12,7 @@ from typing import Any, NotRequired, TypedDict
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .constants import JobStatus
+from .constants import BatchStatus, JobStatus
 
 _serializer = TypeSerializer()
 _deserializer = TypeDeserializer()
@@ -439,6 +439,72 @@ class NotificationPreferences(BaseModel):
     def defaults(cls, user_id: str) -> "NotificationPreferences":
         """Return default preferences for a user with no saved preferences."""
         return cls(user_id=user_id)
+
+
+class BatchConfig(BaseModel):
+    """Batch configuration for tracking groups of related jobs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    batch_id: str = Field(..., description="Unique batch identifier (UUID)")
+    user_id: str = Field(..., description="User who created the batch")
+    name: str = Field(..., min_length=1, max_length=200, description="Batch display name")
+    status: BatchStatus = Field(default=BatchStatus.PENDING, description="Current batch status")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Batch creation timestamp"
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Last update timestamp"
+    )
+    job_ids: list[str] = Field(default_factory=list, description="References to individual jobs")
+    total_jobs: int = Field(..., ge=1, description="Total number of jobs in batch")
+    completed_jobs: int = Field(default=0, ge=0, description="Number of completed jobs")
+    failed_jobs: int = Field(default=0, ge=0, description="Number of failed jobs")
+    template_id: str = Field(..., description="Template used for all jobs")
+    template_version: int = Field(..., ge=1, description="Template version used")
+    sweep_config: dict[str, Any] = Field(
+        default_factory=dict, description="What was varied (model_tiers, seed_data_paths, etc.)"
+    )
+    total_cost: float = Field(default=0.0, ge=0, description="Aggregate cost across all jobs")
+
+    def to_table_item(self) -> dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        return {
+            "batch_id": self.batch_id,
+            "user_id": self.user_id,
+            "name": self.name,
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "job_ids": self.job_ids,
+            "total_jobs": self.total_jobs,
+            "completed_jobs": self.completed_jobs,
+            "failed_jobs": self.failed_jobs,
+            "template_id": self.template_id,
+            "template_version": self.template_version,
+            "sweep_config": self.sweep_config,
+            "total_cost": Decimal(str(self.total_cost)),
+        }
+
+    @classmethod
+    def from_dynamodb(cls, item: dict[str, Any]) -> "BatchConfig":
+        """Create BatchConfig from DynamoDB table item."""
+        return cls(
+            batch_id=item["batch_id"],
+            user_id=item["user_id"],
+            name=item["name"],
+            status=BatchStatus(item["status"]),
+            created_at=datetime.fromisoformat(item["created_at"]),
+            updated_at=datetime.fromisoformat(item["updated_at"]),
+            job_ids=item.get("job_ids", []),
+            total_jobs=int(item["total_jobs"]),
+            completed_jobs=int(item.get("completed_jobs", 0)),
+            failed_jobs=int(item.get("failed_jobs", 0)),
+            template_id=item["template_id"],
+            template_version=int(item["template_version"]),
+            sweep_config=item.get("sweep_config", {}),
+            total_cost=float(item.get("total_cost", 0)),
+        )
 
 
 class QueueItem(BaseModel):
