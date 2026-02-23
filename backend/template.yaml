@@ -37,6 +37,10 @@ Parameters:
     Type: String
     Default: ""
     Description: Step Functions state machine ARN for job lifecycle (optional)
+  SenderEmail:
+    Type: String
+    Default: "noreply@plotpalette.example.com"
+    Description: Verified SES sender email address for notifications
 
 Globals:
   Function:
@@ -57,6 +61,8 @@ Globals:
         SUBNET_IDS: !Ref SubnetIds
         SECURITY_GROUP_ID: !Ref SecurityGroupId
         STATE_MACHINE_ARN: !Ref StateMachineArn
+        NOTIFICATION_PREFERENCES_TABLE_NAME: !Ref NotificationPreferencesTable
+        SENDER_EMAIL: !Ref SenderEmail
         ALLOWED_ORIGIN: !Select [0, !Ref AllowedOrigins]
     LoggingConfig:
       LogGroup: !Ref LambdaLogGroup
@@ -167,6 +173,20 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true
+
+  NotificationPreferencesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-NotificationPreferences-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
 
   # ============================================================
   # S3 Bucket
@@ -661,6 +681,84 @@ Resources:
             Path: /templates/{template_id}/fork
             Method: POST
 
+  # ============================================================
+  # Lambda Functions - Settings (Phase 3)
+  # ============================================================
+  GetPreferencesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-get-preferences-${Environment}
+      CodeUri: lambdas/settings/
+      Handler: get_preferences.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref NotificationPreferencesTable
+      Events:
+        GetPreferences:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings/notifications
+            Method: GET
+
+  UpdatePreferencesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-update-preferences-${Environment}
+      CodeUri: lambdas/settings/
+      Handler: update_preferences.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NotificationPreferencesTable
+      Events:
+        UpdatePreferences:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings/notifications
+            Method: PUT
+
+  # ============================================================
+  # Lambda Functions - Notifications (Phase 3)
+  # ============================================================
+  SendNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-send-notification-${Environment}
+      CodeUri: lambdas/notifications/
+      Handler: send_notification.lambda_handler
+      Timeout: 30
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref NotificationPreferencesTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+              Resource: '*'
+
+  # ============================================================
+  # Lambda Functions - SSE Streaming (Phase 3)
+  # ============================================================
+  StreamProgressFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub plot-palette-stream-progress-${Environment}
+      CodeUri: lambdas/jobs/
+      Handler: stream_progress.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+      Events:
+        StreamProgress:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /jobs/{job_id}/stream
+            Method: GET
+
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL
@@ -685,3 +783,11 @@ Outputs:
   TemplatesTableName:
     Description: DynamoDB Templates table name
     Value: !Ref TemplatesTable
+
+  NotificationPreferencesTableName:
+    Description: DynamoDB NotificationPreferences table name
+    Value: !Ref NotificationPreferencesTable
+
+  SendNotificationFunctionArn:
+    Description: Send Notification Lambda function ARN
+    Value: !GetAtt SendNotificationFunction.Arn

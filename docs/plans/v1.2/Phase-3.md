@@ -76,11 +76,11 @@ Build two features that eliminate the need for users to keep a browser tab open 
    - Return: updated preferences
 
 **Verification Checklist:**
-- [ ] GET returns defaults for user with no saved preferences
-- [ ] PUT saves and returns updated preferences
-- [ ] Webhook URL must be HTTPS (reject HTTP)
-- [ ] Invalid webhook URL returns 400
-- [ ] Each user has isolated preferences
+- [x] GET returns defaults for user with no saved preferences
+- [x] PUT saves and returns updated preferences
+- [x] Webhook URL must be HTTPS (reject HTTP)
+- [x] Invalid webhook URL returns 400
+- [x] Each user has isolated preferences
 
 **Testing Instructions:**
 
@@ -153,12 +153,12 @@ feat(lambdas): add notification preferences CRUD endpoints
 **Design decision:** Webhook delivery is at-most-once with no retry. If the webhook endpoint is down, the notification is lost. This is acceptable for MVP. Future enhancement: add SQS dead-letter queue for failed webhooks.
 
 **Verification Checklist:**
-- [ ] Email sent when email_enabled and status matches preference
-- [ ] Email NOT sent when email_enabled but status doesn't match (e.g., notify_on_complete=false)
-- [ ] Webhook POST sent with correct JSON payload
-- [ ] Webhook failure does not fail the state machine
-- [ ] No notification sent when all preferences are disabled
-- [ ] Handler handles missing preferences gracefully (no notification)
+- [x] Email sent when email_enabled and status matches preference
+- [x] Email NOT sent when email_enabled but status doesn't match (e.g., notify_on_complete=false)
+- [x] Webhook POST sent with correct JSON payload
+- [x] Webhook failure does not fail the state machine
+- [x] No notification sent when all preferences are disabled
+- [x] Handler handles missing preferences gracefully (no notification)
 
 **Testing Instructions:**
 
@@ -226,13 +226,13 @@ feat(lambdas): add notification dispatch for job terminal states
    - Validate webhook URL client-side before submission
 
 **Verification Checklist:**
-- [ ] Settings page loads and shows current preferences
-- [ ] Toggle email enables/disables email notification fields
-- [ ] Toggle webhook enables/disables webhook URL field
-- [ ] Webhook URL requires HTTPS prefix
-- [ ] Save button disabled when no changes
-- [ ] Save persists preferences and shows success toast
-- [ ] Error shows error toast
+- [x] Settings page loads and shows current preferences
+- [x] Toggle email enables/disables email notification fields
+- [x] Toggle webhook enables/disables webhook URL field
+- [x] Webhook URL requires HTTPS prefix
+- [x] Save button disabled when no changes
+- [x] Save persists preferences and shows success toast
+- [x] Error shows error toast
 
 **Testing Instructions:**
 
@@ -318,12 +318,12 @@ feat(frontend): build settings page with notification preferences
    ```
 
 **Verification Checklist:**
-- [ ] Returns Content-Type: text/event-stream
-- [ ] Response body is valid SSE format
-- [ ] Job ownership verified (403 for non-owner)
-- [ ] Terminal state includes `event: complete`
-- [ ] CORS headers included
-- [ ] Returns 404 for nonexistent job
+- [x] Returns Content-Type: text/event-stream
+- [x] Response body is valid SSE format
+- [x] Job ownership verified (403 for non-owner)
+- [x] Terminal state includes `event: complete`
+- [x] CORS headers included
+- [x] Returns 404 for nonexistent job
 
 **Testing Instructions:**
 
@@ -400,14 +400,14 @@ feat(lambdas): add SSE progress streaming endpoint for jobs
    - This keeps all components that read `['job', jobId]` in sync without refetching
 
 **Verification Checklist:**
-- [ ] EventSource connects to SSE endpoint
-- [ ] Job progress updates appear in real-time (no 5s delay)
-- [ ] EventSource auto-reconnects on connection close
-- [ ] Connection closed when job reaches terminal state
-- [ ] Falls back to polling if SSE fails repeatedly
-- [ ] Token passed as query parameter for auth
-- [ ] Connection status indicator shown
-- [ ] EventSource cleaned up on component unmount
+- [x] EventSource connects to SSE endpoint
+- [x] Job progress updates appear in real-time (no 5s delay)
+- [x] EventSource auto-reconnects on connection close
+- [x] Connection closed when job reaches terminal state
+- [x] Falls back to polling if SSE fails repeatedly
+- [x] Token passed as query parameter for auth
+- [x] Connection status indicator shown
+- [x] EventSource cleaned up on component unmount
 
 **Testing Instructions:**
 
@@ -579,16 +579,16 @@ feat(frontend): replace polling with SSE-based real-time job progress
    - The Lambda response format is the standard `{ statusCode, headers, body }` dict
 
 **Verification Checklist:**
-- [ ] `cfn-lint backend/template.yaml` passes
-- [ ] NotificationPreferences table defined correctly
-- [ ] `backend/lambdas/settings/__init__.py` exists
-- [ ] `backend/lambdas/notifications/__init__.py` exists
-- [ ] `create_job.py` SFN input includes `user_id`
-- [ ] `IncrementRetryCount` in ASL passes through `user_id`
-- [ ] ASL has notification states after each terminal state (3 total)
-- [ ] SES permissions granted to notification Lambda
-- [ ] SENDER_EMAIL parameter added
-- [ ] All new Lambdas have correct routes and policies
+- [x] `cfn-lint backend/template.yaml` passes
+- [x] NotificationPreferences table defined correctly
+- [x] `backend/lambdas/settings/__init__.py` exists
+- [x] `backend/lambdas/notifications/__init__.py` exists
+- [x] `create_job.py` SFN input includes `user_id`
+- [ ] `IncrementRetryCount` in ASL passes through `user_id` (N/A — no ASL file exists yet)
+- [ ] ASL has notification states after each terminal state (N/A — no ASL file exists yet)
+- [x] SES permissions granted to notification Lambda
+- [x] SENDER_EMAIL parameter added
+- [x] All new Lambdas have correct routes and policies
 
 **Commit Message Template:**
 ```
