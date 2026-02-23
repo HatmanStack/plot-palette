@@ -156,14 +156,14 @@ feat(shared): add BatchConfig model and Batches DynamoDB table
    - Store successful job_ids in BatchConfig
 
 **Verification Checklist:**
-- [ ] Creates individual jobs for each sweep value
-- [ ] Stores batch record with all job IDs
-- [ ] Enforces MAX_BATCH_SIZE (20)
-- [ ] Validates template exists
-- [ ] Returns batch_id and job_ids
-- [ ] Handles partial failures (some jobs fail to create)
-- [ ] Only one sweep dimension allowed
-- [ ] Individual jobs have batch_id in their config
+- [x] Creates individual jobs for each sweep value
+- [x] Stores batch record with all job IDs
+- [x] Enforces MAX_BATCH_SIZE (20)
+- [x] Validates template exists
+- [x] Returns batch_id and job_ids
+- [x] Handles partial failures (some jobs fail to create)
+- [x] Only one sweep dimension allowed
+- [x] Individual jobs have batch_id in their config
 
 **Testing Instructions:**
 
