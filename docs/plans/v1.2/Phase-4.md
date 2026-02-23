@@ -227,11 +227,11 @@ feat(lambdas): add batch job creation with parameter sweep
    - Return: `{ message, jobs_cancelled, jobs_deleted }`
 
 **Verification Checklist:**
-- [ ] List returns user's batches only
-- [ ] Get returns batch with job details
-- [ ] Delete cancels running jobs and removes batch
-- [ ] Ownership checks on all endpoints
-- [ ] Pagination works on list
+- [x] List returns user's batches only
+- [x] Get returns batch with job details
+- [x] Delete cancels running jobs and removes batch
+- [x] Ownership checks on all endpoints
+- [x] Pagination works on list
 
 **Testing Instructions:**
 
