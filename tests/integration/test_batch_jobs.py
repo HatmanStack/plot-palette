@@ -10,6 +10,8 @@ import os
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import boto3
 from moto import mock_aws
 
@@ -147,6 +149,7 @@ def _make_list_event(user_id):
     }
 
 
+@pytest.mark.integration
 @mock_aws
 def test_batch_create_stores_jobs_and_batch():
     """Create batch with 3 model_tier sweep values. Assert 3 jobs in Jobs table
@@ -211,6 +214,7 @@ def test_batch_create_stores_jobs_and_batch():
     assert mock_sfn.start_execution.call_count == 3
 
 
+@pytest.mark.integration
 @mock_aws
 def test_get_batch_returns_batch_with_jobs():
     """Create batch then fetch it. Assert response includes job details."""
@@ -268,6 +272,7 @@ def test_get_batch_returns_batch_with_jobs():
     assert len(body["jobs"]) == 2
 
 
+@pytest.mark.integration
 @mock_aws
 def test_get_batch_rejects_non_owner():
     """User B tries to access User A's batch. Assert 403."""
@@ -302,6 +307,7 @@ def test_get_batch_rejects_non_owner():
     assert result["statusCode"] == 403
 
 
+@pytest.mark.integration
 @mock_aws
 def test_list_batches_user_scoped():
     """User A has 2 batches, user B has 1. Assert user A sees only 2."""

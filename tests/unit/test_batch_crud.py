@@ -7,6 +7,8 @@ import os
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+import pytest
+
 from tests.unit.handler_import import load_handler
 
 _list_mod = load_handler("lambdas/jobs/list_batches.py", "_handler_list_batches")
@@ -50,6 +52,7 @@ def _make_job(job_id, status="QUEUED", user_id="user-123"):
     }
 
 
+@pytest.mark.unit
 class TestListBatches:
     def setup_method(self):
         self.mock_table = MagicMock()
@@ -100,6 +103,7 @@ class TestListBatches:
         assert "last_key" in body
 
 
+@pytest.mark.unit
 class TestGetBatch:
     def setup_method(self):
         self.mock_batches = MagicMock()
@@ -172,6 +176,7 @@ class TestGetBatch:
         assert response["statusCode"] == 404
 
 
+@pytest.mark.unit
 class TestDeleteBatch:
     def setup_method(self):
         self.mock_batches = MagicMock()
