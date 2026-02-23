@@ -133,7 +133,7 @@ def _invoke_bedrock_scoring(prompt: str) -> tuple[list[dict[str, Any]], int, int
         if match:
             scores = json.loads(match.group())
         else:
-            raise ValueError("Could not parse scoring response as JSON")
+            raise ValueError("Could not parse scoring response as JSON") from None
 
     if not isinstance(scores, list):
         scores = [scores]
