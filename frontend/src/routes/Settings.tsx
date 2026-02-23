@@ -77,10 +77,11 @@ function PreferencesForm({ initialPrefs }: { initialPrefs: NotificationPreferenc
 
         {form.email_enabled && (
           <div className="mt-3 ml-7">
-            <label className="block text-sm text-gray-600 mb-1">
+            <label htmlFor="email_address" className="block text-sm text-gray-600 mb-1">
               Email address
             </label>
             <input
+              id="email_address"
               type="email"
               value={form.email_address || ''}
               onChange={(e) => updateField('email_address', e.target.value || null)}
@@ -105,20 +106,23 @@ function PreferencesForm({ initialPrefs }: { initialPrefs: NotificationPreferenc
 
         {form.webhook_enabled && (
           <div className="mt-3 ml-7">
-            <label className="block text-sm text-gray-600 mb-1">
+            <label htmlFor="webhook_url" className="block text-sm text-gray-600 mb-1">
               Webhook URL (HTTPS only)
             </label>
             <input
+              id="webhook_url"
               type="url"
               value={form.webhook_url || ''}
               onChange={(e) => updateField('webhook_url', e.target.value || null)}
               placeholder="https://example.com/webhook"
+              aria-invalid={webhookError ? 'true' : undefined}
+              aria-describedby={webhookError ? 'webhook-error' : undefined}
               className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                 webhookError ? 'border-red-500' : 'border-gray-300'
               }`}
             />
             {webhookError && (
-              <p className="mt-1 text-sm text-red-600">{webhookError}</p>
+              <p id="webhook-error" role="alert" aria-live="assertive" className="mt-1 text-sm text-red-600">{webhookError}</p>
             )}
           </div>
         )}
@@ -173,7 +177,7 @@ function PreferencesForm({ initialPrefs }: { initialPrefs: NotificationPreferenc
 }
 
 export default function Settings() {
-  const { data: prefs, isLoading, error, dataUpdatedAt } = useQuery({
+  const { data: prefs, isLoading, error } = useQuery({
     queryKey: ['notification-preferences'],
     queryFn: fetchNotificationPreferences,
   })
@@ -205,7 +209,6 @@ export default function Settings() {
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-semibold mb-4">Notification Preferences</h2>
         <PreferencesForm
-          key={dataUpdatedAt}
           initialPrefs={prefs ?? defaultPrefs}
         />
       </div>

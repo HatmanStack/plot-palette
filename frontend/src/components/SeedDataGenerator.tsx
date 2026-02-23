@@ -136,6 +136,7 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
       </div>
 
       <button
+        type="button"
         onClick={handleGenerate}
         disabled={loading || !templateId}
         className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
@@ -144,7 +145,7 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
       </button>
 
       {result && (
-        <div className="bg-green-50 border border-green-200 p-4 rounded-md">
+        <div role="status" aria-live="polite" aria-atomic="true" className="bg-green-50 border border-green-200 p-4 rounded-md">
           <p className="text-green-800">
             Generated {result.records_generated} records
             {result.records_invalid > 0 && ` (${result.records_invalid} invalid filtered)`}

@@ -64,7 +64,7 @@ export default function BatchDetail() {
   if (!batch) return <div className="p-8">Batch not found</div>
 
   const progress = batch.total_jobs > 0
-    ? Math.round(((batch.completed_jobs + batch.failed_jobs) / batch.total_jobs) * 100)
+    ? Math.min(100, Math.max(0, Math.round(((batch.completed_jobs + batch.failed_jobs) / batch.total_jobs) * 100)))
     : 0
 
   return (
@@ -78,7 +78,7 @@ export default function BatchDetail() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[batch.status] || 'bg-gray-100'}`}>
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[batch.status] || 'bg-gray-100 text-gray-800'}`}>
             {batch.status}
           </span>
           <button
@@ -95,6 +95,7 @@ export default function BatchDetail() {
       {showConfirm && (
         <div
           role="alertdialog"
+          aria-modal="true"
           aria-labelledby="confirm-delete-title"
           aria-describedby="confirm-delete-desc"
           className="bg-red-50 border border-red-200 p-4 rounded-md mb-6"
