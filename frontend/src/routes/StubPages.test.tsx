@@ -14,6 +14,15 @@ vi.mock('../services/api', async () => {
     ...actual,
     fetchUserTemplates: vi.fn().mockResolvedValue([]),
     searchMarketplaceTemplates: vi.fn().mockResolvedValue({ templates: [], count: 0, total: 0 }),
+    fetchNotificationPreferences: vi.fn().mockResolvedValue({
+      email_enabled: false,
+      email_address: null,
+      webhook_enabled: false,
+      webhook_url: null,
+      notify_on_complete: true,
+      notify_on_failure: true,
+      notify_on_budget_exceeded: true,
+    }),
   }
 })
 
@@ -45,9 +54,23 @@ describe('Templates page', () => {
   })
 })
 
-describe('Settings stub page', () => {
+describe('Settings page', () => {
   it('renders heading', () => {
-    render(<Settings />)
+    const client = createTestQueryClient()
+    render(<Settings />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>
+          <AuthContext.Provider value={mockAuthContextAuthenticated}>
+            <ToastProvider>
+              <MemoryRouter initialEntries={['/settings']}>
+                {children}
+              </MemoryRouter>
+            </ToastProvider>
+          </AuthContext.Provider>
+        </QueryClientProvider>
+      ),
+      withRouter: false,
+    })
     expect(screen.getByText('Settings')).toBeInTheDocument()
   })
 })

@@ -275,6 +275,31 @@ export async function deleteTemplate(templateId: string): Promise<void> {
   await apiClient.delete(`/templates/${templateId}`)
 }
 
+// Notification Preferences schemas
+export const NotificationPreferencesSchema = z.object({
+  email_enabled: z.boolean().default(false),
+  email_address: z.string().nullable().default(null),
+  webhook_enabled: z.boolean().default(false),
+  webhook_url: z.string().nullable().default(null),
+  notify_on_complete: z.boolean().default(true),
+  notify_on_failure: z.boolean().default(true),
+  notify_on_budget_exceeded: z.boolean().default(true),
+})
+
+export type NotificationPreferences = z.infer<typeof NotificationPreferencesSchema>
+
+export async function fetchNotificationPreferences(): Promise<NotificationPreferences> {
+  const { data } = await apiClient.get('/settings/notifications')
+  return NotificationPreferencesSchema.parse(data)
+}
+
+export async function updateNotificationPreferences(
+  prefs: Partial<NotificationPreferences>
+): Promise<NotificationPreferences> {
+  const { data } = await apiClient.put('/settings/notifications', prefs)
+  return NotificationPreferencesSchema.parse(data)
+}
+
 export async function generateUploadUrl(filename: string, contentType: string = 'application/json'): Promise<{
   upload_url: string
   s3_key: string
