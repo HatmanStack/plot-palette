@@ -85,12 +85,13 @@ def validate_job_config(config: dict[str, Any]) -> tuple[bool, str]:
     return True, ""
 
 
-def start_job_execution(job_id: str) -> str:
+def start_job_execution(job_id: str, user_id: str = "") -> str:
     """
     Start Step Functions execution for job processing.
 
     Args:
         job_id: Job ID to process
+        user_id: User ID (propagated through state machine for notifications)
 
     Returns:
         str: Execution ARN
@@ -107,7 +108,7 @@ def start_job_execution(job_id: str) -> str:
         response = sfn_client.start_execution(
             stateMachineArn=state_machine_arn,
             name=f"job-{job_id}",
-            input=json.dumps({"job_id": job_id, "retry_count": 0}),
+            input=json.dumps({"job_id": job_id, "user_id": user_id, "retry_count": 0}),
         )
 
         execution_arn = response["executionArn"]
@@ -299,7 +300,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Start Step Functions execution for the job
         try:
-            execution_arn = start_job_execution(job_id)
+            execution_arn = start_job_execution(job_id, user_id)
             # Store execution ARN on job record
             jobs_table.update_item(
                 Key={"job_id": job_id},
