@@ -54,16 +54,16 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
         instructions: instructions || undefined,
       })
 
-      setResult({
-        records_generated: response.records_generated,
-        records_invalid: response.records_invalid,
-        total_cost: response.total_cost,
-      })
-
       if (response.records_generated > 0) {
+        setResult({
+          records_generated: response.records_generated,
+          records_invalid: response.records_invalid,
+          total_cost: response.total_cost,
+        })
         onGenerated(response.s3_key, response.records_generated)
         toast(`Generated ${response.records_generated} seed records`, 'success')
       } else {
+        setResult(null)
         toast('No valid records were generated', 'error')
       }
     } catch (err) {

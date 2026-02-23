@@ -204,6 +204,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 successful_job_ids.append(job_id)
 
             except Exception as e:
+                sanitized = sanitize_error_message(str(e))
                 logger.error(
                     json.dumps(
                         {
@@ -211,11 +212,11 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                             "batch_id": batch_id,
                             "job_id": job_id,
                             "sweep_value": str(sweep_value),
-                            "error": str(e),
+                            "error": sanitized,
                         }
                     )
                 )
-                failed_jobs_info.append({"sweep_value": str(sweep_value), "error": str(e)})
+                failed_jobs_info.append({"sweep_value": str(sweep_value), "error": sanitized})
                 # Mark job as failed if it was stored
                 try:
                     jobs_table.update_item(

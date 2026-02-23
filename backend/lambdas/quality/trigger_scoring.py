@@ -112,5 +112,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
-        logger.error(json.dumps({"event": "trigger_scoring_error", "error": str(e)}), exc_info=True)
+        logger.error(
+            json.dumps({"event": "trigger_scoring_error", "error": sanitize_error_message(str(e))}),
+            exc_info=True,
+        )
         return error_response(500, "Internal server error")

@@ -194,7 +194,11 @@ def compute_summary(
     job_costs: dict[str, float] = defaultdict(float)
     for record in all_records:
         job_costs[record.get("job_id", "")] += extract_cost(record)["total"]
-    most_expensive = max(job_costs, key=job_costs.get, default=None) if job_costs else None  # type: ignore[arg-type]
+    most_expensive = (
+        max(job_costs, key=job_costs.get, default=None)  # type: ignore[arg-type]
+        if job_costs
+        else None
+    )
 
     return {
         "total_spend": round(total_spend, 4),
