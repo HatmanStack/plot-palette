@@ -30,7 +30,7 @@ Establish the architectural decisions, shared patterns, testing strategies, and 
 
 **Decision:** Each entity type gets its own DynamoDB table with on-demand (PAY_PER_REQUEST) billing.
 
-**Context:** The codebase has 5 tables: Jobs (PK: `job_id`, GSI: `user_id+created_at`), Queue (PK: `status`, SK: `job_id_timestamp`), Templates (PK: `template_id`, SK: `version`, GSI: `user_id`), CostTracking (PK: `job_id`, SK: `timestamp`, TTL enabled), CheckpointMetadata (PK: `job_id`).
+**Context:** The codebase has 5 tables: Jobs (PK: `job_id`, GSI: `user_id+created_at`), Queue (PK: `status`, SK: `job_id_timestamp`), Templates (PK: `template_id`, SK: `version`, GSI: `user_id` — HASH only, no sort key), CostTracking (PK: `job_id`, SK: `timestamp`, TTL enabled), CheckpointMetadata (PK: `job_id`).
 
 **Rationale:** On-demand billing matches the bursty Lambda access pattern. Single-table-per-entity keeps queries simple and avoids complex GSI overloading.
 
@@ -69,9 +69,19 @@ user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
 
 **Implication for new features:** New DynamoDB tables, Lambda functions, SNS topics, and IAM roles are added to `backend/template.yaml`. Use existing parameter patterns for environment-specific values.
 
+**State machine exception:** The Step Functions state machine is NOT defined in `template.yaml`. It is defined in `backend/infrastructure/step-functions/job-lifecycle.asl.json` (ASL JSON format), deployed via `backend/infrastructure/cloudformation/orchestration-stack.yaml`. Template.yaml receives the state machine ARN as a `StateMachineArn` parameter and passes it to Lambdas via the Globals environment variable `STATE_MACHINE_ARN`.
+
+To add new Lambda ARN substitutions to the state machine (e.g., for Lambdas invoked by Step Functions states), you must:
+1. Output the Lambda ARN from `template.yaml` (Outputs section)
+2. Add a corresponding Parameter in `orchestration-stack.yaml`
+3. Add the parameter to `orchestration-stack.yaml`'s `DefinitionSubstitutions` block (lines 138-146)
+4. Pass the ARN from `master-stack.yaml` to the OrchestrationStack Parameters
+
+The production deployment uses 12 nested CloudFormation stacks orchestrated by `backend/infrastructure/cloudformation/master-stack.yaml`. The plans target `template.yaml` (standalone SAM deployment). For nested stack deployment, mirror Lambda/table changes to `backend/infrastructure/cloudformation/api-stack.yaml`.
+
 ### ADR-6: Cost Tracking — Per-Job Breakdown with TTL
 
-**Decision:** Cost data is stored in the CostTracking table with 90-day TTL auto-deletion.
+**Decision:** Cost data is stored in the CostTracking table with 90-day TTL auto-deletion. The TTL attribute is named `ttl` (lowercase) in both CostTracking and QualityMetrics tables.
 
 **Context:** Each cost record has PK: `job_id`, SK: `timestamp`, and stores `estimated_cost` as a nested dict `{bedrock, fargate, s3, total}`. The worker writes cost records every `CHECKPOINT_INTERVAL` (50) records.
 
@@ -157,6 +167,7 @@ client.transact_write_items(TransactItems=[...])
 - `TEMPLATES_TABLE_NAME` → `plot-palette-Templates-{env}`
 - `COST_TRACKING_TABLE_NAME` → `plot-palette-CostTracking-{env}`
 - `CHECKPOINT_METADATA_TABLE_NAME` → `plot-palette-CheckpointMetadata-{env}`
+  **Note:** `CHECKPOINT_METADATA_TABLE_NAME` is passed to the ECS worker task definition (in `compute-stack.yaml`), NOT through the Lambda Globals environment in `template.yaml`. Lambda functions do not access this table — only the worker does.
 - `BUCKET_NAME` → `plot-palette-data-{env}-{account_id}`
 
 ### S3 Key Patterns
@@ -431,6 +442,8 @@ type(scope): brief description (>= 15 chars in subject)
 
 ## Key File Locations Reference
 
+**Note:** This listing reflects the codebase at Phase 0 (pre-implementation). Each phase adds new files (Lambda handlers, frontend components, test files). See individual phase "Files to Modify/Create" sections for additions.
+
 ```
 backend/
   template.yaml                          # SAM infrastructure definition
@@ -456,6 +469,15 @@ backend/
   ecs_tasks/worker/
     worker.py                            # ECS Worker class (generation loop, checkpoint, export)
     template_engine.py                   # TemplateEngine class (render + Bedrock calls)
+  infrastructure/
+    step-functions/
+      job-lifecycle.asl.json             # ASL state machine definition (JSON)
+    cloudformation/
+      master-stack.yaml                  # Nested stack orchestrator
+      api-stack.yaml                     # API Gateway + Lambdas (nested stack version of template.yaml)
+      orchestration-stack.yaml           # Step Functions state machine + DefinitionSubstitutions
+      database-stack.yaml                # Jobs, Queue, Templates, CostTracking tables
+      compute-stack.yaml                 # ECS cluster, CheckpointMetadata table
 
 frontend/src/
   App.tsx                                # Root: providers, router
@@ -514,7 +536,7 @@ Key constants from `shared/constants.py` that new features will reference:
 | `CHECKPOINT_INTERVAL` | 50 | Records between checkpoints |
 | `COST_TRACKING_TTL_DAYS` | 90 | Auto-delete cost records after 90 days |
 | `MAX_CONCURRENT_JOBS` | 5 | Not enforced yet (future use) |
-| `PRESIGNED_URL_EXPIRATION` | 900 | 15-minute presigned URLs |
+| `PRESIGNED_URL_EXPIRATION` | 900 | 15-minute presigned URLs (download handlers override to 3600 for 1-hour download links) |
 | `MODEL_PRICING` | dict | Per-model input/output pricing per 1M tokens |
 | `MODEL_TIERS` | dict | Tier name → model ID mapping |
 | `FARGATE_SPOT_PRICING` | dict | vCPU + memory hourly rates |

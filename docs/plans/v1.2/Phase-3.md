@@ -135,7 +135,7 @@ feat(lambdas): add notification preferences CRUD endpoints
         - Send via SES (or SNS) to `email_address` (or Cognito email)
         - Use a configurable `SENDER_EMAIL` env var for the from address
      d. If webhook_enabled:
-        - POST to `webhook_url` with JSON body: `{ job_id, status, records_generated, cost_estimate, completed_at, template_id }`
+        - POST to `webhook_url` via `urllib.request.urlopen` with JSON body: `{ job_id, status, records_generated, cost_estimate, completed_at, template_id }`
         - Set timeout to 5 seconds, catch and log failures (don't fail the state machine)
      e. Return success (always succeed — notification failure should not affect job lifecycle)
 
@@ -173,7 +173,7 @@ Write tests in `tests/unit/test_send_notification.py`:
 # 7. test_both_email_and_webhook — Both enabled. Assert both SES and webhook called.
 ```
 
-Mock `boto3` SES client and `requests.post` for webhook.
+Mock `boto3` SES client and `urllib.request.urlopen` for webhook (use stdlib `urllib`, not the `requests` library, to avoid adding a Lambda dependency).
 
 **Commit Message Template:**
 ```
@@ -569,7 +569,12 @@ feat(frontend): replace polling with SSE-based real-time job progress
 
    Repeat the pattern for `MarkJobFailed` → `SendNotificationFailed` → `EndFailed` and `MarkJobBudgetExceeded` → `SendNotificationBudgetExceeded` → `EndBudgetExceeded`.
 
-   **Note:** The `${SendNotificationFunctionArn}` substitution variable must be added to the SAM template where it passes substitutions to the ASL definition file.
+   **Note:** The `${SendNotificationFunctionArn}` substitution variable must be added to `backend/infrastructure/cloudformation/orchestration-stack.yaml`, NOT to `template.yaml`. Template.yaml does not define the state machine. Steps:
+   1. Add `SendNotificationFunctionArn` as a Parameter in `orchestration-stack.yaml`
+   2. Add it to the `DefinitionSubstitutions` block (after line 146): `SendNotificationFunctionArn: !Ref SendNotificationFunctionArn`
+   3. Add an Output in `template.yaml`: `SendNotificationFunctionArn` → `!GetAtt SendNotificationFunction.Arn`
+   4. In `master-stack.yaml`, pass the ARN from APIStack to OrchestrationStack: `SendNotificationFunctionArn: !GetAtt APIStack.Outputs.SendNotificationFunctionArn`
+   5. This creates a deployment ordering dependency — the OrchestrationStack must be updated AFTER the APIStack deploys the Lambda. Use a two-phase deploy or construct the ARN from naming convention.
 
 7. **Add `NOTIFICATION_PREFERENCES_TABLE_NAME` to Globals environment in `backend/template.yaml`.**
 
@@ -584,8 +589,8 @@ feat(frontend): replace polling with SSE-based real-time job progress
 - [x] `backend/lambdas/settings/__init__.py` exists
 - [x] `backend/lambdas/notifications/__init__.py` exists
 - [x] `create_job.py` SFN input includes `user_id`
-- [ ] `IncrementRetryCount` in ASL passes through `user_id` (N/A — no ASL file exists yet)
-- [ ] ASL has notification states after each terminal state (N/A — no ASL file exists yet)
+- [ ] `IncrementRetryCount` in ASL passes through `user_id` (verify at job-lifecycle.asl.json lines 167-174)
+- [ ] ASL has notification states after each terminal state (add SendNotification states to existing ASL)
 - [x] SES permissions granted to notification Lambda
 - [x] SENDER_EMAIL parameter added
 - [x] All new Lambdas have correct routes and policies

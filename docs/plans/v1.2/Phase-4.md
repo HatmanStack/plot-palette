@@ -672,6 +672,8 @@ npm run check
 
 ### Task 3: Delete Batch — Cleanup Gap
 
+**Resolution:** Fixed. `delete_batch.py` (lines 111-118) calls `delete_s3_job_data()` and `delete_cost_tracking_records()` (from `shared/utils.py` lines 558-620) for each terminal job before deleting the job record. IAM policies updated in template.yaml.
+
 > **Think about:** The plan says to "reuse delete_job logic" for terminal jobs. Look at `delete_job.py:41-66` (`delete_s3_job_data`) and `delete_job.py:69-107` (`delete_cost_tracking_records`). Now look at `delete_batch.py:99-102`. When a terminal job is deleted in a batch, what happens to its S3 data under `jobs/{job_id}/`? What happens to its CostTracking records? Are they cleaned up, or do they become orphaned resources?
 >
 > **Reflect:** Now look at Task 7's `DeleteBatchFunction` IAM policies in `template.yaml:857-881`. Does it have `S3CrudPolicy` for the DataBucket? Does it have `DynamoDBCrudPolicy` for the CostTrackingTable? If someone tried to add S3 cleanup to `delete_batch.py`, would it work at runtime?
@@ -679,6 +681,8 @@ npm run check
 > **Consider:** Should the plan either (a) explicitly instruct the implementer to extract `delete_s3_job_data()` and `delete_cost_tracking_records()` into `shared/utils.py` for reuse, and add the corresponding IAM policies in Task 7, or (b) acknowledge that batch deletion intentionally skips S3/cost cleanup as an MVP trade-off?
 
 ### Task 4: Dashboard Integration — Missing
+
+**Resolution:** Fixed. `Dashboard.tsx` imports `listBatches` (line 6), queries batches via React Query (lines 13-16), and renders a "Recent Batches" table (lines 139-182) with name, status, progress, cost, and links to batch detail.
 
 > **Think about:** The plan at line 306-308 says: "Add 'Batches' section or tab to Dashboard page showing recent batches. Each batch links to BatchDetail page." Now read `frontend/src/routes/Dashboard.tsx`. Does it import `listBatches` from the API service? Does it render any batch-related UI? Is this requirement tracked in the verification checklist?
 
