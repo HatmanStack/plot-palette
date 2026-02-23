@@ -253,166 +253,180 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         total_records=int(job.get("records_generated", 0)),
     )
 
-    config = job.get("config", {})
-    output_format = config.get("output_format", "JSONL")
-    template_id = config.get("template_id", "")
-    template_version = config.get("template_version", 1)
-
-    # Load export records
     try:
-        all_records = _load_export_records(job_id, output_format)
+        config = job.get("config", {})
+        output_format = config.get("output_format", "JSONL")
+        template_id = config.get("template_id", "")
+        template_version = config.get("template_version", 1)
+
+        # Load export records
+        try:
+            all_records = _load_export_records(job_id, output_format)
+        except Exception as e:
+            error_msg = f"Failed to load export file: {str(e)}"
+            logger.error(json.dumps({"event": "export_load_error", "job_id": job_id, "error": str(e)}))
+            _store_quality_metrics(
+                job_id=job_id,
+                status=QualityStatus.FAILED,
+                total_records=int(job.get("records_generated", 0)),
+                error_message=error_msg,
+            )
+            return {"error": error_msg}
+
+        if not all_records:
+            _store_quality_metrics(
+                job_id=job_id,
+                status=QualityStatus.FAILED,
+                total_records=0,
+                error_message="Export file is empty",
+            )
+            return {"error": "Export file is empty"}
+
+        total_records = len(all_records)
+
+        # Sample records
+        sample_size = min(QUALITY_SAMPLE_SIZE, total_records)
+        if total_records > sample_size:
+            sampled_records = random.sample(all_records, sample_size)
+        else:
+            sampled_records = all_records
+
+        # Fetch template for context
+        template_name = "Unknown"
+        schema_requirements: list[str] = []
+        try:
+            tmpl_response = templates_table.get_item(
+                Key={"template_id": template_id, "version": int(template_version)}
+            )
+            tmpl = tmpl_response.get("Item")
+            if tmpl:
+                template_name = tmpl.get("name", "Unknown")
+                schema_requirements = tmpl.get("schema_requirements", [])
+        except Exception as e:
+            logger.warning(json.dumps({"event": "template_fetch_warning", "error": str(e)}))
+
+        # Score in batches
+        all_scores: list[dict[str, Any]] = []
+        total_input_tokens = 0
+        total_output_tokens = 0
+        failed_records = 0
+
+        num_batches = math.ceil(sample_size / QUALITY_BATCH_SIZE)
+        for batch_idx in range(num_batches):
+            start = batch_idx * QUALITY_BATCH_SIZE
+            end = min(start + QUALITY_BATCH_SIZE, sample_size)
+            batch_records = sampled_records[start:end]
+
+            prompt = _build_scoring_prompt(batch_records, template_name, schema_requirements, start)
+
+            try:
+                scores, input_tokens, output_tokens = _invoke_bedrock_scoring(prompt)
+                total_input_tokens += input_tokens
+                total_output_tokens += output_tokens
+
+                # Add record_index to each score
+                for i, score in enumerate(scores):
+                    score["record_index"] = start + i
+                    all_scores.append(score)
+
+            except Exception as e:
+                logger.error(
+                    json.dumps(
+                        {
+                            "event": "scoring_batch_error",
+                            "batch_idx": batch_idx,
+                            "error": str(e),
+                        }
+                    )
+                )
+                failed_records += len(batch_records)
+
+        # Check failure threshold (>50% failed)
+        if failed_records > sample_size * 0.5:
+            _store_quality_metrics(
+                job_id=job_id,
+                status=QualityStatus.FAILED,
+                sample_size=sample_size,
+                total_records=total_records,
+                error_message=f"More than 50% of records failed scoring ({failed_records}/{sample_size})",
+            )
+            return {"error": "Majority of scoring calls failed"}
+
+        # Compute aggregates
+        aggregate_scores: dict[str, float] = {}
+        for dim in QUALITY_DIMENSIONS:
+            values = [s[dim] for s in all_scores if dim in s]
+            if values:
+                aggregate_scores[dim] = sum(values) / len(values)
+
+        # Compute diversity from sampled records
+        diversity_score = _compute_diversity(sampled_records)
+
+        # Compute overall score
+        overall_score = _compute_overall_score(aggregate_scores, diversity_score)
+
+        # Compute cost
+        model_id = QUALITY_SCORING_MODEL
+        try:
+            input_cost = calculate_bedrock_cost(total_input_tokens, model_id, is_input=True)
+            output_cost = calculate_bedrock_cost(total_output_tokens, model_id, is_input=False)
+            scoring_cost = round(input_cost + output_cost, 6)
+        except (ValueError, KeyError):
+            scoring_cost = 0.0
+
+        # Format record_scores for storage
+        record_scores_items = []
+        for s in all_scores:
+            record_scores_items.append(
+                {
+                    "record_index": s.get("record_index", 0),
+                    "coherence": float(s.get("coherence", 0)),
+                    "relevance": float(s.get("relevance", 0)),
+                    "format_compliance": float(s.get("format_compliance", 0)),
+                    "detail": s.get("detail", ""),
+                }
+            )
+
+        # Store completed metrics
+        _store_quality_metrics(
+            job_id=job_id,
+            status=QualityStatus.COMPLETED,
+            sample_size=sample_size,
+            total_records=total_records,
+            aggregate_scores=aggregate_scores,
+            diversity_score=diversity_score,
+            overall_score=overall_score,
+            record_scores=record_scores_items,
+            scoring_cost=scoring_cost,
+        )
+
+        logger.info(
+            json.dumps(
+                {
+                    "event": "score_job_complete",
+                    "job_id": job_id,
+                    "overall_score": overall_score,
+                    "sample_size": sample_size,
+                    "scoring_cost": scoring_cost,
+                }
+            )
+        )
+
+        return {
+            "job_id": job_id,
+            "overall_score": overall_score,
+            "status": "COMPLETED",
+        }
+
     except Exception as e:
-        error_msg = f"Failed to load export file: {str(e)}"
-        logger.error(json.dumps({"event": "export_load_error", "job_id": job_id, "error": str(e)}))
+        logger.error(
+            json.dumps({"event": "score_job_unexpected_error", "job_id": job_id, "error": str(e)}),
+            exc_info=True,
+        )
         _store_quality_metrics(
             job_id=job_id,
             status=QualityStatus.FAILED,
             total_records=int(job.get("records_generated", 0)),
-            error_message=error_msg,
+            error_message=f"Unexpected error: {str(e)}",
         )
-        return {"error": error_msg}
-
-    if not all_records:
-        _store_quality_metrics(
-            job_id=job_id,
-            status=QualityStatus.FAILED,
-            total_records=0,
-            error_message="Export file is empty",
-        )
-        return {"error": "Export file is empty"}
-
-    total_records = len(all_records)
-
-    # Sample records
-    sample_size = min(QUALITY_SAMPLE_SIZE, total_records)
-    if total_records > sample_size:
-        sampled_records = random.sample(all_records, sample_size)
-    else:
-        sampled_records = all_records
-
-    # Fetch template for context
-    template_name = "Unknown"
-    schema_requirements: list[str] = []
-    try:
-        tmpl_response = templates_table.get_item(
-            Key={"template_id": template_id, "version": int(template_version)}
-        )
-        tmpl = tmpl_response.get("Item")
-        if tmpl:
-            template_name = tmpl.get("name", "Unknown")
-            schema_requirements = tmpl.get("schema_requirements", [])
-    except Exception as e:
-        logger.warning(json.dumps({"event": "template_fetch_warning", "error": str(e)}))
-
-    # Score in batches
-    all_scores: list[dict[str, Any]] = []
-    total_input_tokens = 0
-    total_output_tokens = 0
-    failed_records = 0
-
-    num_batches = math.ceil(sample_size / QUALITY_BATCH_SIZE)
-    for batch_idx in range(num_batches):
-        start = batch_idx * QUALITY_BATCH_SIZE
-        end = min(start + QUALITY_BATCH_SIZE, sample_size)
-        batch_records = sampled_records[start:end]
-
-        prompt = _build_scoring_prompt(batch_records, template_name, schema_requirements, start)
-
-        try:
-            scores, input_tokens, output_tokens = _invoke_bedrock_scoring(prompt)
-            total_input_tokens += input_tokens
-            total_output_tokens += output_tokens
-
-            # Add record_index to each score
-            for i, score in enumerate(scores):
-                score["record_index"] = start + i
-                all_scores.append(score)
-
-        except Exception as e:
-            logger.error(
-                json.dumps(
-                    {
-                        "event": "scoring_batch_error",
-                        "batch_idx": batch_idx,
-                        "error": str(e),
-                    }
-                )
-            )
-            failed_records += len(batch_records)
-
-    # Check failure threshold (>50% failed)
-    if failed_records > sample_size * 0.5:
-        _store_quality_metrics(
-            job_id=job_id,
-            status=QualityStatus.FAILED,
-            sample_size=sample_size,
-            total_records=total_records,
-            error_message=f"More than 50% of records failed scoring ({failed_records}/{sample_size})",
-        )
-        return {"error": "Majority of scoring calls failed"}
-
-    # Compute aggregates
-    aggregate_scores: dict[str, float] = {}
-    for dim in QUALITY_DIMENSIONS:
-        values = [s[dim] for s in all_scores if dim in s]
-        if values:
-            aggregate_scores[dim] = sum(values) / len(values)
-
-    # Compute diversity from sampled records
-    diversity_score = _compute_diversity(sampled_records)
-
-    # Compute overall score
-    overall_score = _compute_overall_score(aggregate_scores, diversity_score)
-
-    # Compute cost
-    model_id = QUALITY_SCORING_MODEL
-    try:
-        input_cost = calculate_bedrock_cost(total_input_tokens, model_id, is_input=True)
-        output_cost = calculate_bedrock_cost(total_output_tokens, model_id, is_input=False)
-        scoring_cost = round(input_cost + output_cost, 6)
-    except (ValueError, KeyError):
-        scoring_cost = 0.0
-
-    # Format record_scores for storage
-    record_scores_items = []
-    for s in all_scores:
-        record_scores_items.append(
-            {
-                "record_index": s.get("record_index", 0),
-                "coherence": float(s.get("coherence", 0)),
-                "relevance": float(s.get("relevance", 0)),
-                "format_compliance": float(s.get("format_compliance", 0)),
-                "detail": s.get("detail", ""),
-            }
-        )
-
-    # Store completed metrics
-    _store_quality_metrics(
-        job_id=job_id,
-        status=QualityStatus.COMPLETED,
-        sample_size=sample_size,
-        total_records=total_records,
-        aggregate_scores=aggregate_scores,
-        diversity_score=diversity_score,
-        overall_score=overall_score,
-        record_scores=record_scores_items,
-        scoring_cost=scoring_cost,
-    )
-
-    logger.info(
-        json.dumps(
-            {
-                "event": "score_job_complete",
-                "job_id": job_id,
-                "overall_score": overall_score,
-                "sample_size": sample_size,
-                "scoring_cost": scoring_cost,
-            }
-        )
-    )
-
-    return {
-        "job_id": job_id,
-        "overall_score": overall_score,
-        "status": "COMPLETED",
-    }
+        raise

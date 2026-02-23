@@ -60,6 +60,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Fetch job details using batch_get_item for efficiency
         job_ids = batch.get("job_ids", [])
         jobs = []
+        jobs_load_error = False
 
         if job_ids:
             table_name = os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs")
@@ -82,8 +83,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     })
             except ClientError as e:
                 logger.error(json.dumps({"event": "batch_get_jobs_error", "error": str(e)}))
-                # Return batch without job details rather than failing
-                pass
+                jobs_load_error = True
 
         # Compute live batch status from job statuses
         terminal_statuses = {"COMPLETED", "FAILED", "CANCELLED", "BUDGET_EXCEEDED"}
@@ -132,6 +132,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "sweep_config": batch.get("sweep_config", {}),
             "total_cost": round(total_cost, 4),
             "jobs": jobs,
+            "jobs_load_error": jobs_load_error,
         }
 
         return success_response(200, result, default=str)

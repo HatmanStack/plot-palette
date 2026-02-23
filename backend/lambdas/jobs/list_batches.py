@@ -51,7 +51,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         if "last_key" in params:
             try:
-                query_params["ExclusiveStartKey"] = json.loads(params["last_key"])
+                cursor = json.loads(params["last_key"])
+                if not isinstance(cursor, dict) or "batch_id" not in cursor:
+                    return error_response(400, "Invalid pagination cursor structure")
+                query_params["ExclusiveStartKey"] = cursor
             except json.JSONDecodeError:
                 return error_response(400, "Invalid last_key parameter")
 

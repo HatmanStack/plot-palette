@@ -14,6 +14,7 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from aws_clients import get_lambda_client  # noqa: E402
+from constants import QUALITY_MAX_SAMPLE  # noqa: E402
 from lambda_responses import error_response, success_response  # noqa: E402
 from utils import (  # noqa: E402
     extract_request_id,
@@ -75,6 +76,14 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 sample_size = body.get("sample_size")
             except json.JSONDecodeError:
                 pass
+
+        if sample_size is not None:
+            if not isinstance(sample_size, int) or isinstance(sample_size, bool):
+                return error_response(400, "sample_size must be an integer")
+            if sample_size < 1 or sample_size > QUALITY_MAX_SAMPLE:
+                return error_response(
+                    400, f"sample_size must be between 1 and {QUALITY_MAX_SAMPLE}"
+                )
 
         # Invoke score_job Lambda asynchronously
         payload = {"job_id": job_id}

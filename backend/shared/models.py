@@ -6,7 +6,6 @@ and cost tracking using Pydantic for validation and serialization.
 """
 
 import ipaddress
-import socket
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, NotRequired, TypedDict
@@ -411,12 +410,13 @@ class NotificationPreferences(BaseModel):
         if not hostname:
             raise ValueError("Webhook URL must have a valid hostname")
         try:
-            resolved_ip = socket.gethostbyname(hostname)
-            ip = ipaddress.ip_address(resolved_ip)
+            ip = ipaddress.ip_address(hostname)
             if ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local:
                 raise ValueError("Webhook URL must not target private or reserved IP addresses")
-        except socket.gaierror as err:
-            raise ValueError("Webhook URL hostname could not be resolved") from err
+        except ValueError as err:
+            if "must not" in str(err):
+                raise
+            # hostname is not an IP literal -- it's a DNS name, allow it
         return v
 
     def to_table_item(self) -> dict[str, Any]:

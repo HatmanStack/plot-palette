@@ -11,6 +11,9 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
+from boto3.dynamodb.conditions import Attr  # noqa: E402
+from botocore.exceptions import ClientError  # noqa: E402
+
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
@@ -106,8 +109,19 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         except ValueError as e:
             return error_response(400, str(e))
 
-        # Save to DynamoDB
-        prefs_table.put_item(Item=prefs.to_table_item())
+        # Save to DynamoDB with optimistic locking
+        expected_updated_at = existing.get("updated_at") if "Item" in existing_response else None
+        put_kwargs: dict[str, Any] = {"Item": prefs.to_table_item()}
+        if expected_updated_at:
+            put_kwargs["ConditionExpression"] = Attr("updated_at").eq(expected_updated_at)
+        else:
+            put_kwargs["ConditionExpression"] = Attr("user_id").not_exists()
+        try:
+            prefs_table.put_item(**put_kwargs)
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return error_response(409, "Preferences were modified concurrently, please retry")
+            raise
 
         logger.info(json.dumps({"event": "preferences_updated", "user_id": user_id}))
 
