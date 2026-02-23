@@ -5,9 +5,12 @@ This module defines type-safe data models for jobs, templates, checkpoints,
 and cost tracking using Pydantic for validation and serialization.
 """
 
+import ipaddress
+import socket
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, NotRequired, TypedDict
+from urllib.parse import urlparse
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -398,9 +401,22 @@ class NotificationPreferences(BaseModel):
     @field_validator("webhook_url")
     @classmethod
     def validate_webhook_url(cls, v):
-        """Webhook URL must be HTTPS if provided."""
-        if v is not None and not v.startswith("https://"):
+        """Webhook URL must be HTTPS and not target private/reserved IP ranges."""
+        if v is None:
+            return v
+        if not v.startswith("https://"):
             raise ValueError("Webhook URL must start with https://")
+        parsed = urlparse(v)
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("Webhook URL must have a valid hostname")
+        try:
+            resolved_ip = socket.gethostbyname(hostname)
+            ip = ipaddress.ip_address(resolved_ip)
+            if ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local:
+                raise ValueError("Webhook URL must not target private or reserved IP addresses")
+        except socket.gaierror as err:
+            raise ValueError("Webhook URL hostname could not be resolved") from err
         return v
 
     def to_table_item(self) -> dict[str, Any]:

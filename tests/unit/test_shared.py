@@ -47,13 +47,11 @@ from backend.shared.utils import (
     calculate_fargate_cost,
     calculate_s3_cost,
     get_nested_field,
-    set_nested_field,
     parse_etag,
     resolve_model_id,
     validate_seed_data,
     format_cost,
     format_timestamp,
-    parse_timestamp,
 )
 
 
@@ -299,15 +297,6 @@ class TestUtilityFunctions:
         assert get_nested_field(data, "author.missing") is None
         assert get_nested_field(data, "missing.field") is None
 
-    def test_set_nested_field(self):
-        """Test setting nested dictionary values."""
-        data = {}
-        set_nested_field(data, "author.name", "Jane Doe")
-        set_nested_field(data, "author.biography", "Test bio")
-
-        assert data["author"]["name"] == "Jane Doe"
-        assert data["author"]["biography"] == "Test bio"
-
     def test_parse_etag(self):
         """Test ETag parsing (quote removal)."""
         assert parse_etag('"abc123"') == "abc123"
@@ -350,17 +339,6 @@ class TestUtilityFunctions:
         dt = datetime(2025, 11, 19, 10, 30, 0)
         formatted = format_timestamp(dt)
         assert formatted == "2025-11-19T10:30:00"
-
-    def test_parse_timestamp(self):
-        """Test timestamp parsing."""
-        timestamp_str = "2025-11-19T10:30:00"
-        dt = parse_timestamp(timestamp_str)
-        assert dt.year == 2025
-        assert dt.month == 11
-        assert dt.day == 19
-        assert dt.hour == 10
-        assert dt.minute == 30
-
 
 class TestConstants:
     """Test constants are properly defined."""

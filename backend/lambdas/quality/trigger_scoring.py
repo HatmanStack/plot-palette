@@ -15,7 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from aws_clients import get_lambda_client  # noqa: E402
 from lambda_responses import error_response, success_response  # noqa: E402
-from utils import extract_request_id, set_correlation_id, setup_logger  # noqa: E402
+from utils import (  # noqa: E402
+    extract_request_id,
+    sanitize_error_message,
+    set_correlation_id,
+    setup_logger,
+)
 
 logger = setup_logger(__name__)
 
@@ -92,7 +97,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         })
 
     except KeyError as e:
-        return error_response(400, f"Missing required field: {str(e)}")
+        return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
     except Exception as e:
         logger.error(json.dumps({"event": "trigger_scoring_error", "error": str(e)}), exc_info=True)

@@ -6,6 +6,7 @@ Tests get_preferences and update_preferences Lambda handlers.
 
 import json
 import os
+from unittest.mock import patch
 
 from tests.unit.handler_import import load_handler
 
@@ -97,8 +98,9 @@ class TestUpdatePreferences:
         assert body["email_address"] == "user@example.com"
         mock_table.put_item.assert_called_once()
 
-    def test_update_preferences_webhook_https(self):
-        """PUT with https:// URL. Assert success."""
+    @patch("socket.gethostbyname", return_value="93.184.216.34")
+    def test_update_preferences_webhook_https(self, mock_dns):
+        """PUT with https:// URL resolving to public IP. Assert success."""
         mock_table = _update_mod.prefs_table
         mock_table.get_item.return_value = {}
         mock_table.put_item.return_value = {}
@@ -114,6 +116,56 @@ class TestUpdatePreferences:
         assert response["statusCode"] == 200
         body = json.loads(response["body"])
         assert body["webhook_url"] == "https://hooks.example.com/notify"
+
+    @patch("socket.gethostbyname", return_value="127.0.0.1")
+    def test_update_preferences_webhook_loopback(self, mock_dns):
+        """PUT with webhook URL resolving to loopback. Assert 400."""
+        mock_table = _update_mod.prefs_table
+        mock_table.get_item.return_value = {}
+
+        response = update_handler(
+            _make_event(
+                user_id="user-123",
+                body={"webhook_enabled": True, "webhook_url": "https://evil.com/steal"},
+            ),
+            None,
+        )
+
+        assert response["statusCode"] == 400
+        body = json.loads(response["body"])
+        assert "private" in body["error"].lower() or "reserved" in body["error"].lower()
+
+    @patch("socket.gethostbyname", return_value="169.254.169.254")
+    def test_update_preferences_webhook_metadata_endpoint(self, mock_dns):
+        """PUT with webhook URL resolving to AWS metadata endpoint. Assert 400."""
+        mock_table = _update_mod.prefs_table
+        mock_table.get_item.return_value = {}
+
+        response = update_handler(
+            _make_event(
+                user_id="user-123",
+                body={"webhook_enabled": True, "webhook_url": "https://evil.com/ssrf"},
+            ),
+            None,
+        )
+
+        assert response["statusCode"] == 400
+
+    @patch("socket.gethostbyname", return_value="10.0.0.1")
+    def test_update_preferences_webhook_private_ip(self, mock_dns):
+        """PUT with webhook URL resolving to private IP. Assert 400."""
+        mock_table = _update_mod.prefs_table
+        mock_table.get_item.return_value = {}
+
+        response = update_handler(
+            _make_event(
+                user_id="user-123",
+                body={"webhook_enabled": True, "webhook_url": "https://internal.corp/hook"},
+            ),
+            None,
+        )
+
+        assert response["statusCode"] == 400
 
     def test_update_preferences_webhook_http(self):
         """PUT with http:// URL. Assert 400."""

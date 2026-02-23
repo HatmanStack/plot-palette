@@ -60,17 +60,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     try:
         set_correlation_id(extract_request_id(event))
 
-        # Support both standard JWT auth and query param token for EventSource
-        user_id = None
         try:
             user_id = event["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]
         except (KeyError, TypeError):
-            # Fallback: token in query parameter (for EventSource which can't set headers)
-            token = (event.get("queryStringParameters") or {}).get("token")
-            if not token:
-                return error_response(401, "Authentication required")
-            # For MVP: the API Gateway authorizer handles token validation
-            # If we reach here without a JWT claim, reject
             return error_response(401, "Authentication required")
 
         job_id = event["pathParameters"]["job_id"]

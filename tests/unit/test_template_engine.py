@@ -12,14 +12,9 @@ from unittest.mock import MagicMock, patch, Mock
 from backend.ecs_tasks.worker.template_engine import TemplateEngine
 from backend.shared.template_filters import (
     random_sentence,
-    random_word,
     writing_style,
     truncate_tokens,
     extract_keywords,
-    summarize_text,
-    capitalize_first,
-    remove_markdown,
-    json_safe,
     validate_template_syntax,
 )
 
@@ -308,19 +303,6 @@ class TestCustomFilters:
         """Test random_sentence with empty input."""
         assert random_sentence("") == ""
 
-    def test_random_word(self):
-        """Test random_word filter."""
-        text = "apple banana cherry"
-        result = random_word(text)
-        assert result in ['apple', 'banana', 'cherry']
-
-    def test_random_word_multiple(self):
-        """Test random_word with count parameter."""
-        text = "one two three four five"
-        result = random_word(text, count=3)
-        words = result.split()
-        assert len(words) == 3
-
     def test_writing_style_poetic(self):
         """Test writing_style filter with poetic biography."""
         bio = "Jane Doe is a celebrated poet known for her lyrical verse."
@@ -358,45 +340,6 @@ class TestCustomFilters:
         assert isinstance(keywords, list)
         assert len(keywords) <= 3
         assert 'python' in keywords or 'programming' in keywords
-
-    def test_summarize_text(self):
-        """Test summarize_text filter."""
-        text = "First sentence. Second sentence. Third sentence. Fourth sentence."
-        result = summarize_text(text, max_sentences=2)
-        assert 'First sentence' in result
-        assert 'Second sentence' in result
-        assert 'Fourth sentence' not in result
-
-    def test_capitalize_first(self):
-        """Test capitalize_first filter."""
-        text = "first sentence. second sentence. third sentence"
-        result = capitalize_first(text)
-        assert result == "First sentence. Second sentence. Third sentence"
-
-    def test_remove_markdown(self):
-        """Test remove_markdown filter."""
-        text = "# Header\n**bold** and *italic* with `code`"
-        result = remove_markdown(text)
-        assert '#' not in result
-        assert '**' not in result
-        assert '*' not in result
-        assert '`' not in result
-        assert 'Header' in result
-        assert 'bold' in result
-
-    def test_json_safe(self):
-        """Test json_safe filter."""
-        obj = {'key': 'value', 'number': 42}
-        result = json_safe(obj)
-        assert '"key": "value"' in result
-        assert '"number": 42' in result
-
-    def test_json_safe_invalid(self):
-        """Test json_safe with non-serializable object."""
-        obj = lambda x: x  # Functions are not JSON serializable
-        result = json_safe(obj)
-        assert isinstance(result, str)
-
 
 class TestTemplateSyntaxValidation:
     """Test template syntax validation."""
@@ -449,7 +392,7 @@ class TestTemplateSyntaxValidation:
             'steps': [
                 {
                     'id': 'step1',
-                    'prompt': '{{ text | random_sentence | capitalize_first }}'
+                    'prompt': '{{ text | random_sentence | truncate_tokens(50) }}'
                 }
             ]
         }

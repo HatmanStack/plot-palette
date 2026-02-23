@@ -12,13 +12,11 @@ from backend.shared.utils import (
     generate_job_id,
     generate_template_id,
     get_nested_field,
-    set_nested_field,
     parse_etag,
     resolve_model_id,
     validate_seed_data,
     format_cost,
     format_timestamp,
-    parse_timestamp,
 )
 from backend.shared.constants import MODEL_TIERS
 
@@ -47,28 +45,6 @@ class TestNestedFieldOperations:
         }
 
         assert get_nested_field(data, "author.name") is None
-
-    def test_set_nested_field_creates_missing_dicts(self):
-        """Test that set_nested_field creates missing intermediate dicts."""
-        data = {}
-        set_nested_field(data, "author.details.name", "Jane Doe")
-
-        assert data["author"]["details"]["name"] == "Jane Doe"
-
-    def test_set_nested_field_single_level(self):
-        """Test setting top-level field."""
-        data = {}
-        set_nested_field(data, "simple", "value")
-
-        assert data["simple"] == "value"
-
-    def test_set_nested_field_overwrites_existing(self):
-        """Test that setting field overwrites existing value."""
-        data = {"author": {"name": "Old Name"}}
-        set_nested_field(data, "author.name", "New Name")
-
-        assert data["author"]["name"] == "New Name"
-
 
 class TestETagParsing:
     """Test ETag parsing."""
@@ -169,12 +145,6 @@ class TestFormatting:
         # Should be in ISO format
         assert "2025-11-19" in formatted
         assert "10:30:45" in formatted
-
-    def test_parse_timestamp_invalid_format(self):
-        """Test parsing invalid timestamp raises error."""
-        with pytest.raises(ValueError):
-            parse_timestamp("invalid-timestamp")
-
 
 class TestUUIDGeneration:
     """Test UUID generation functions."""

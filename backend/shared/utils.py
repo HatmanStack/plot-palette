@@ -12,10 +12,8 @@ import re
 import sys
 import uuid
 from datetime import datetime
-from functools import lru_cache
 from typing import Any
 
-import boto3
 from botocore.exceptions import ClientError
 
 from .constants import (
@@ -275,32 +273,6 @@ def get_nested_field(data: dict[str, Any], field_path: str) -> Any:
     return current
 
 
-def set_nested_field(data: dict[str, Any], field_path: str, value: Any) -> None:
-    """
-    Set value in nested dictionary using dot notation.
-
-    Args:
-        data: Dictionary to modify (modified in-place)
-        field_path: Path in dot notation
-        value: Value to set
-
-    Examples:
-        >>> data = {}
-        >>> set_nested_field(data, "author.name", "Jane Doe")
-        >>> data
-        {'author': {'name': 'Jane Doe'}}
-    """
-    keys = field_path.split(".")
-    current = data
-
-    for key in keys[:-1]:
-        if key not in current:
-            current[key] = {}
-        current = current[key]
-
-    current[keys[-1]] = value
-
-
 def create_presigned_url(
     bucket: str,
     key: str,
@@ -507,52 +479,6 @@ def format_timestamp(dt: datetime) -> str:
         '2025-11-19T10:30:00'
     """
     return dt.isoformat()
-
-
-def parse_timestamp(timestamp_str: str) -> datetime:
-    """
-    Parse ISO 8601 timestamp string.
-
-    Args:
-        timestamp_str: ISO 8601 formatted string
-
-    Returns:
-        datetime: Parsed datetime object
-
-    Examples:
-        >>> parse_timestamp('2025-11-19T10:30:00')
-        datetime.datetime(2025, 11, 19, 10, 30, 0)
-    """
-    return datetime.fromisoformat(timestamp_str)
-
-
-@lru_cache(maxsize=128)
-def get_aws_account_id() -> str:
-    """
-    Get AWS account ID (cached).
-
-    Returns:
-        str: AWS account ID
-
-    Raises:
-        ClientError: If unable to retrieve account ID
-    """
-    from .aws_clients import get_sts_client
-
-    sts_client = get_sts_client()
-    return sts_client.get_caller_identity()["Account"]
-
-
-@lru_cache(maxsize=128)
-def get_aws_region() -> str:
-    """
-    Get current AWS region (cached).
-
-    Returns:
-        str: AWS region name
-    """
-    session = boto3.session.Session()
-    return session.region_name or "us-east-1"
 
 
 def delete_s3_job_data(s3_client: Any, bucket: str, job_id: str, logger: Any = None) -> None:
