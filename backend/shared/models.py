@@ -12,7 +12,7 @@ from typing import Any, NotRequired, TypedDict
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .constants import BatchStatus, JobStatus
+from .constants import BatchStatus, JobStatus, QualityStatus
 
 _serializer = TypeSerializer()
 _deserializer = TypeDeserializer()
@@ -550,4 +550,112 @@ class QueueItem(BaseModel):
             timestamp=datetime.fromisoformat(timestamp_str),
             priority=int(item.get("priority", {}).get("N", "0")),
             task_arn=item.get("task_arn", {}).get("S"),
+        )
+
+
+class RecordScore(BaseModel):
+    """Quality score for a single generated record."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    record_index: int = Field(..., ge=0, description="Index of the record in the sample")
+    coherence: float = Field(..., ge=0.0, le=1.0, description="Coherence score (0.0-1.0)")
+    relevance: float = Field(..., ge=0.0, le=1.0, description="Relevance score (0.0-1.0)")
+    format_compliance: float = Field(
+        ..., ge=0.0, le=1.0, description="Format compliance score (0.0-1.0)"
+    )
+    detail: str = Field(default="", description="Brief rationale from the scoring LLM")
+
+
+class QualityMetrics(BaseModel):
+    """Quality scoring results for a completed job."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str = Field(..., description="Job identifier")
+    scored_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="When scoring was performed"
+    )
+    sample_size: int = Field(..., ge=0, description="Number of records sampled for scoring")
+    total_records: int = Field(..., ge=0, description="Total records in the job output")
+    model_used_for_scoring: str = Field(
+        ..., description="Which LLM performed the scoring"
+    )
+    aggregate_scores: dict[str, float] = Field(
+        default_factory=dict, description="Mean scores per dimension"
+    )
+    diversity_score: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Diversity score (0.0-1.0)"
+    )
+    overall_score: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Weighted average of all dimensions"
+    )
+    record_scores: list[RecordScore] = Field(
+        default_factory=list, description="Per-record scoring detail"
+    )
+    scoring_cost: float = Field(default=0.0, ge=0, description="USD cost of scoring LLM calls")
+    status: QualityStatus = Field(
+        default=QualityStatus.PENDING, description="Scoring pipeline status"
+    )
+    error_message: str | None = Field(None, description="Error message if scoring failed")
+
+    def to_table_item(self) -> dict[str, Any]:
+        """Convert to high-level DynamoDB item format (for Table.put_item)."""
+        item: dict[str, Any] = {
+            "job_id": self.job_id,
+            "scored_at": self.scored_at.isoformat(),
+            "sample_size": self.sample_size,
+            "total_records": self.total_records,
+            "model_used_for_scoring": self.model_used_for_scoring,
+            "aggregate_scores": {
+                k: Decimal(str(v)) for k, v in self.aggregate_scores.items()
+            },
+            "diversity_score": Decimal(str(self.diversity_score)),
+            "overall_score": Decimal(str(self.overall_score)),
+            "record_scores": [rs.model_dump() for rs in self.record_scores],
+            "scoring_cost": Decimal(str(self.scoring_cost)),
+            "status": self.status.value,
+        }
+        if self.error_message is not None:
+            item["error_message"] = self.error_message
+
+        # Add TTL (90 days from now)
+        ttl = int(datetime.now(UTC).timestamp() + (90 * 24 * 60 * 60))
+        item["ttl"] = ttl
+
+        return item
+
+    @classmethod
+    def from_dynamodb(cls, item: dict[str, Any]) -> "QualityMetrics":
+        """Create QualityMetrics from DynamoDB table item."""
+        aggregate_scores = {}
+        for k, v in item.get("aggregate_scores", {}).items():
+            aggregate_scores[k] = float(v)
+
+        record_scores_raw = item.get("record_scores", [])
+        record_scores = []
+        for rs in record_scores_raw:
+            record_scores.append(
+                RecordScore(
+                    record_index=int(rs["record_index"]),
+                    coherence=float(rs["coherence"]),
+                    relevance=float(rs["relevance"]),
+                    format_compliance=float(rs["format_compliance"]),
+                    detail=rs.get("detail", ""),
+                )
+            )
+
+        return cls(
+            job_id=item["job_id"],
+            scored_at=datetime.fromisoformat(item["scored_at"]),
+            sample_size=int(item["sample_size"]),
+            total_records=int(item["total_records"]),
+            model_used_for_scoring=item["model_used_for_scoring"],
+            aggregate_scores=aggregate_scores,
+            diversity_score=float(item.get("diversity_score", 0)),
+            overall_score=float(item.get("overall_score", 0)),
+            record_scores=record_scores,
+            scoring_cost=float(item.get("scoring_cost", 0)),
+            status=QualityStatus(item["status"]),
+            error_message=item.get("error_message"),
         )

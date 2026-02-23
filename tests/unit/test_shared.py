@@ -6,12 +6,17 @@ Tests models, constants, and utility functions.
 
 import pytest
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 import json
+
+from pydantic import ValidationError
 
 from backend.shared.models import (
     BatchConfig,
     JobConfig,
+    QualityMetrics,
+    RecordScore,
     TemplateDefinition,
     TemplateStep,
     CheckpointState,
@@ -28,6 +33,12 @@ from backend.shared.constants import (
     MODEL_TIERS,
     FARGATE_SPOT_PRICING,
     CHECKPOINT_INTERVAL,
+    QualityStatus,
+    QUALITY_SAMPLE_SIZE,
+    QUALITY_MAX_SAMPLE,
+    QUALITY_SCORING_MODEL,
+    QUALITY_DIMENSIONS,
+    QUALITY_WEIGHTS,
 )
 from backend.shared.utils import (
     generate_job_id,
@@ -493,6 +504,189 @@ class TestBatchConfig:
     def test_max_batch_size_constant(self):
         """Test MAX_BATCH_SIZE constant is defined."""
         assert MAX_BATCH_SIZE == 20
+
+
+class TestQualityMetrics:
+    """Test QualityMetrics and RecordScore models."""
+
+    def test_quality_metrics_creation(self):
+        """Test creating a QualityMetrics instance with all fields."""
+        metrics = QualityMetrics(
+            job_id="job-123",
+            scored_at=datetime(2025, 12, 1, 10, 0, 0),
+            sample_size=20,
+            total_records=100,
+            model_used_for_scoring="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            aggregate_scores={"coherence": 0.85, "relevance": 0.90, "format_compliance": 0.95},
+            diversity_score=0.75,
+            overall_score=0.86,
+            record_scores=[
+                RecordScore(
+                    record_index=0,
+                    coherence=0.9,
+                    relevance=0.85,
+                    format_compliance=1.0,
+                    detail="Well structured output",
+                )
+            ],
+            scoring_cost=0.05,
+            status=QualityStatus.COMPLETED,
+        )
+
+        assert metrics.job_id == "job-123"
+        assert metrics.sample_size == 20
+        assert metrics.total_records == 100
+        assert metrics.diversity_score == 0.75
+        assert metrics.overall_score == 0.86
+        assert metrics.status == QualityStatus.COMPLETED
+        assert len(metrics.record_scores) == 1
+        assert metrics.scoring_cost == 0.05
+
+    def test_quality_metrics_to_dynamodb(self):
+        """Test QualityMetrics serialization to DynamoDB table item format."""
+        metrics = QualityMetrics(
+            job_id="job-456",
+            scored_at=datetime(2025, 12, 1, 10, 0, 0),
+            sample_size=10,
+            total_records=50,
+            model_used_for_scoring="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            aggregate_scores={"coherence": 0.80},
+            diversity_score=0.70,
+            overall_score=0.78,
+            record_scores=[],
+            scoring_cost=0.03,
+            status=QualityStatus.COMPLETED,
+        )
+
+        item = metrics.to_table_item()
+
+        assert item["job_id"] == "job-456"
+        assert item["sample_size"] == 10
+        assert item["status"] == "COMPLETED"
+        assert "ttl" in item
+        assert isinstance(item["diversity_score"], Decimal)
+        assert isinstance(item["overall_score"], Decimal)
+
+    def test_quality_metrics_from_dynamodb(self):
+        """Test QualityMetrics deserialization from DynamoDB table item."""
+        item = {
+            "job_id": "job-789",
+            "scored_at": "2025-12-01T10:00:00",
+            "sample_size": 15,
+            "total_records": 80,
+            "model_used_for_scoring": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "aggregate_scores": {"coherence": Decimal("0.85"), "relevance": Decimal("0.9")},
+            "diversity_score": Decimal("0.7"),
+            "overall_score": Decimal("0.82"),
+            "record_scores": [
+                {
+                    "record_index": 0,
+                    "coherence": Decimal("0.9"),
+                    "relevance": Decimal("0.85"),
+                    "format_compliance": Decimal("1.0"),
+                    "detail": "Good",
+                }
+            ],
+            "scoring_cost": Decimal("0.04"),
+            "status": "COMPLETED",
+        }
+
+        metrics = QualityMetrics.from_dynamodb(item)
+
+        assert metrics.job_id == "job-789"
+        assert metrics.sample_size == 15
+        assert metrics.aggregate_scores["coherence"] == 0.85
+        assert metrics.diversity_score == 0.7
+        assert metrics.overall_score == 0.82
+        assert len(metrics.record_scores) == 1
+        assert metrics.record_scores[0].coherence == 0.9
+        assert metrics.status == QualityStatus.COMPLETED
+
+    def test_record_score_validation(self):
+        """Test RecordScore validates score ranges (0.0-1.0)."""
+        # Valid
+        score = RecordScore(
+            record_index=0, coherence=0.5, relevance=0.5, format_compliance=0.5
+        )
+        assert score.coherence == 0.5
+
+        # Score > 1.0 should raise
+        with pytest.raises(ValidationError):
+            RecordScore(
+                record_index=0, coherence=1.5, relevance=0.5, format_compliance=0.5
+            )
+
+        # Score < 0.0 should raise
+        with pytest.raises(ValidationError):
+            RecordScore(
+                record_index=0, coherence=-0.1, relevance=0.5, format_compliance=0.5
+            )
+
+    def test_quality_metrics_overall_score(self):
+        """Test that weighted average calculation can produce correct overall scores."""
+        # Verify QUALITY_WEIGHTS sum to 1.0
+        total_weight = sum(QUALITY_WEIGHTS.values())
+        assert total_weight == pytest.approx(1.0)
+
+        # Compute expected weighted average manually
+        scores = {"coherence": 0.8, "relevance": 0.9, "format_compliance": 1.0}
+        diversity = 0.7
+        expected = (
+            scores["coherence"] * QUALITY_WEIGHTS["coherence"]
+            + scores["relevance"] * QUALITY_WEIGHTS["relevance"]
+            + scores["format_compliance"] * QUALITY_WEIGHTS["format_compliance"]
+            + diversity * QUALITY_WEIGHTS["diversity"]
+        )
+
+        metrics = QualityMetrics(
+            job_id="job-wt",
+            sample_size=20,
+            total_records=100,
+            model_used_for_scoring="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            aggregate_scores=scores,
+            diversity_score=diversity,
+            overall_score=round(expected, 4),
+            status=QualityStatus.COMPLETED,
+        )
+
+        assert metrics.overall_score == pytest.approx(expected, abs=1e-3)
+
+    def test_quality_status_enum(self):
+        """Test QualityStatus enum has all 4 values."""
+        assert QualityStatus.PENDING == "PENDING"
+        assert QualityStatus.SCORING == "SCORING"
+        assert QualityStatus.COMPLETED == "COMPLETED"
+        assert QualityStatus.FAILED == "FAILED"
+        assert len(QualityStatus) == 4
+
+    def test_quality_constants(self):
+        """Test quality scoring constants are defined correctly."""
+        assert QUALITY_SAMPLE_SIZE == 20
+        assert QUALITY_MAX_SAMPLE == 50
+        assert QUALITY_SCORING_MODEL == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        assert "coherence" in QUALITY_DIMENSIONS
+        assert "relevance" in QUALITY_DIMENSIONS
+        assert "format_compliance" in QUALITY_DIMENSIONS
+        assert len(QUALITY_WEIGHTS) == 4
+
+    def test_quality_metrics_failed_status(self):
+        """Test QualityMetrics with FAILED status and error message."""
+        metrics = QualityMetrics(
+            job_id="job-fail",
+            sample_size=0,
+            total_records=0,
+            model_used_for_scoring="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            status=QualityStatus.FAILED,
+            error_message="Export file not found",
+        )
+
+        item = metrics.to_table_item()
+        assert item["status"] == "FAILED"
+        assert item["error_message"] == "Export file not found"
+
+        restored = QualityMetrics.from_dynamodb(item)
+        assert restored.status == QualityStatus.FAILED
+        assert restored.error_message == "Export file not found"
 
 
 if __name__ == "__main__":

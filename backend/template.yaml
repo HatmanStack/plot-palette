@@ -63,6 +63,7 @@ Globals:
         STATE_MACHINE_ARN: !Ref StateMachineArn
         NOTIFICATION_PREFERENCES_TABLE_NAME: !Ref NotificationPreferencesTable
         BATCHES_TABLE_NAME: !Ref BatchesTable
+        QUALITY_METRICS_TABLE_NAME: !Ref QualityMetricsTable
         SENDER_EMAIL: !Ref SenderEmail
         ALLOWED_ORIGIN: !Select [0, !Ref AllowedOrigins]
     LoggingConfig:
@@ -215,6 +216,23 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+
+  QualityMetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub plot-palette-QualityMetrics-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
 
   # ============================================================
   # S3 Bucket

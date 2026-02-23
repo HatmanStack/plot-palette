@@ -39,6 +39,16 @@ class BatchStatus(StrEnum):
     PARTIAL_FAILURE = "PARTIAL_FAILURE"
 
 
+# Quality Scoring Status Values
+class QualityStatus(StrEnum):
+    """Quality scoring status enumeration."""
+
+    PENDING = "PENDING"
+    SCORING = "SCORING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 # AWS Bedrock Model Pricing (per 1M tokens)
 # Source: https://aws.amazon.com/bedrock/pricing/ (as of 2025-01)
 MODEL_PRICING = {
@@ -185,3 +195,16 @@ SPOT_INTERRUPTION_SIGNAL = 15  # SIGTERM (120 seconds before termination)
 
 # Default AWS Region
 DEFAULT_AWS_REGION = "us-east-1"
+
+# Quality Scoring Configuration
+QUALITY_SAMPLE_SIZE = 20  # Default records to sample for scoring
+QUALITY_MAX_SAMPLE = 50  # Maximum allowed sample size
+QUALITY_SCORING_MODEL = "anthropic.claude-3-5-sonnet-20241022-v2:0"  # Premium model for accurate scoring
+QUALITY_DIMENSIONS = ["coherence", "relevance", "format_compliance"]
+QUALITY_WEIGHTS = {
+    "coherence": 0.35,
+    "relevance": 0.35,
+    "format_compliance": 0.15,
+    "diversity": 0.15,
+}
+QUALITY_BATCH_SIZE = 5  # Records per scoring prompt batch

@@ -76,10 +76,10 @@ Build an automated quality evaluation pipeline that scores generated data after 
    - TTL on `ttl` attribute (90 days, same as cost tracking)
 
 **Verification Checklist:**
-- [ ] QualityMetrics model serializes/deserializes correctly
-- [ ] RecordScore validates score ranges (0.0-1.0)
-- [ ] QualityStatus enum has all 4 values
-- [ ] Table has correct PK and TTL
+- [x] QualityMetrics model serializes/deserializes correctly
+- [x] RecordScore validates score ranges (0.0-1.0)
+- [x] QualityStatus enum has all 4 values
+- [x] Table has correct PK and TTL
 
 **Testing Instructions:**
 
