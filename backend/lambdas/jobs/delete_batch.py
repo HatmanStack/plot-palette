@@ -16,18 +16,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
-from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
+from utils import (
+    delete_cost_tracking_records,
+    delete_s3_job_data,
+    extract_request_id,
+    sanitize_error_message,
+    set_correlation_id,
+    setup_logger,
+)
 
 # Initialize logger
 logger = setup_logger(__name__)
 
 # Initialize AWS clients
-from aws_clients import get_dynamodb_resource, get_sfn_client
+from aws_clients import get_dynamodb_resource, get_s3_client, get_sfn_client
 
 dynamodb = get_dynamodb_resource()
 sfn_client = get_sfn_client()
+s3_client = get_s3_client()
 batches_table = dynamodb.Table(os.environ.get("BATCHES_TABLE_NAME", "plot-palette-Batches"))
 jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs"))
+cost_tracking_table = dynamodb.Table(
+    os.environ.get("COST_TRACKING_TABLE_NAME", "plot-palette-CostTracking")
+)
 
 CANCELLABLE_STATUSES = {"QUEUED", "RUNNING"}
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED", "BUDGET_EXCEEDED"}
@@ -97,6 +108,11 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     jobs_cancelled += 1
 
                 elif status in TERMINAL_STATUSES:
+                    # Clean up S3 data and cost tracking records
+                    bucket = os.environ.get("BUCKET_NAME", "")
+                    if bucket:
+                        delete_s3_job_data(s3_client, bucket, job_id, logger)
+                    delete_cost_tracking_records(cost_tracking_table, job_id, logger)
                     # Delete terminal job record
                     jobs_table.delete_item(Key={"job_id": job_id})
                     jobs_deleted += 1

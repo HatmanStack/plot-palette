@@ -553,3 +553,75 @@ def get_aws_region() -> str:
     """
     session = boto3.session.Session()
     return session.region_name or "us-east-1"
+
+
+def delete_s3_job_data(s3_client: Any, bucket: str, job_id: str, logger: Any = None) -> None:
+    """
+    Delete all S3 data for a job.
+
+    Args:
+        s3_client: Boto3 S3 client
+        bucket: S3 bucket name
+        job_id: Job identifier
+        logger: Optional logger instance
+    """
+    prefix = f"jobs/{job_id}/"
+    paginator = s3_client.get_paginator("list_objects_v2")
+
+    try:
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            if "Contents" in page:
+                objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                if objects:
+                    s3_client.delete_objects(Bucket=bucket, Delete={"Objects": objects})
+                    if logger:
+                        logger.info(
+                            f'{{"event": "s3_objects_deleted", "job_id": "{job_id}", "count": {len(objects)}}}'
+                        )
+    except ClientError as e:
+        if logger:
+            logger.error(f'{{"event": "s3_delete_error", "job_id": "{job_id}", "error": "{e}"}}')
+
+
+def delete_cost_tracking_records(cost_tracking_table: Any, job_id: str, logger: Any = None) -> None:
+    """
+    Delete all cost tracking records for a job (paginated).
+
+    Args:
+        cost_tracking_table: DynamoDB Table resource for CostTracking
+        job_id: Job identifier
+        logger: Optional logger instance
+    """
+    from boto3.dynamodb.conditions import Key as DDBKey
+
+    try:
+        deleted_count = 0
+        last_evaluated_key = None
+
+        while True:
+            query_kwargs: dict[str, Any] = {"KeyConditionExpression": DDBKey("job_id").eq(job_id)}
+            if last_evaluated_key:
+                query_kwargs["ExclusiveStartKey"] = last_evaluated_key
+
+            response = cost_tracking_table.query(**query_kwargs)
+
+            for item in response.get("Items", []):
+                cost_tracking_table.delete_item(
+                    Key={"job_id": job_id, "timestamp": item["timestamp"]}
+                )
+                deleted_count += 1
+
+            last_evaluated_key = response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+
+        if logger:
+            logger.info(
+                f'{{"event": "cost_tracking_deleted", "job_id": "{job_id}", "count": {deleted_count}}}'
+            )
+
+    except ClientError as e:
+        if logger:
+            logger.error(
+                f'{{"event": "cost_tracking_delete_error", "job_id": "{job_id}", "error": "{e}"}}'
+            )

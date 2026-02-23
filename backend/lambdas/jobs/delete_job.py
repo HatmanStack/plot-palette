@@ -16,10 +16,16 @@ from typing import Any
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
-from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
+from utils import (
+    delete_cost_tracking_records,
+    delete_s3_job_data,
+    extract_request_id,
+    sanitize_error_message,
+    set_correlation_id,
+    setup_logger,
+)
 
 # Initialize logger
 logger = setup_logger(__name__)
@@ -36,75 +42,6 @@ cost_tracking_table = dynamodb.Table(
 ecs_client = get_ecs_client()
 s3_client = get_s3_client()
 sfn_client = get_sfn_client()
-
-
-def delete_s3_job_data(bucket: str, job_id: str) -> None:
-    """
-    Delete all S3 data for a job.
-
-    Args:
-        bucket: S3 bucket name
-        job_id: Job identifier
-    """
-    prefix = f"jobs/{job_id}/"
-    paginator = s3_client.get_paginator("list_objects_v2")
-
-    try:
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            if "Contents" in page:
-                objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
-                if objects:
-                    s3_client.delete_objects(Bucket=bucket, Delete={"Objects": objects})
-                    logger.info(
-                        json.dumps(
-                            {"event": "s3_objects_deleted", "job_id": job_id, "count": len(objects)}
-                        )
-                    )
-    except ClientError as e:
-        logger.error(json.dumps({"event": "s3_delete_error", "job_id": job_id, "error": str(e)}))
-        # Don't fail the entire operation if S3 delete fails
-        pass
-
-
-def delete_cost_tracking_records(job_id: str) -> None:
-    """
-    Delete all cost tracking records for a job (paginated).
-
-    Args:
-        job_id: Job identifier
-    """
-    try:
-        deleted_count = 0
-        last_evaluated_key = None
-
-        # Paginate through all cost tracking records
-        while True:
-            query_kwargs = {"KeyConditionExpression": Key("job_id").eq(job_id)}
-            if last_evaluated_key:
-                query_kwargs["ExclusiveStartKey"] = last_evaluated_key
-
-            response = cost_tracking_table.query(**query_kwargs)
-
-            # Delete each record in this page
-            for item in response.get("Items", []):
-                cost_tracking_table.delete_item(
-                    Key={"job_id": job_id, "timestamp": item["timestamp"]}
-                )
-                deleted_count += 1
-
-            last_evaluated_key = response.get("LastEvaluatedKey")
-            if not last_evaluated_key:
-                break
-
-        logger.info(
-            json.dumps({"event": "cost_tracking_deleted", "job_id": job_id, "count": deleted_count})
-        )
-
-    except ClientError as e:
-        logger.error(
-            json.dumps({"event": "cost_tracking_delete_error", "job_id": job_id, "error": str(e)})
-        )
-        # Don't fail the entire operation
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -281,10 +218,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         else:  # COMPLETED, FAILED, CANCELLED, BUDGET_EXCEEDED
             # Delete S3 data
-            delete_s3_job_data(bucket, job_id)
+            delete_s3_job_data(s3_client, bucket, job_id, logger)
 
             # Delete cost tracking records
-            delete_cost_tracking_records(job_id)
+            delete_cost_tracking_records(cost_tracking_table, job_id, logger)
 
             # Delete job record (only if still in terminal status)
             try:

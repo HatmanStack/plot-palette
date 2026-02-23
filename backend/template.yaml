@@ -869,6 +869,10 @@ Resources:
             TableName: !Ref JobsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref QueueTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CostTrackingTable
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
         - Statement:
             - Effect: Allow
               Action:
