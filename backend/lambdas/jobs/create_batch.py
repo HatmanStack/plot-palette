@@ -16,7 +16,7 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from botocore.exceptions import ClientError
-from constants import BatchStatus, ExportFormat, JobStatus, MAX_BATCH_SIZE, MODEL_TIERS
+from constants import MAX_BATCH_SIZE, MODEL_TIERS, BatchStatus, ExportFormat, JobStatus
 from lambda_responses import error_response, success_response
 from models import BatchConfig, JobConfig
 from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger

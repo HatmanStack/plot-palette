@@ -16,11 +16,9 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from botocore.exceptions import ClientError
-from constants import MODEL_TIERS
 from lambda_responses import error_response, success_response
 from utils import (
     extract_request_id,
-    get_nested_field,
     resolve_model_id,
     sanitize_error_message,
     set_correlation_id,

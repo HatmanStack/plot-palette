@@ -6,7 +6,6 @@ import { MemoryRouter } from 'react-router-dom'
 import CreateJob from './CreateJob'
 import { ToastProvider } from '../contexts/ToastContext'
 import * as api from '../services/api'
-import type { SeedDataGenerationResult } from '../services/api'
 
 // Mock the API module
 vi.mock('../services/api', () => ({
@@ -36,7 +35,6 @@ vi.mock('react-router-dom', async () => {
 const mockCreateJob = vi.mocked(api.createJob)
 const mockGenerateUploadUrl = vi.mocked(api.generateUploadUrl)
 const mockFetchTemplateVersions = vi.mocked(api.fetchTemplateVersions)
-const mockGenerateSeedData = vi.mocked(api.generateSeedData)
 
 function createTestQueryClient() {
   return new QueryClient({

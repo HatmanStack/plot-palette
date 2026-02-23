@@ -341,7 +341,7 @@ export const BatchDetailSchema = BatchSummarySchema.extend({
   updated_at: z.string().default(''),
   template_id: z.string(),
   template_version: z.number().default(1),
-  sweep_config: z.record(z.unknown()).default({}),
+  sweep_config: z.record(z.string(), z.unknown()).default({}),
   jobs: z.array(BatchJobSchema).default([]),
 })
 
