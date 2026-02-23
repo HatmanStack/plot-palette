@@ -85,8 +85,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         max_scan_items = 1000  # Safety cap on scan
 
         while len(all_public) < max_scan_items:
+            # TODO: Replace scan with GSI query (is_public + created_at index)
             scan_kwargs: dict[str, Any] = {
                 "FilterExpression": Attr("is_public").eq(True),
+                "Limit": 100,
             }
             if scan_last_key:
                 scan_kwargs["ExclusiveStartKey"] = scan_last_key

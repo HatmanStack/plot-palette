@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from boto3.dynamodb.conditions import Key  # noqa: E402
 from botocore.exceptions import ClientError  # noqa: E402
+from constants import MODEL_PRICING  # noqa: E402
 from lambda_responses import error_response, success_response  # noqa: E402
 from utils import (  # noqa: E402
     extract_request_id,
@@ -141,19 +142,11 @@ def aggregate_by_model(all_records: list[dict[str, Any]]) -> list[dict[str, Any]
         model_data[model_id]["total"] += costs["total"]
         model_data[model_id]["job_ids"].add(record.get("job_id", ""))
 
-    # Map model IDs to friendly names
-    model_names = {
-        "anthropic.claude-3-5-sonnet-20241022-v2:0": "Claude 3.5 Sonnet",
-        "meta.llama3-1-70b-instruct-v1:0": "Llama 3.1 70B",
-        "meta.llama3-1-8b-instruct-v1:0": "Llama 3.1 8B",
-        "mistral.mistral-7b-instruct-v0:2": "Mistral 7B",
-    }
-
     return sorted(
         [
             {
                 "model_id": mid,
-                "model_name": model_names.get(mid, mid),
+                "model_name": MODEL_PRICING.get(mid, {}).get("name", mid),
                 "total": round(data["total"], 4),
                 "job_count": len(data["job_ids"]),
             }

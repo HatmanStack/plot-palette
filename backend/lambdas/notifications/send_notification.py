@@ -126,6 +126,10 @@ def _send_webhook(webhook_url: str, job: dict[str, Any], status: str, job_id: st
         }))
 
 
+def _sfn_response(body: str) -> dict[str, Any]:
+    return {"statusCode": 200, "body": body}
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for sending notifications on job terminal states.
@@ -147,7 +151,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "status": status,
                 "user_id": user_id,
             }))
-            return {"statusCode": 200, "body": "Missing input fields, skipping notification"}
+            return _sfn_response("Missing input fields, skipping notification")
 
         logger.info(json.dumps({
             "event": "send_notification_request",
@@ -163,7 +167,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "event": "no_preferences_found",
                 "user_id": user_id,
             }))
-            return {"statusCode": 200, "body": "No preferences, skipping notification"}
+            return _sfn_response("No preferences, skipping notification")
 
         prefs = prefs_response["Item"]
 
@@ -176,7 +180,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "status": status,
                 "pref_key": pref_key,
             }))
-            return {"statusCode": 200, "body": f"Notification disabled for {status}"}
+            return _sfn_response(f"Notification disabled for {status}")
 
         # Fetch job details
         job_response = jobs_table.get_item(Key={"job_id": job_id})
@@ -194,7 +198,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             if webhook_url:
                 _send_webhook(webhook_url, job, status, job_id)
 
-        return {"statusCode": 200, "body": "Notification sent"}
+        return _sfn_response("Notification sent")
 
     except Exception as e:
         # Never fail — notifications are best-effort
@@ -202,4 +206,4 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "event": "notification_error",
             "error": str(e),
         }), exc_info=True)
-        return {"statusCode": 200, "body": f"Notification error (non-fatal): {str(e)}"}
+        return _sfn_response(f"Notification error (non-fatal): {str(e)}")
