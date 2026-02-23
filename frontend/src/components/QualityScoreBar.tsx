@@ -33,6 +33,7 @@ export default function QualityScoreBar({ score, label, size = 'md' }: QualitySc
           className={`${barHeight} rounded-full transition-all duration-300 ${getScoreColor(score)}`}
           style={{ width: `${Math.min(score * 100, 100)}%` }}
           role="progressbar"
+          aria-label={`Quality ${label}: ${(score * 100).toFixed(0)}%`}
           aria-valuenow={score * 100}
           aria-valuemin={0}
           aria-valuemax={100}

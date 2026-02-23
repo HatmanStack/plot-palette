@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchTemplate } from '../services/api'
 
@@ -8,6 +9,14 @@ interface Props {
 }
 
 export default function TemplatePreview({ templateId, onClose, onFork }: Props) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   const { data: template, isLoading, error } = useQuery({
     queryKey: ['template', templateId, 'preview'],
     queryFn: () => fetchTemplate(templateId, 'latest'),

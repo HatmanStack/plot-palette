@@ -64,7 +64,12 @@ export default function VersionList({ templateId, currentVersion, onSelectVersio
           onClick={() => onSelectVersion(v.version)}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && onSelectVersion(v.version)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onSelectVersion(v.version)
+            }
+          }}
         >
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">

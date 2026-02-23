@@ -169,7 +169,7 @@ function PreferencesForm({ initialPrefs }: { initialPrefs: NotificationPreferenc
 }
 
 export default function Settings() {
-  const { data: prefs, isLoading, error } = useQuery({
+  const { data: prefs, isLoading, error, dataUpdatedAt } = useQuery({
     queryKey: ['notification-preferences'],
     queryFn: fetchNotificationPreferences,
   })
@@ -201,7 +201,7 @@ export default function Settings() {
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-xl font-semibold mb-4">Notification Preferences</h2>
         <PreferencesForm
-          key={JSON.stringify(prefs)}
+          key={dataUpdatedAt}
           initialPrefs={prefs ?? defaultPrefs}
         />
       </div>

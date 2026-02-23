@@ -45,7 +45,7 @@ export default function BatchDetail() {
   }
 
   if (isLoading) return <div className="p-8">Loading batch...</div>
-  if (error) return <div className="p-8 text-red-600">Error loading batch: {(error as Error).message}</div>
+  if (error) return <div className="p-8 text-red-600">Error loading batch: {error instanceof Error ? error.message : String(error)}</div>
   if (!batch) return <div className="p-8">Batch not found</div>
 
   const progress = batch.total_jobs > 0

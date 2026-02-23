@@ -61,7 +61,7 @@ export default function Templates() {
     mutationFn: (templateId: string) => forkTemplate(templateId),
     onSuccess: () => {
       toast('Template forked successfully', 'success')
-      queryClient.invalidateQueries({ queryKey: ['templates'] })
+      queryClient.invalidateQueries({ queryKey: ['templates', 'user'] })
       setPreviewId(null)
       setTab('mine')
     },
@@ -75,7 +75,7 @@ export default function Templates() {
     mutationFn: (templateId: string) => deleteTemplate(templateId),
     onSuccess: () => {
       toast('Template deleted', 'success')
-      queryClient.invalidateQueries({ queryKey: ['templates'] })
+      queryClient.invalidateQueries({ queryKey: ['templates', 'user'] })
     },
     onError: (err: Error) => {
       toast(err.message || 'Failed to delete template', 'error')

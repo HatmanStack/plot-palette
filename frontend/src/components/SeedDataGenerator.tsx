@@ -32,9 +32,6 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
       return
     }
 
-    setLoading(true)
-    setResult(null)
-
     try {
       let parsedExample: Record<string, unknown> | undefined
       if (exampleData.trim()) {
@@ -42,10 +39,12 @@ export default function SeedDataGenerator({ templateId, onGenerated }: SeedDataG
           parsedExample = JSON.parse(exampleData)
         } catch {
           toast('Example data must be valid JSON', 'error')
-          setLoading(false)
           return
         }
       }
+
+      setLoading(true)
+      setResult(null)
 
       const response = await generateSeedData({
         template_id: templateId,
