@@ -72,9 +72,12 @@ export default function CreateJob() {
           data.seedDataFile.name,
           data.seedDataFile.type || 'application/json'
         )
-        await axios.put(upload_url, data.seedDataFile, {
+        const uploadResponse = await fetch(upload_url, {
+          method: 'PUT',
+          body: data.seedDataFile,
           headers: { 'Content-Type': data.seedDataFile.type || 'application/json' },
         })
+        if (!uploadResponse.ok) throw new Error('Failed to upload seed data')
         s3_key = uploadedKey
       } else {
         s3_key = data.generatedS3Key

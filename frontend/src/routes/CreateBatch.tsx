@@ -99,9 +99,12 @@ export default function CreateBatch() {
             file.name,
             file.type || 'application/json'
           )
-          await axios.put(upload_url, file, {
+          const uploadResponse = await fetch(upload_url, {
+            method: 'PUT',
+            body: file,
             headers: { 'Content-Type': file.type || 'application/json' },
           })
+          if (!uploadResponse.ok) throw new Error('Failed to upload sweep file')
           paths.push(s3_key)
         }
         sweepConfig = { seed_data_path: paths }
