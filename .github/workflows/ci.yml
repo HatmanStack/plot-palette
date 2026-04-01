@@ -21,6 +21,7 @@ concurrency:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
@@ -39,6 +40,7 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
@@ -68,6 +70,7 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     env:
@@ -111,6 +114,7 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [changes, backend]
     if: needs.changes.outputs.backend == 'true'
     env:
@@ -120,15 +124,15 @@ jobs:
       AWS_ENDPOINT_URL: http://localhost:4566
       PYTHONPATH: ${{ github.workspace }}
     services:
-      localstack:
-        image: localstack/localstack:latest
+      ministack:
+        image: ministack/ministack
         ports:
           - 4566:4566
         env:
           SERVICES: dynamodb,s3,iam
           PERSISTENCE: "0"
         options: >-
-          --health-cmd="curl -f http://localhost:4566/_localstack/health"
+          --health-cmd="curl -f http://localhost:4566/_ministack/health"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=10
@@ -150,6 +154,7 @@ jobs:
   status-check:
     name: All Checks Passed
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [frontend, backend, e2e]
     if: always()
     steps:
