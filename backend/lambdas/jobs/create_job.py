@@ -164,6 +164,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         except json.JSONDecodeError:
             return error_response(400, "Invalid JSON in request body")
 
+        if not isinstance(body, dict):
+            return error_response(400, "Request body must be a JSON object")
+
         # Idempotency: use client-provided token or generate server-side
         client_idempotency_token = body.get("idempotency_token")
         idempotency_token = client_idempotency_token or str(uuid.uuid4())
@@ -213,8 +216,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Generate job ID (deterministic from idempotency token if client-provided,
         # so the conditional write on job_id makes idempotency atomic)
         if client_idempotency_token:
-            # Deterministic UUID5 from the token ensures same token -> same job_id
-            job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:{client_idempotency_token}"))
+            # Deterministic UUID5 namespaced per user ensures same user+token -> same job_id
+            job_id = str(
+                uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:{user_id}:{client_idempotency_token}")
+            )
         else:
             job_id = generate_job_id()
         now = datetime.now(UTC)
@@ -256,7 +261,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         )
                     )
                     try:
-                        existing = jobs_table.get_item(Key={"job_id": job_id})
+                        existing = jobs_table.get_item(Key={"job_id": job_id}, ConsistentRead=True)
                         if "Item" in existing:
                             item = existing["Item"]
                             # Verify ownership to prevent cross-user information leakage

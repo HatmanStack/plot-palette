@@ -189,7 +189,7 @@ class TestCreateJobIdempotency:
         import uuid
 
         token = "deterministic-token"
-        expected_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:{token}"))
+        expected_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:user-123:{token}"))
 
         self.mock_jobs_table.put_item.return_value = {}
         body = {
