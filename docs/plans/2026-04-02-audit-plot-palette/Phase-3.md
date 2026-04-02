@@ -313,9 +313,9 @@ so failures are visible during development and can be tracked in production.
 
 **Verification Checklist:**
 
-- [ ] Parse errors are logged to console.error
-- [ ] Comment explains why errors are absorbed
-- [ ] Stream continues after parse error (existing behavior preserved)
+- [x] Parse errors are logged to console.error
+- [x] Comment explains why errors are absorbed
+- [x] Stream continues after parse error (existing behavior preserved)
 
 **Testing Instructions:**
 
