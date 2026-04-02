@@ -90,6 +90,9 @@ class Worker:
     # Checkpoint every N records
     CHECKPOINT_INTERVAL = int(os.environ.get("CHECKPOINT_INTERVAL", "50"))
 
+    # Check budget every N records (reduces overhead in hot loop)
+    BUDGET_CHECK_INTERVAL = int(os.environ.get("BUDGET_CHECK_INTERVAL", "10"))
+
     # Health marker file path for Docker HEALTHCHECK
     HEALTH_FILE = Path(os.environ.get("WORKER_HEALTH_FILE", "/tmp/worker_healthy"))
 
@@ -335,8 +338,8 @@ class Worker:
                     logger.error(f"Best-effort checkpoint failed during shutdown: {e}")
                 break
 
-            # Check budget using in-memory running cost (updated after every call)
-            if running_cost >= budget_limit:
+            # Check budget every N records to reduce overhead in the hot loop
+            if (i - start_index) % self.BUDGET_CHECK_INTERVAL == 0 and running_cost >= budget_limit:
                 logger.warning(f"Budget limit reached: ${running_cost:.2f} >= ${budget_limit:.2f}")
                 raise BudgetExceededError(f"Exceeded budget limit of ${budget_limit}")
 

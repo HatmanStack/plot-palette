@@ -219,10 +219,10 @@ loop. Pre-compute cost-per-record and check budget less frequently.
 
 **Verification Checklist:**
 
-- [ ] Budget check frequency reduced (not every record)
-- [ ] Cost tracking accuracy preserved
-- [ ] Budget exceeded condition still triggers job stop
-- [ ] Test verifies budget check triggers at correct intervals
+- [x] Budget check frequency reduced (not every record)
+- [x] Cost tracking accuracy preserved
+- [x] Budget exceeded condition still triggers job stop
+- [x] Test verifies budget check triggers at correct intervals
 
 **Testing Instructions:**
 
