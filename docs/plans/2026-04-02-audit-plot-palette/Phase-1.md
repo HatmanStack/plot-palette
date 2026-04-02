@@ -222,8 +222,8 @@ pattern and document the intent.
 
 **Verification Checklist:**
 
-- [ ] Comment added explaining the cache purpose
-- [ ] No functional changes to aws_clients.py
+- [x] Comment added explaining the cache purpose
+- [x] No functional changes to aws_clients.py
 
 **Testing Instructions:**
 
