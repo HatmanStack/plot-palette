@@ -28,6 +28,14 @@ dynamodb = get_dynamodb_resource()
 jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs"))
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert a value to float, returning default on failure."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Lambda handler for GET /jobs endpoint.
@@ -103,8 +111,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "created_at": item["created_at"],
                     "updated_at": item["updated_at"],
                     "records_generated": item.get("records_generated", 0),
-                    "cost_estimate": float(item.get("cost_estimate", 0)),
-                    "budget_limit": float(item.get("budget_limit", 0)),
+                    "cost_estimate": _safe_float(item.get("cost_estimate", 0)),
+                    "budget_limit": _safe_float(item.get("budget_limit", 0)),
                 }
             )
 
