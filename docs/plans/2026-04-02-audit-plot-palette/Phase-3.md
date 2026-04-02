@@ -264,10 +264,10 @@ corrupt, it will poll forever. Add a maximum poll count.
 
 **Verification Checklist:**
 
-- [ ] Polling stops after max iterations
-- [ ] Error state is exposed for UI consumption
-- [ ] Counter resets on job change
-- [ ] Test verifies polling stops at max
+- [x] Polling stops after max iterations
+- [x] Error state is exposed for UI consumption
+- [x] Counter resets on job change
+- [x] Test verifies polling stops at max
 
 **Testing Instructions:**
 

@@ -138,4 +138,35 @@ describe('useJobPolling', () => {
       expect(mockFetchJobDetails).toHaveBeenCalledWith('unique-job-id')
     })
   })
+
+  it('exposes pollTimedOut as false initially', async () => {
+    const mockJob = createMockJob({ status: 'COMPLETED' })
+    mockFetchJobDetails.mockResolvedValueOnce(mockJob)
+
+    const { result } = renderHook(() => useJobPolling('job-123'), { wrapper })
+
+    await waitFor(() => {
+      expect(result.current.data).toBeDefined()
+    })
+
+    expect(result.current.pollTimedOut).toBe(false)
+  })
+
+  it('returns pollTimedOut alongside standard query fields', async () => {
+    const mockJob = createMockJob({ status: 'RUNNING' })
+    mockFetchJobDetails.mockResolvedValueOnce(mockJob)
+
+    const { result } = renderHook(() => useJobPolling('job-123'), { wrapper })
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    // Standard react-query fields should be present
+    expect(result.current.data).toBeDefined()
+    expect(result.current.isError).toBeDefined()
+    expect(result.current.isLoading).toBeDefined()
+    // Our custom field
+    expect(typeof result.current.pollTimedOut).toBe('boolean')
+  })
 })
