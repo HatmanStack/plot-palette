@@ -12,6 +12,7 @@ import os
 import random
 import signal
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -95,7 +96,10 @@ class Worker:
     BUDGET_CHECK_INTERVAL = int(os.environ.get("BUDGET_CHECK_INTERVAL", "10"))
 
     # Health marker file path for Docker HEALTHCHECK
-    HEALTH_FILE = Path(os.environ.get("WORKER_HEALTH_FILE", "/tmp/worker_healthy"))
+    HEALTH_FILE = Path(os.environ.get("WORKER_HEALTH_FILE", "/tmp/worker_healthy"))  # nosec B108 — container-only path
+
+    # Health heartbeat interval in seconds
+    HEALTH_HEARTBEAT_INTERVAL = int(os.environ.get("HEALTH_HEARTBEAT_INTERVAL", "30"))
 
     def __init__(self):
         self.shutdown_requested = False
@@ -103,6 +107,7 @@ class Worker:
         signal.signal(signal.SIGALRM, self.handle_alarm_timeout)
         self.template_engine = TemplateEngine()
         self._touch_health_file()
+        self._start_health_heartbeat()
         logger.info("Worker initialized")
 
     def _touch_health_file(self):
@@ -111,6 +116,21 @@ class Worker:
             self.HEALTH_FILE.touch()
         except OSError as e:
             logger.warning(f"Failed to touch health file: {e}")
+
+    def _start_health_heartbeat(self):
+        """Start a daemon thread that periodically touches the health file."""
+
+        def heartbeat():
+            while not self.shutdown_requested:
+                self._touch_health_file()
+                # Sleep in small increments so shutdown is responsive
+                for _ in range(self.HEALTH_HEARTBEAT_INTERVAL):
+                    if self.shutdown_requested:
+                        break
+                    time.sleep(1)
+
+        self._heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+        self._heartbeat_thread.start()
 
     def handle_shutdown(self, signum, frame):
         """Handle SIGTERM for Spot interruption (120 seconds to shutdown)."""

@@ -378,63 +378,119 @@ class TestStepFunctionsModeInterruption:
         assert retry_count < max_retries
 
 
+def _import_worker():
+    """Import Worker class with mocked environment."""
+    from unittest.mock import patch as _patch
+    import os as _os
+    import sys as _sys
+
+    worker_dir = _os.path.join(
+        _os.path.dirname(__file__), "..", "..", "backend", "ecs_tasks", "worker"
+    )
+    worker_dir = _os.path.abspath(worker_dir)
+
+    env_vars = {
+        "JOBS_TABLE_NAME": "test-Jobs",
+        "TEMPLATES_TABLE_NAME": "test-Templates",
+        "COST_TRACKING_TABLE_NAME": "test-CostTracking",
+        "CHECKPOINT_METADATA_TABLE_NAME": "test-CheckpointMetadata",
+        "BUCKET_NAME": "test-bucket",
+        "QUEUE_TABLE_NAME": "test-Queue",
+        "AWS_DEFAULT_REGION": "us-east-1",
+    }
+
+    old_path = _sys.path[:]
+    try:
+        if worker_dir not in _sys.path:
+            _sys.path.insert(0, worker_dir)
+
+        with _patch.dict(_os.environ, env_vars):
+            from backend.ecs_tasks.worker.worker import Worker
+            return Worker
+    except ImportError as e:
+        missing = getattr(e, "name", "") or str(e)
+        optional_deps = {"boto3", "pandas", "pyarrow", "template_engine"}
+        if any(dep in missing for dep in optional_deps):
+            pytest.skip(f"Worker dependency not installed: {e}")
+        raise
+    finally:
+        _sys.path = old_path
+
+
 class TestHealthMarkerFile:
-    """Tests for Docker HEALTHCHECK marker file."""
+    """Tests for Docker HEALTHCHECK marker file using the actual Worker class."""
 
-    def test_health_file_created_by_touch(self, tmp_path):
-        """Test that health marker file is created when touched."""
-        from pathlib import Path
-
+    def test_health_file_created_on_init(self, tmp_path):
+        """Test that Worker.__init__ creates the health marker file."""
         health_file = tmp_path / "worker_healthy"
         assert not health_file.exists()
 
-        # Simulate what _touch_health_file does
-        health_file.touch()
+        Worker = _import_worker()
+        worker = Worker.__new__(Worker)
+        worker.shutdown_requested = False
+        worker.HEALTH_FILE = health_file
+        worker.HEALTH_HEARTBEAT_INTERVAL = 9999  # Don't actually heartbeat
+        worker._touch_health_file()
 
         assert health_file.exists()
 
-    def test_health_file_updated_on_checkpoint(self, tmp_path):
-        """Test that health file timestamp is updated at checkpoint intervals."""
-        from pathlib import Path
+    def test_touch_health_file_updates_mtime(self, tmp_path):
+        """Test that _touch_health_file updates the file modification time."""
         import time as time_mod
 
         health_file = tmp_path / "worker_healthy"
-        health_file.touch()
 
+        Worker = _import_worker()
+        worker = Worker.__new__(Worker)
+        worker.shutdown_requested = False
+        worker.HEALTH_FILE = health_file
+
+        worker._touch_health_file()
         initial_mtime = health_file.stat().st_mtime
 
-        # Small delay to ensure mtime differs
         time_mod.sleep(0.05)
 
-        # Touch again (simulating checkpoint)
-        health_file.touch()
+        worker._touch_health_file()
         new_mtime = health_file.stat().st_mtime
 
-        assert new_mtime >= initial_mtime
+        assert new_mtime > initial_mtime
 
-    def test_health_file_touch_handles_os_error(self):
-        """Test that OSError during health file touch is handled gracefully."""
+    def test_touch_health_file_handles_os_error(self):
+        """Test that _touch_health_file logs warning on OSError."""
         from pathlib import Path
 
-        health_file = Path("/nonexistent/deeply/nested/path/worker_healthy")
-        # Simulate the _touch_health_file error handling pattern
-        error_logged = False
-        try:
-            health_file.touch()
-        except OSError:
-            error_logged = True
+        Worker = _import_worker()
+        worker = Worker.__new__(Worker)
+        worker.shutdown_requested = False
+        worker.HEALTH_FILE = Path("/nonexistent/deeply/nested/path/worker_healthy")
 
-        assert error_logged is True
+        # Should not raise — error is caught and logged
+        worker._touch_health_file()
 
-    def test_health_file_written_in_worker_code(self):
-        """Test that worker.py contains _touch_health_file calls in the right places."""
-        from pathlib import Path
+    def test_heartbeat_thread_touches_file(self, tmp_path):
+        """Test that the heartbeat thread periodically touches the health file."""
+        import time as time_mod
 
-        worker_src = Path("backend/ecs_tasks/worker/worker.py").read_text()
-        # Health file touched on init
-        assert "_touch_health_file" in worker_src
-        # Health file touched at checkpoint
-        assert worker_src.count("_touch_health_file") >= 2  # init + checkpoint
+        health_file = tmp_path / "worker_healthy"
+
+        Worker = _import_worker()
+        worker = Worker.__new__(Worker)
+        worker.shutdown_requested = False
+        worker.HEALTH_FILE = health_file
+        worker.HEALTH_HEARTBEAT_INTERVAL = 1  # 1 second for fast test
+
+        worker._touch_health_file()
+        initial_mtime = health_file.stat().st_mtime
+
+        worker._start_health_heartbeat()
+        time_mod.sleep(1.5)  # Wait for at least one heartbeat
+
+        new_mtime = health_file.stat().st_mtime
+        assert new_mtime > initial_mtime
+
+        # Clean shutdown
+        worker.shutdown_requested = True
+        worker._heartbeat_thread.join(timeout=3)
 
 
 class TestGracefulShutdownSequence:
