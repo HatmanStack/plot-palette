@@ -103,12 +103,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "created_at": item["created_at"],
                     "updated_at": item["updated_at"],
                     "records_generated": item.get("records_generated", 0),
-                    "cost_estimate": float(item.get("cost_estimate", 0.0))
-                    if isinstance(item.get("cost_estimate"), str)
-                    else item.get("cost_estimate", 0.0),
-                    "budget_limit": float(item["budget_limit"])
-                    if isinstance(item.get("budget_limit"), str)
-                    else item.get("budget_limit", 0.0),
+                    "cost_estimate": float(item.get("cost_estimate", 0)),
+                    "budget_limit": float(item.get("budget_limit", 0)),
                 }
             )
 
