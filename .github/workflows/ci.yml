@@ -132,6 +132,7 @@ jobs:
         env:
           SERVICES: dynamodb,s3,iam
           PERSISTENCE: "0"
+        options: --health-cmd "exit 0" --health-interval=2s --health-retries=5
     steps:
       - uses: actions/checkout@v6
 
