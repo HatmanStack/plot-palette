@@ -85,6 +85,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         all_public: list[dict[str, Any]] = []
         query_last_key = None
         max_query_items = 1000  # Safety cap
+        truncated = False
 
         while len(all_public) < max_query_items:
             query_kwargs: dict[str, Any] = {
@@ -106,6 +107,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             query_last_key = response.get("LastEvaluatedKey")
             if not query_last_key:
                 break
+
+        # Detect silent truncation
+        if len(all_public) >= max_query_items and query_last_key:
+            truncated = True
+            logger.warning(
+                json.dumps({"event": "search_results_truncated", "cap": max_query_items})
+            )
 
         # Group by template_id, keep latest version only
         template_dict: dict[str, dict[str, Any]] = {}
@@ -186,6 +194,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "templates": formatted,
             "count": len(formatted),
             "total": len(results),
+            "truncated": truncated,
         }
         if next_last_key:
             response_body["last_key"] = next_last_key
