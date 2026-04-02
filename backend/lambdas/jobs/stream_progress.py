@@ -7,6 +7,7 @@ to provide near-real-time updates.
 """
 
 import json
+import math
 import os
 import sys
 from typing import Any
@@ -27,6 +28,15 @@ dynamodb = get_dynamodb_resource()
 jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs"))
 
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "BUDGET_EXCEEDED", "CANCELLED"}
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert a value to float, returning default on failure or non-finite."""
+    try:
+        result = float(value)
+        return result if math.isfinite(result) else default
+    except (TypeError, ValueError):
+        return default
 
 
 def _build_sse_response(event_type: str | None, data: dict[str, Any]) -> dict[str, Any]:
@@ -108,8 +118,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "status": job.get("status", "UNKNOWN"),
             "records_generated": int(job.get("records_generated", 0)),
             "tokens_used": int(job.get("tokens_used", 0)),
-            "cost_estimate": float(job.get("cost_estimate", 0)),
-            "budget_limit": float(job.get("budget_limit", 0)),
+            "cost_estimate": _safe_float(job.get("cost_estimate", 0)),
+            "budget_limit": _safe_float(job.get("budget_limit", 0)),
             "updated_at": str(job.get("updated_at", "")),
         }
 
