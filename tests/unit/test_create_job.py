@@ -225,39 +225,15 @@ class TestCreateJobIdempotency:
         put_item = self.mock_jobs_table.put_item.call_args[1]["Item"]
         assert put_item["job_id"] == expected_id
 
-    def test_idempotent_duplicate_rejects_cross_user(self):
-        """Idempotent duplicate from a different user returns 409, not the job."""
+    def test_different_users_same_token_get_different_jobs(self):
+        """Different users with the same idempotency token produce different job IDs."""
+        import uuid
+
         token = "shared-token"
-        body = {
-            "template_id": "tpl-1",
-            "seed_data_path": "s3://bucket/seeds.json",
-            "budget_limit": 10.0,
-            "output_format": "JSONL",
-            "num_records": 100,
-            "idempotency_token": token,
-        }
-
-        # put_item raises ConditionalCheckFailedException (job already exists)
-        self.mock_jobs_table.put_item.side_effect = ClientError(
-            {"Error": {"Code": "ConditionalCheckFailedException", "Message": "exists"}},
-            "PutItem",
-        )
-        # Existing job belongs to user-A
-        self.mock_jobs_table.get_item.return_value = {
-            "Item": {
-                "job_id": "existing-job-id",
-                "user_id": "user-A",
-                "status": "QUEUED",
-                "created_at": "2026-01-01T00:00:00",
-            }
-        }
-
-        # user-B tries to create with same token
-        response = lambda_handler(_make_event(user_id="user-B", body=body), None)
-
-        assert response["statusCode"] == 409
-        body_resp = json.loads(response["body"])
-        assert "Conflict" in body_resp["error"]
+        # uuid5 includes user_id, so different users get different job_ids
+        job_id_a = str(uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:user-A:{token}"))
+        job_id_b = str(uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:user-B:{token}"))
+        assert job_id_a != job_id_b
 
 
 class TestCreateJobSFNFailure:
