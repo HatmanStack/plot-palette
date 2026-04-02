@@ -35,6 +35,7 @@ from shared.constants import (
     WORKER_EXIT_SUCCESS,
 )
 from shared.models import CostBreakdown, CostComponents
+from shared.retry import CircuitBreakerOpen
 from shared.utils import estimate_tokens as shared_estimate_tokens
 
 # Setup logging
@@ -393,6 +394,13 @@ class Worker:
                     batch_records = []
                     batch_number += 1
                     checkpoint["current_batch"] = batch_number
+
+            except CircuitBreakerOpen as e:
+                logger.error(f"Circuit breaker open, failing job: {str(e)}")
+                checkpoint["cost_accumulated"] = running_cost
+                checkpoint["failed_records"] = failed_records
+                self.save_checkpoint(job_id, checkpoint)
+                raise RuntimeError("Bedrock service unavailable (circuit breaker open)") from e
 
             except Exception as e:
                 logger.error(f"Error generating record {i}: {str(e)}")

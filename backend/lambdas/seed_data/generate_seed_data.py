@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
+from retry import CircuitBreakerOpen, get_circuit_breaker
 from utils import (
     calculate_bedrock_cost,
     estimate_tokens,
@@ -83,6 +84,11 @@ Output ONLY a JSON array with no other text. Each record must contain all requir
 
 def invoke_bedrock(model_id: str, prompt: str) -> str:
     """Invoke Bedrock model and return text response."""
+    # Circuit breaker: fail fast if Bedrock is unavailable
+    cb = get_circuit_breaker(f"bedrock:{model_id}")
+    if not cb.can_execute():
+        raise CircuitBreakerOpen(f"Circuit breaker 'bedrock:{model_id}' is open")
+
     if "claude" in model_id.lower():
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -102,10 +108,16 @@ def invoke_bedrock(model_id: str, prompt: str) -> str:
     else:
         request_body = {"prompt": prompt, "max_tokens": 4096}
 
-    response = bedrock_client.invoke_model(
-        modelId=model_id,
-        body=json.dumps(request_body),
-    )
+    try:
+        response = bedrock_client.invoke_model(
+            modelId=model_id,
+            body=json.dumps(request_body),
+        )
+    except Exception:
+        cb.record_failure()
+        raise
+
+    cb.record_success()
 
     response_body = json.loads(response["body"].read())
 

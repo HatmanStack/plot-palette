@@ -509,6 +509,63 @@ class TestErrorRecoveryStrategies:
             assert should_retry is False
 
 
+class TestCircuitBreakerFastFailure:
+    """Tests that circuit breaker open state causes fast failure."""
+
+    def test_circuit_breaker_open_raises_immediately(self):
+        """When circuit breaker is open, calls raise CircuitBreakerOpen."""
+        from backend.shared.retry import CircuitBreaker, CircuitBreakerOpen
+
+        cb = CircuitBreaker(failure_threshold=3, name='bedrock:test-model')
+
+        # Trip the breaker
+        for _ in range(3):
+            cb.record_failure()
+
+        assert cb.state == CircuitBreaker.OPEN
+        assert cb.can_execute() is False
+
+        # Attempting to use it should raise
+        with pytest.raises(CircuitBreakerOpen):
+            if not cb.can_execute():
+                raise CircuitBreakerOpen(f"Circuit breaker '{cb.name}' is open")
+
+    def test_circuit_breaker_opens_after_threshold_failures(self):
+        """Circuit breaker opens after exactly failure_threshold failures."""
+        from backend.shared.retry import CircuitBreaker
+
+        cb = CircuitBreaker(failure_threshold=5, name='bedrock:threshold-test')
+
+        # 4 failures should keep it closed
+        for _ in range(4):
+            cb.record_failure()
+        assert cb.state == CircuitBreaker.CLOSED
+
+        # 5th failure opens it
+        cb.record_failure()
+        assert cb.state == CircuitBreaker.OPEN
+
+    def test_circuit_breaker_recovers_after_success(self):
+        """Circuit breaker closes after a successful call in HALF_OPEN state."""
+        from backend.shared.retry import CircuitBreaker
+        import time
+
+        cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.01, name='bedrock:recovery-test')
+
+        # Trip it
+        cb.record_failure()
+        cb.record_failure()
+        assert cb.state == CircuitBreaker.OPEN
+
+        # Wait for recovery timeout
+        time.sleep(0.02)
+        assert cb.state == CircuitBreaker.HALF_OPEN
+
+        # Success closes it
+        cb.record_success()
+        assert cb.state == CircuitBreaker.CLOSED
+
+
 class TestPerModelCircuitBreaker:
     """Tests for per-model circuit breaker isolation."""
 

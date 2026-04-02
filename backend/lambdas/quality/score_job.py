@@ -30,6 +30,7 @@ from constants import (  # noqa: E402
     QUALITY_WEIGHTS,
     QualityStatus,
 )
+from retry import CircuitBreakerOpen, get_circuit_breaker  # noqa: E402
 from utils import (  # noqa: E402
     calculate_bedrock_cost,
     estimate_tokens,
@@ -102,6 +103,11 @@ def _invoke_bedrock_scoring(prompt: str) -> tuple[list[dict[str, Any]], int, int
     """Invoke Bedrock for scoring and return parsed scores plus token estimates."""
     model_id = QUALITY_SCORING_MODEL
 
+    # Circuit breaker: fail fast if Bedrock is unavailable
+    cb = get_circuit_breaker(f"bedrock:{model_id}")
+    if not cb.can_execute():
+        raise CircuitBreakerOpen(f"Circuit breaker 'bedrock:{model_id}' is open")
+
     request_body = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 4096,
@@ -109,10 +115,16 @@ def _invoke_bedrock_scoring(prompt: str) -> tuple[list[dict[str, Any]], int, int
         "temperature": 0.0,
     }
 
-    response = bedrock_client.invoke_model(
-        modelId=model_id,
-        body=json.dumps(request_body),
-    )
+    try:
+        response = bedrock_client.invoke_model(
+            modelId=model_id,
+            body=json.dumps(request_body),
+        )
+    except Exception:
+        cb.record_failure()
+        raise
+
+    cb.record_success()
 
     response_body = json.loads(response["body"].read())
     content = response_body.get("content", [])
