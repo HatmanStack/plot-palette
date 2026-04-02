@@ -626,7 +626,12 @@ def _import_worker():
 
             return worker_module, Worker
     except ImportError as e:
-        pytest.skip(f"Worker dependency not installed: {e}")
+        # Only skip for known optional third-party modules
+        missing = getattr(e, "name", "") or str(e)
+        optional_deps = {"boto3", "pandas", "pyarrow", "template_engine"}
+        if any(dep in missing for dep in optional_deps):
+            pytest.skip(f"Worker dependency not installed: {e}")
+        raise
     finally:
         sys.path = old_path
 
