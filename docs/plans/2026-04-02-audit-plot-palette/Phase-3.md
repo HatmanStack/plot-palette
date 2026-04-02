@@ -117,10 +117,10 @@ exit $EXIT_CODE
 
 **Verification Checklist:**
 
-- [ ] Entrypoint traps SIGTERM
-- [ ] SIGTERM is forwarded to the Python process
-- [ ] Exit code from Python process is preserved
-- [ ] No longer uses `exec` (which prevents signal trapping)
+- [x] Entrypoint traps SIGTERM
+- [x] SIGTERM is forwarded to the Python process
+- [x] Exit code from Python process is preserved
+- [x] No longer uses `exec` (which prevents signal trapping)
 
 **Testing Instructions:**
 
