@@ -8,7 +8,11 @@ import json
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+import pytest
+
 from tests.unit.handler_import import load_handler
+
+pytestmark = pytest.mark.unit
 
 _mod = load_handler("lambdas/jobs/stream_progress.py")
 lambda_handler = _mod.lambda_handler

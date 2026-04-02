@@ -3,7 +3,11 @@
 import json
 import logging
 
+import pytest
+
 from backend.shared.lambda_responses import CORS_HEADERS, error_response, success_response
+
+pytestmark = pytest.mark.unit
 
 
 class TestErrorResponse:

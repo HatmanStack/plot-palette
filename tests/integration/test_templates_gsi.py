@@ -9,9 +9,12 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import boto3
+import pytest
 from moto import mock_aws
 
 from tests.unit.handler_import import load_handler
+
+pytestmark = pytest.mark.integration
 
 _search_mod = load_handler("lambdas/templates/search_templates.py")
 search_handler = _search_mod.lambda_handler

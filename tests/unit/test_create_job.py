@@ -7,9 +7,12 @@ Tests SFN cascading failure handling.
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 from botocore.exceptions import ClientError
 
 from tests.unit.handler_import import load_handler
+
+pytestmark = pytest.mark.unit
 
 _mod = load_handler("lambdas/jobs/create_job.py")
 lambda_handler = _mod.lambda_handler
