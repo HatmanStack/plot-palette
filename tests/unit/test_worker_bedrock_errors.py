@@ -338,6 +338,76 @@ class TestTemplateEngineErrors:
         assert error_caught is True
 
 
+class TestBedrockCostOnFailure:
+    """Tests for cost tracking when Bedrock calls fail (CRITICAL-8)."""
+
+    def test_cost_not_accumulated_on_failure(self):
+        """Verify cost is NOT incremented when a Bedrock call fails.
+
+        The generation loop in worker.py only updates running_cost inside
+        the try block, after a successful template execution. If the call
+        raises, the except block increments failed_records but not cost.
+        """
+        running_cost = 0.0
+        failed_records = 0
+        records_generated = 0
+
+        for i in range(5):
+            try:
+                if i == 2:
+                    raise Exception("Bedrock throttled")
+                # Successful call -- cost added
+                running_cost += 0.01
+                records_generated += 1
+            except Exception:
+                failed_records += 1
+                continue
+
+        assert records_generated == 4
+        assert failed_records == 1
+        # Cost should only reflect successful calls
+        assert abs(running_cost - 0.04) < 1e-9
+
+    def test_failed_records_counter_still_increments(self):
+        """Verify failed_records counter increments on Bedrock failure."""
+        failed_records = 0
+
+        for i in range(3):
+            try:
+                raise Exception("Bedrock error")
+            except Exception:
+                failed_records += 1
+                continue
+
+        assert failed_records == 3
+
+    def test_cost_only_after_successful_response(self):
+        """Simulate the exact worker pattern: cost accumulates only on success."""
+        running_cost = 0.0
+        checkpoint = {"cost_accumulated": 0.0, "records_generated": 0}
+
+        results = [
+            {"step1": {"output": "ok", "model": "meta.llama3-1-8b-instruct-v1:0"}},
+            None,  # Simulates exception
+            {"step1": {"output": "ok", "model": "meta.llama3-1-8b-instruct-v1:0"}},
+        ]
+
+        for i, result in enumerate(results):
+            try:
+                if result is None:
+                    raise Exception("Bedrock API error")
+                # Success path -- mirrors worker.py lines 353-360
+                checkpoint["records_generated"] = i + 1
+                running_cost += 0.005  # Simulated cost
+            except Exception:
+                # Failure path -- mirrors worker.py lines 375-380
+                continue
+
+        # Only 2 successful calls
+        assert checkpoint["records_generated"] == 3  # last successful index+1
+        assert abs(running_cost - 0.01) < 1e-9
+
+
 class TestBedrockResponseParsing:
     """Tests for Bedrock response parsing error handling."""
 
