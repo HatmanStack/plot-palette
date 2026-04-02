@@ -119,7 +119,12 @@ def sanitize_error_message(error: str, max_length: int = 200) -> str:
     # Remove potential stack traces
     sanitized = re.sub(r"(?:File|Line|Traceback|at ).*", "", sanitized, flags=re.IGNORECASE)
     # Remove AWS resource identifiers (ARNs, account IDs)
-    sanitized = re.sub(r"arn:aws:[a-zA-Z0-9-]+:[a-z0-9-]*:\d{12}:[^\s]+", "[resource]", sanitized)
+    # Matches all ARN formats: arn:aws[-partition]:service:region:account:resource[/path]
+    sanitized = re.sub(
+        r"arn:aws[a-zA-Z-]*:[a-zA-Z0-9-]+:[a-zA-Z0-9-]*:\d{12}:[a-zA-Z0-9/_.:*-]+",
+        "arn:aws:***:***:***:***",
+        sanitized,
+    )
     sanitized = re.sub(r"\b\d{12}\b", "[account]", sanitized)
     # Remove potential secrets/tokens (long alphanumeric strings)
     sanitized = re.sub(r"\b[A-Za-z0-9+/=]{32,}\b", "[redacted]", sanitized)
