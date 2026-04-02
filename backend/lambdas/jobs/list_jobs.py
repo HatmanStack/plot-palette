@@ -6,6 +6,7 @@ pagination and filtering support.
 """
 
 import json
+import math
 import os
 import sys
 from typing import Any
@@ -26,6 +27,15 @@ from aws_clients import get_dynamodb_resource
 
 dynamodb = get_dynamodb_resource()
 jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs"))
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert a value to float, returning default on failure or non-finite."""
+    try:
+        result = float(value)
+        return result if math.isfinite(result) else default
+    except (TypeError, ValueError):
+        return default
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -103,12 +113,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "created_at": item["created_at"],
                     "updated_at": item["updated_at"],
                     "records_generated": item.get("records_generated", 0),
-                    "cost_estimate": float(item.get("cost_estimate", 0.0))
-                    if isinstance(item.get("cost_estimate"), str)
-                    else item.get("cost_estimate", 0.0),
-                    "budget_limit": float(item["budget_limit"])
-                    if isinstance(item.get("budget_limit"), str)
-                    else item.get("budget_limit", 0.0),
+                    "cost_estimate": _safe_float(item.get("cost_estimate", 0)),
+                    "budget_limit": _safe_float(item.get("budget_limit", 0)),
                 }
             )
 

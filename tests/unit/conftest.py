@@ -12,6 +12,28 @@ from typing import Dict, Any
 from backend.shared.constants import JobStatus
 
 
+@pytest.fixture(autouse=True)
+def _reset_circuit_breakers():
+    """Reset global circuit breakers between tests to prevent cross-test pollution.
+
+    Lambda handlers import retry via bare 'from retry import ...' which creates
+    a separate module instance from 'backend.shared.retry'. We must clear both.
+    """
+    import sys
+    from backend.shared import retry as pkg_retry
+
+    pkg_retry._circuit_breakers.clear()
+    # Also clear the bare 'retry' module if it exists (Lambda handler imports)
+    bare_retry = sys.modules.get("retry")
+    if bare_retry and hasattr(bare_retry, "_circuit_breakers"):
+        bare_retry._circuit_breakers.clear()
+    yield
+    pkg_retry._circuit_breakers.clear()
+    bare_retry = sys.modules.get("retry")
+    if bare_retry and hasattr(bare_retry, "_circuit_breakers"):
+        bare_retry._circuit_breakers.clear()
+
+
 @pytest.fixture
 def sample_job_config() -> Dict[str, Any]:
     """Sample job configuration for testing."""

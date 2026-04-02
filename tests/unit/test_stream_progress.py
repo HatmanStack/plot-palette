@@ -8,7 +8,11 @@ import json
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+import pytest
+
 from tests.unit.handler_import import load_handler
+
+pytestmark = pytest.mark.unit
 
 _mod = load_handler("lambdas/jobs/stream_progress.py")
 lambda_handler = _mod.lambda_handler
@@ -111,3 +115,93 @@ class TestStreamProgress:
         response = lambda_handler(_make_event(), None)
 
         assert response["headers"]["Cache-Control"] == "no-cache"
+
+    def test_missing_path_parameters_returns_400(self):
+        """Missing pathParameters key entirely returns 400, not 500."""
+        event = _make_event()
+        del event["pathParameters"]
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 400
+
+    def test_null_path_parameters_returns_400(self):
+        """pathParameters set to None returns 400, not 500."""
+        event = _make_event()
+        event["pathParameters"] = None
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 400
+
+    def test_missing_job_id_in_path_parameters_returns_400(self):
+        """pathParameters present but missing job_id returns 400."""
+        event = _make_event()
+        event["pathParameters"] = {}
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 400
+
+    def test_missing_jwt_claims_returns_401(self):
+        """Missing JWT claims returns 401, not 500."""
+        event = {
+            "requestContext": {"requestId": "test-req-1"},
+            "pathParameters": {"job_id": "job-456"},
+            "queryStringParameters": None,
+            "body": None,
+        }
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 401
+
+    def test_decimal_values_serialize_to_float(self):
+        """DynamoDB Decimal values are correctly converted to float in response."""
+        job = _make_job()
+        job["cost_estimate"] = Decimal("0.00123456789")
+        job["budget_limit"] = Decimal("999.99")
+        self.mock_table.get_item.return_value = {"Item": job}
+
+        response = lambda_handler(_make_event(), None)
+
+        assert response["statusCode"] == 200
+        data_line = [line for line in response["body"].split("\n") if line.startswith("data:")][0]
+        data = json.loads(data_line[5:].strip())
+        assert isinstance(data["cost_estimate"], float)
+        assert isinstance(data["budget_limit"], float)
+        assert abs(data["cost_estimate"] - 0.00123456789) < 1e-9
+        assert abs(data["budget_limit"] - 999.99) < 1e-9
+
+    def test_missing_cost_fields_default_to_zero(self):
+        """Missing cost fields default to 0.0 float, not None."""
+        job = {
+            "job_id": "job-456",
+            "user_id": "user-123",
+            "status": "QUEUED",
+            "records_generated": 0,
+            "tokens_used": 0,
+            "updated_at": "2026-01-01T00:00:00",
+        }
+        self.mock_table.get_item.return_value = {"Item": job}
+
+        response = lambda_handler(_make_event(), None)
+
+        assert response["statusCode"] == 200
+        data_line = [line for line in response["body"].split("\n") if line.startswith("data:")][0]
+        data = json.loads(data_line[5:].strip())
+        assert data["cost_estimate"] == 0.0
+        assert data["budget_limit"] == 0.0
+
+    def test_dynamodb_error_returns_500(self):
+        """DynamoDB error returns 500 with logging."""
+        from botocore.exceptions import ClientError
+
+        self.mock_table.get_item.side_effect = ClientError(
+            {"Error": {"Code": "InternalServerError", "Message": "DDB error"}},
+            "GetItem",
+        )
+
+        response = lambda_handler(_make_event(), None)
+
+        assert response["statusCode"] == 500

@@ -121,4 +121,3 @@ For each pillar scoring < 9:
 ```
 
 End your response with: `EVAL_DAY2_COMPLETE`
-

@@ -101,7 +101,7 @@ class TestForkPublicTemplate:
         assert item["template_id"] == "new-tmpl-id"
         assert item["user_id"] == "test-user-123"
         assert item["version"] == 1
-        assert item["is_public"] is False
+        assert item["is_public"] == "false"
         assert item["template_definition"] == source["template_definition"]
         assert item["schema_requirements"] == source["schema_requirements"]
 

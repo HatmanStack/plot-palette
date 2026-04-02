@@ -86,7 +86,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         try:
             s3_client.head_object(Bucket=bucket_name, Key=s3_key)
         except ClientError as e:
-            if e.response["Error"]["Code"] == "404":
+            if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
                 return error_response(404, "Export file not found - job may still be processing")
             logger.error(json.dumps({"event": "head_object_error", "error": str(e)}))
             return error_response(500, "Error checking export file")

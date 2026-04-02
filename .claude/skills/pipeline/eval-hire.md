@@ -115,4 +115,3 @@ For each pillar scoring < 9:
 ```
 
 End your response with: `EVAL_HIRE_COMPLETE`
-

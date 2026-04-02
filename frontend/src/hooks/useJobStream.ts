@@ -65,8 +65,13 @@ export function useJobStream(jobId: string): UseJobStreamResult {
         if (data.status && TERMINAL_STATUSES.has(data.status)) {
           cleanup()
         }
-      } catch {
-        // Ignore parse errors
+      } catch (e) {
+        // Parse errors are non-fatal -- stream may contain partial data
+        console.error('[useJobStream] Failed to parse SSE message:', {
+          jobId,
+          rawData: event.data,
+          error: e instanceof Error ? e.message : String(e),
+        })
       }
     }
 
@@ -77,8 +82,13 @@ export function useJobStream(jobId: string): UseJobStreamResult {
           if (!old) return old
           return { ...old, ...data }
         })
-      } catch {
-        // Ignore parse errors
+      } catch (e) {
+        // Parse errors are non-fatal -- stream may contain partial data
+        console.error('[useJobStream] Failed to parse SSE complete event:', {
+          jobId,
+          rawData: event.data,
+          error: e instanceof Error ? e.message : String(e),
+        })
       }
       cleanup()
     })

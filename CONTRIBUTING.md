@@ -66,6 +66,27 @@ cd frontend && npx vitest run src/test/someFile.test.tsx
 - **Type checker**: tsc --noEmit
 - **Test framework**: Vitest + Testing Library
 
+## Commit Messages
+
+Use [conventional commits](https://www.conventionalcommits.org/) with the format `type(scope): description`.
+
+Valid types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `perf`, `build`.
+
+### Commit Scopes
+
+| Scope | When to use |
+|-------|-------------|
+| `lambda` | Lambda handler changes |
+| `worker` | ECS worker changes |
+| `shared` | Shared module changes (models, utils, retry, etc.) |
+| `frontend` | React/TypeScript frontend changes |
+| `docker` | Dockerfile and container changes |
+| `docs` | Documentation changes |
+| `ci` | CI/CD pipeline changes |
+| `deps` | Dependency updates |
+
+Each commit should have one reason to revert. If a commit touches multiple scopes, use the most impactful scope.
+
 ## PR Process
 
 1. Branch from `main`

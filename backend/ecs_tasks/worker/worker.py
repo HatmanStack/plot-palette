@@ -12,8 +12,10 @@ import os
 import random
 import signal
 import sys
+import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -34,6 +36,7 @@ from shared.constants import (
     WORKER_EXIT_SUCCESS,
 )
 from shared.models import CostBreakdown, CostComponents
+from shared.retry import CircuitBreakerOpen
 from shared.utils import estimate_tokens as shared_estimate_tokens
 
 # Setup logging
@@ -89,12 +92,45 @@ class Worker:
     # Checkpoint every N records
     CHECKPOINT_INTERVAL = int(os.environ.get("CHECKPOINT_INTERVAL", "50"))
 
+    # Check budget every N records (reduces overhead in hot loop)
+    BUDGET_CHECK_INTERVAL = int(os.environ.get("BUDGET_CHECK_INTERVAL", "10"))
+
+    # Health marker file path for Docker HEALTHCHECK
+    HEALTH_FILE = Path(os.environ.get("WORKER_HEALTH_FILE", "/tmp/worker_healthy"))  # nosec B108 — container-only path
+
+    # Health heartbeat interval in seconds
+    HEALTH_HEARTBEAT_INTERVAL = int(os.environ.get("HEALTH_HEARTBEAT_INTERVAL", "30"))
+
     def __init__(self):
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_shutdown)
         signal.signal(signal.SIGALRM, self.handle_alarm_timeout)
         self.template_engine = TemplateEngine()
+        self._touch_health_file()
+        self._start_health_heartbeat()
         logger.info("Worker initialized")
+
+    def _touch_health_file(self):
+        """Update health marker file timestamp for Docker HEALTHCHECK."""
+        try:
+            self.HEALTH_FILE.touch()
+        except OSError as e:
+            logger.warning(f"Failed to touch health file: {e}")
+
+    def _start_health_heartbeat(self):
+        """Start a daemon thread that periodically touches the health file."""
+
+        def heartbeat():
+            while not self.shutdown_requested:
+                self._touch_health_file()
+                # Sleep in small increments so shutdown is responsive
+                for _ in range(self.HEALTH_HEARTBEAT_INTERVAL):
+                    if self.shutdown_requested:
+                        break
+                    time.sleep(1)
+
+        self._heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+        self._heartbeat_thread.start()
 
     def handle_shutdown(self, signum, frame):
         """Handle SIGTERM for Spot interruption (120 seconds to shutdown)."""
@@ -267,7 +303,17 @@ class Worker:
                 self.mark_job_budget_exceeded(job_id)
             except Exception as e:
                 logger.error(f"Error processing job {job_id}: {str(e)}", exc_info=True)
-                self.mark_job_failed(job_id, str(e))
+                try:
+                    self.mark_job_failed(job_id, str(e))
+                except Exception as mark_err:
+                    # Intentionally swallowed: re-raising here would crash the standalone
+                    # worker process without any additional benefit — the job is already
+                    # in a failure state, and the error is logged for investigation.
+                    # In SFN mode (line 297), exceptions propagate to the state machine.
+                    logger.error(
+                        f"Failed to mark job {job_id} as FAILED: {mark_err}",
+                        exc_info=True,
+                    )
 
     def generate_data(self, job):
         """Main data generation loop."""
@@ -317,8 +363,10 @@ class Worker:
                     logger.error(f"Best-effort checkpoint failed during shutdown: {e}")
                 break
 
-            # Check budget using in-memory running cost (updated after every call)
-            if running_cost >= budget_limit:
+            # Check budget — every N records normally, every record when near limit
+            budget_ratio = running_cost / budget_limit if budget_limit > 0 else 0
+            check_interval = 1 if budget_ratio >= 0.8 else self.BUDGET_CHECK_INTERVAL
+            if (i - start_index) % check_interval == 0 and running_cost >= budget_limit:
                 logger.warning(f"Budget limit reached: ${running_cost:.2f} >= ${budget_limit:.2f}")
                 raise BudgetExceededError(f"Exceeded budget limit of ${budget_limit}")
 
@@ -367,10 +415,20 @@ class Worker:
                     checkpoint["cost_accumulated"] = total_cost
                     self.save_checkpoint(job_id, checkpoint)
                     self.update_job_progress(job_id, checkpoint)
+                    self._touch_health_file()
 
                     batch_records = []
                     batch_number += 1
                     checkpoint["current_batch"] = batch_number
+
+            except CircuitBreakerOpen as e:
+                logger.error(f"Circuit breaker open, failing job: {str(e)}")
+                if batch_records:
+                    self.save_batch(job_id, batch_number, batch_records)
+                checkpoint["cost_accumulated"] = running_cost
+                checkpoint["failed_records"] = failed_records
+                self.save_checkpoint(job_id, checkpoint)
+                raise RuntimeError("Bedrock service unavailable (circuit breaker open)") from e
 
             except Exception as e:
                 logger.error(f"Error generating record {i}: {str(e)}")
@@ -621,8 +679,7 @@ class Worker:
 
         except Exception as e:
             logger.error(f"Error calculating cost: {str(e)}", exc_info=True)
-            # Fail open to avoid blocking generation
-            return 0.0
+            raise
 
     def _calculate_bedrock_cost(self, tokens: int, model_id: str) -> float:
         """Calculate Bedrock cost for a token count assuming 40/60 input/output split."""

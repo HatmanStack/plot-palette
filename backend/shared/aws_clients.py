@@ -34,6 +34,7 @@ _bedrock_config = Config(
 )
 
 
+# Cache for Lambda warm starts -- same container may handle multiple invocations
 @lru_cache(maxsize=1)
 def get_dynamodb_resource(region_name: str | None = None):
     """

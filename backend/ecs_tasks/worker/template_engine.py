@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from typing import TYPE_CHECKING, Any
 
 import jinja2
@@ -29,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 class TemplateEngine:
     """Template engine for rendering and executing multi-step templates."""
+
+    RENDER_TIMEOUT_SECONDS = 5
 
     def __init__(self, dynamodb_client=None):
         """
@@ -83,7 +86,7 @@ class TemplateEngine:
         """
         if not self.templates_table:
             logger.error("DynamoDB template loader not configured")
-            return f"<!-- Template loader not configured: {template_name} -->"
+            raise ValueError(f"Template loader not configured: {template_name}")
 
         try:
             response = self.templates_table.get_item(
@@ -91,8 +94,8 @@ class TemplateEngine:
             )
 
             if "Item" not in response:
-                logger.warning(f"Template not found for include: {template_name}")
-                return f"<!-- Template not found: {template_name} -->"
+                logger.error(f"Template not found: {template_name}")
+                raise ValueError(f"Template not found: {template_name}")
 
             template_item = response["Item"]
             steps = template_item.get("template_definition", {}).get("steps", [])
@@ -113,10 +116,11 @@ class TemplateEngine:
             logger.info(f"Loaded template for include: {template_name}")
             return result
 
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Error loading template {template_name}: {str(e)}", exc_info=True)
-            # Sanitize error to prevent information leakage in rendered output
-            return f"<!-- Error loading template {template_name} -->"
+            raise ValueError(f"Error loading template {template_name}: {e}") from e
 
     @staticmethod
     def _find_referenced_steps(prompt_text: str) -> set[str]:
@@ -124,12 +128,40 @@ class TemplateEngine:
         return set(re.findall(r"steps\.(\w+)\.output", prompt_text))
 
     def render_step(self, step_def: dict[str, Any], context: dict[str, Any]) -> str:
-        """Render a single template step with context."""
+        """Render a single template step with context, with timeout protection."""
         prompt = step_def.get("prompt", "")
         if not prompt:
             logger.warning(f"Step '{step_def.get('id', 'unknown')}' has empty or missing prompt")
         template = self.env.from_string(prompt)
-        return template.render(**context)
+
+        result: list[str] = []
+        error: list[Exception] = []
+
+        def _render():
+            try:
+                result.append(template.render(**context))
+            except Exception as e:
+                error.append(e)
+
+        render_thread = threading.Thread(target=_render, daemon=True)
+        render_thread.start()
+        render_thread.join(timeout=self.RENDER_TIMEOUT_SECONDS)
+
+        if render_thread.is_alive():
+            step_id = step_def.get("id", "unknown")
+            logger.error(
+                f"Template render timed out after {self.RENDER_TIMEOUT_SECONDS}s "
+                f"for step '{step_id}'"
+            )
+            raise TimeoutError(
+                f"Template render timed out after {self.RENDER_TIMEOUT_SECONDS}s "
+                f"for step '{step_id}'"
+            )
+
+        if error:
+            raise error[0]
+
+        return result[0] if result else ""
 
     def execute_template(
         self,

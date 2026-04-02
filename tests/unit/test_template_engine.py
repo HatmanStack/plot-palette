@@ -400,6 +400,113 @@ class TestTemplateSyntaxValidation:
         assert is_valid is True
 
 
+class TestMissingTemplateHandling:
+    """Test that missing templates raise exceptions instead of HTML comments (HIGH-7)."""
+
+    def test_missing_template_raises_error(self):
+        """load_template_string should raise ValueError for missing templates."""
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}  # No 'Item' key
+
+        mock_dynamodb = MagicMock()
+        engine = TemplateEngine(dynamodb_client=mock_dynamodb)
+        engine.templates_table = mock_table
+
+        with pytest.raises(ValueError, match="Template not found"):
+            engine.load_template_string("nonexistent-template")
+
+    def test_missing_template_does_not_return_html_comment(self):
+        """Ensure no HTML comments are returned for missing templates."""
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+
+        mock_dynamodb = MagicMock()
+        engine = TemplateEngine(dynamodb_client=mock_dynamodb)
+        engine.templates_table = mock_table
+
+        try:
+            result = engine.load_template_string("missing")
+            # If it doesn't raise, it should NOT contain HTML comments
+            assert "<!--" not in (result or "")
+        except ValueError:
+            pass  # Expected behavior after fix
+
+    def test_missing_template_error_includes_template_id(self):
+        """Error message should include the template identifier."""
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+
+        mock_dynamodb = MagicMock()
+        engine = TemplateEngine(dynamodb_client=mock_dynamodb)
+        engine.templates_table = mock_table
+
+        with pytest.raises(ValueError, match="my-template-id"):
+            engine.load_template_string("my-template-id")
+
+    def test_unconfigured_loader_raises_error(self):
+        """load_template_string should raise when DynamoDB is not configured."""
+        engine = TemplateEngine()
+        engine.templates_table = None
+
+        with pytest.raises(ValueError, match="Template loader not configured"):
+            engine.load_template_string("some-template")
+
+
+class TestTemplateRenderTimeout:
+    """Test that template rendering has a timeout (HIGH-7, MEDIUM-17)."""
+
+    def test_render_has_timeout_attribute(self):
+        """TemplateEngine should have a render timeout configured."""
+        engine = TemplateEngine()
+        assert hasattr(engine, 'RENDER_TIMEOUT_SECONDS')
+        assert engine.RENDER_TIMEOUT_SECONDS > 0
+
+    def test_slow_render_raises_timeout_error(self):
+        """A template that takes too long should raise TimeoutError."""
+        import time
+
+        engine = TemplateEngine()
+        # Override timeout to be very short for testing
+        engine.RENDER_TIMEOUT_SECONDS = 0.1
+
+        # Mock the Jinja2 template render to simulate a slow operation
+        original_from_string = engine.env.from_string
+
+        def slow_from_string(source):
+            template = original_from_string(source)
+            original_render = template.render
+
+            def slow_render(**kwargs):
+                time.sleep(1)  # Sleep longer than timeout
+                return original_render(**kwargs)
+
+            template.render = slow_render
+            return template
+
+        engine.env.from_string = slow_from_string
+
+        step_def = {
+            'id': 'slow',
+            'prompt': 'Hello {{ name }}'
+        }
+        context = {'name': 'World'}
+
+        with pytest.raises(TimeoutError):
+            engine.render_step(step_def, context)
+
+    def test_fast_render_succeeds(self):
+        """Normal templates render without timeout."""
+        engine = TemplateEngine()
+        step_def = {
+            'id': 'fast',
+            'prompt': 'Hello {{ name }}'
+        }
+        context = {'name': 'World'}
+
+        result = engine.render_step(step_def, context)
+        assert result == 'Hello World'
+
+
 class TestSandboxedEnvironment:
     """Test that template engine uses SandboxedEnvironment."""
 

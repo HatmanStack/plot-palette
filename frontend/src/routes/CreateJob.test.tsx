@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -15,12 +15,14 @@ vi.mock('../services/api', () => ({
   generateSeedData: vi.fn(),
 }))
 
-// Mock axios for S3 upload
-vi.mock('axios', () => ({
-  default: {
-    put: vi.fn(),
-  },
-}))
+// Mock fetch for S3 upload (CreateJob uses native fetch for presigned URL uploads)
+const originalFetch = globalThis.fetch
+beforeEach(() => {
+  globalThis.fetch = vi.fn().mockResolvedValue({ ok: true })
+})
+afterEach(() => {
+  globalThis.fetch = originalFetch
+})
 
 // Mock react-router-dom's useNavigate
 const mockNavigate = vi.fn()

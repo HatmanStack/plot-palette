@@ -106,7 +106,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             template = response["Item"]
 
         # Authorization check - only owner or public templates can be accessed
-        if template["user_id"] != user_id and not template.get("is_public", False):
+        if (
+            template["user_id"] != user_id
+            and str(template.get("is_public", "false")).lower() != "true"
+        ):
             logger.warning(
                 json.dumps(
                     {

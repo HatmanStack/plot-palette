@@ -72,7 +72,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Authorization check: use first item (all versions share same user_id)
         first = items[0]
-        if first["user_id"] != user_id and not first.get("is_public", False):
+        if first["user_id"] != user_id and str(first.get("is_public", "false")).lower() != "true":
             logger.warning(
                 json.dumps(
                     {

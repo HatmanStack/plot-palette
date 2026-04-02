@@ -7,6 +7,7 @@ to provide near-real-time updates.
 """
 
 import json
+import math
 import os
 import sys
 from typing import Any
@@ -27,6 +28,15 @@ dynamodb = get_dynamodb_resource()
 jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs"))
 
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "BUDGET_EXCEEDED", "CANCELLED"}
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert a value to float, returning default on failure or non-finite."""
+    try:
+        result = float(value)
+        return result if math.isfinite(result) else default
+    except (TypeError, ValueError):
+        return default
 
 
 def _build_sse_response(event_type: str | None, data: dict[str, Any]) -> dict[str, Any]:
@@ -65,7 +75,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         except (KeyError, TypeError):
             return error_response(401, "Authentication required")
 
-        job_id = event["pathParameters"]["job_id"]
+        try:
+            job_id = event["pathParameters"]["job_id"]
+        except (KeyError, TypeError):
+            return error_response(400, "Missing required field: job_id")
 
         logger.info(
             json.dumps(
@@ -98,22 +111,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
             return error_response(403, "Access denied - you do not own this job")
 
-        # Build progress data
-        cost_estimate = job.get("cost_estimate", 0)
-        if hasattr(cost_estimate, "__float__"):
-            cost_estimate = float(cost_estimate)
-
-        budget_limit = job.get("budget_limit", 0)
-        if hasattr(budget_limit, "__float__"):
-            budget_limit = float(budget_limit)
-
+        # Build progress data with explicit Decimal-to-float conversion
+        # DynamoDB returns numeric values as Decimal; convert to float for JSON
         progress_data = {
             "job_id": job_id,
             "status": job.get("status", "UNKNOWN"),
             "records_generated": int(job.get("records_generated", 0)),
             "tokens_used": int(job.get("tokens_used", 0)),
-            "cost_estimate": cost_estimate,
-            "budget_limit": budget_limit,
+            "cost_estimate": _safe_float(job.get("cost_estimate", 0)),
+            "budget_limit": _safe_float(job.get("budget_limit", 0)),
             "updated_at": str(job.get("updated_at", "")),
         }
 

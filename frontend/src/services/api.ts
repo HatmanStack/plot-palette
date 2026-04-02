@@ -3,14 +3,9 @@ import { getIdToken } from './auth'
 
 const BASE_URL = import.meta.env.VITE_API_ENDPOINT
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
-  try {
-    const token = await getIdToken()
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  } catch (error) {
-    console.error('Failed to get auth token:', error)
-    return {}
-  }
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getIdToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 async function request<T>(
@@ -18,26 +13,42 @@ async function request<T>(
   options: RequestInit = {},
   params?: Record<string, string | number | boolean | undefined>
 ): Promise<T> {
-  const url = new URL(`${BASE_URL}${path}`)
-  if (params) {
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
-        url.searchParams.append(key, String(value))
-      }
+  let response: Response
+  try {
+    const url = new URL(`${BASE_URL}${path}`)
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          url.searchParams.append(key, String(value))
+        }
+      })
+    }
+
+    const authHeaders = await getAuthHeaders()
+    const headers = {
+      'Content-Type': 'application/json',
+      ...authHeaders,
+      ...options.headers,
+    }
+
+    response = await fetch(url.toString(), {
+      ...options,
+      headers,
     })
+  } catch (error) {
+    // Network-level errors: no response received at all
+    if (error instanceof TypeError) {
+      // TypeError indicates network failure (no connection, CORS pre-flight failure, DNS)
+      throw new Error('Network error: unable to reach the server. Check your connection.')
+    }
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Request timed out. Please try again.')
+    }
+    // Re-throw any other unexpected errors
+    throw new Error(
+      `Network error: ${error instanceof Error ? error.message : 'unknown error'}`
+    )
   }
-
-  const authHeaders = await getAuthHeaders()
-  const headers = {
-    'Content-Type': 'application/json',
-    ...authHeaders,
-    ...options.headers,
-  }
-
-  const response = await fetch(url.toString(), {
-    ...options,
-    headers,
-  })
 
   if (response.status === 401 || response.status === 403) {
     window.location.href = '/login'

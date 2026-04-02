@@ -12,7 +12,9 @@ from typing import Any
 
 _allowed_origin = os.environ.get("ALLOWED_ORIGIN")
 if not _allowed_origin:
-    logging.getLogger(__name__).warning("ALLOWED_ORIGIN not set, defaulting to 'null'")
+    logging.getLogger(__name__).error(
+        "ALLOWED_ORIGIN not set, defaulting to 'null' — all CORS requests will fail"
+    )
     _allowed_origin = "null"
 
 CORS_HEADERS = {
@@ -35,7 +37,7 @@ def error_response(status_code: int, message: str) -> dict[str, Any]:
     return {
         "statusCode": status_code,
         "headers": CORS_HEADERS.copy(),
-        "body": json.dumps({"error": message}),
+        "body": json.dumps({"error": message}, default=str),
     }
 
 

@@ -13,7 +13,7 @@ from typing import Any
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from lambda_responses import error_response, success_response
 from utils import extract_request_id, sanitize_error_message, set_correlation_id, setup_logger
@@ -66,29 +66,32 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         all_templates = user_templates.copy()
 
-        # Get public templates if requested (paginated with cap)
-        # TODO: Add GSI on is_public for better performance at scale
+        # Get public templates if requested (using GSI query)
         if include_public:
             max_public = 100
             try:
                 public_templates: list[Any] = []
                 last_key = None
                 while len(public_templates) < max_public:
-                    scan_kwargs: dict[str, Any] = {
-                        "FilterExpression": Attr("is_public").eq(True)
-                        & Attr("user_id").ne(user_id),
+                    query_kwargs: dict[str, Any] = {
+                        "IndexName": "is_public-created_at-index",
+                        "KeyConditionExpression": Key("is_public").eq("true"),
+                        "ScanIndexForward": False,  # Newest first
                     }
                     if last_key:
-                        scan_kwargs["ExclusiveStartKey"] = last_key
-                    public_response = templates_table.scan(**scan_kwargs)
-                    public_templates.extend(public_response.get("Items", []))
+                        query_kwargs["ExclusiveStartKey"] = last_key
+                    public_response = templates_table.query(**query_kwargs)
+                    # Filter out current user's templates client-side
+                    for item in public_response.get("Items", []):
+                        if item.get("user_id") != user_id:
+                            public_templates.append(item)
                     last_key = public_response.get("LastEvaluatedKey")
                     if not last_key:
                         break
                 all_templates.extend(public_templates[:max_public])
             except ClientError as e:
-                logger.error(json.dumps({"event": "scan_public_templates_error", "error": str(e)}))
-                # Continue with just user templates if public scan fails
+                logger.error(json.dumps({"event": "query_public_templates_error", "error": str(e)}))
+                # Continue with just user templates if public query fails
                 pass
 
         # Group by template_id and keep only latest version
@@ -111,7 +114,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "version": template.get("version", 1),
                     "name": template["name"],
                     "user_id": template["user_id"],
-                    "is_public": template.get("is_public", False),
+                    "is_public": str(template.get("is_public", "false")).lower() == "true",
                     "is_owner": template["user_id"] == user_id,
                     "schema_requirements": template.get("schema_requirements", []),
                     "created_at": template["created_at"],

@@ -87,7 +87,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         source = items[0]
 
         # Authorization: must be public or owned by the user
-        if not source.get("is_public", False) and source.get("user_id") != user_id:
+        if (
+            str(source.get("is_public", "false")).lower() != "true"
+            and source.get("user_id") != user_id
+        ):
             logger.warning(
                 json.dumps(
                     {
@@ -113,7 +116,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "template_definition": source.get("template_definition", {}),
             "schema_requirements": source.get("schema_requirements", []),
             "description": source.get("description", ""),
-            "is_public": False,
+            "is_public": "false",
             "created_at": now,
         }
 

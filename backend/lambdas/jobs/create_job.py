@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 import uuid
 
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from constants import ExportFormat, JobStatus
 from lambda_responses import error_response, success_response
@@ -160,48 +160,21 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Parse request body
         try:
-            body = json.loads(event["body"])
-        except json.JSONDecodeError:
+            body = json.loads(event.get("body") or "{}")
+        except (json.JSONDecodeError, TypeError):
             return error_response(400, "Invalid JSON in request body")
 
-        # Check idempotency token (generate server-side if client doesn't provide one)
-        idempotency_token = body.get("idempotency_token") or str(uuid.uuid4())
-        if body.get("idempotency_token"):
-            try:
-                existing = jobs_table.query(
-                    IndexName="user-id-index",
-                    KeyConditionExpression=Key("user_id").eq(user_id),
-                    FilterExpression=Attr("idempotency_token").eq(idempotency_token),
-                )
-                if existing.get("Items"):
-                    item = existing["Items"][0]
-                    logger.info(
-                        json.dumps(
-                            {
-                                "event": "idempotent_job_returned",
-                                "job_id": item["job_id"],
-                                "idempotency_token": idempotency_token,
-                            }
-                        )
-                    )
-                    return success_response(
-                        200,
-                        {
-                            "job_id": item["job_id"],
-                            "status": item["status"],
-                            "created_at": item.get("created_at", ""),
-                            "message": "Existing job returned (idempotent)",
-                        },
-                    )
-            except ClientError as e:
-                logger.warning(
-                    json.dumps(
-                        {
-                            "event": "idempotency_check_failed",
-                            "error": str(e),
-                        }
-                    )
-                )
+        if not isinstance(body, dict):
+            return error_response(400, "Request body must be a JSON object")
+
+        # Idempotency: use client-provided token or generate server-side
+        client_idempotency_token = None
+        if "idempotency_token" in body:
+            token_value = body["idempotency_token"]
+            if not isinstance(token_value, str) or not token_value.strip():
+                return error_response(400, "idempotency_token must be a non-empty string")
+            client_idempotency_token = token_value.strip()
+        idempotency_token = client_idempotency_token or str(uuid.uuid4())
 
         # Validate configuration
         is_valid, error_msg = validate_job_config(body)
@@ -245,8 +218,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Store resolved version in config for reproducibility
         body["template_version"] = template_version
 
-        # Generate job ID
-        job_id = generate_job_id()
+        # Generate job ID (deterministic from idempotency token if client-provided,
+        # so the conditional write on job_id makes idempotency atomic)
+        if client_idempotency_token:
+            # Deterministic UUID5 namespaced per user ensures same user+token -> same job_id
+            job_id = str(
+                uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:{user_id}:{client_idempotency_token}")
+            )
+        else:
+            job_id = generate_job_id()
         now = datetime.now(UTC)
 
         # Create job record
@@ -274,6 +254,43 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                if client_idempotency_token:
+                    # Idempotent duplicate: fetch and return the existing job
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "idempotent_job_returned",
+                                "job_id": job_id,
+                                "idempotency_token": idempotency_token,
+                            }
+                        )
+                    )
+                    try:
+                        existing = jobs_table.get_item(Key={"job_id": job_id}, ConsistentRead=True)
+                        if "Item" in existing:
+                            item = existing["Item"]
+                            # Verify ownership to prevent cross-user information leakage
+                            if item.get("user_id") != user_id:
+                                return error_response(409, "Conflict: Job ID already exists")
+                            return success_response(
+                                200,
+                                {
+                                    "job_id": item["job_id"],
+                                    "status": item.get("status", ""),
+                                    "created_at": str(item.get("created_at", "")),
+                                    "message": "Existing job returned (idempotent)",
+                                },
+                            )
+                    except ClientError as fetch_err:
+                        logger.warning(
+                            json.dumps(
+                                {
+                                    "event": "idempotent_fetch_failed",
+                                    "job_id": job_id,
+                                    "error": str(fetch_err),
+                                }
+                            )
+                        )
                 logger.warning(
                     json.dumps(
                         {
@@ -301,12 +318,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Start Step Functions execution for the job
         try:
             execution_arn = start_job_execution(job_id, user_id)
-            # Store execution ARN on job record
-            jobs_table.update_item(
-                Key={"job_id": job_id},
-                UpdateExpression="SET execution_arn = :arn",
-                ExpressionAttributeValues={":arn": execution_arn},
-            )
         except Exception as e:
             logger.error(
                 json.dumps(
@@ -317,28 +328,53 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     }
                 )
             )
-            # Mark job as failed so it doesn't stay QUEUED with no execution
+            # Mark job as FAILED so it doesn't stay QUEUED with no execution
             try:
                 jobs_table.update_item(
                     Key={"job_id": job_id},
                     UpdateExpression="SET #s = :failed, updated_at = :now, error_message = :err",
+                    ConditionExpression="#s = :queued",
                     ExpressionAttributeNames={"#s": "status"},
                     ExpressionAttributeValues={
                         ":failed": "FAILED",
+                        ":queued": "QUEUED",
                         ":now": datetime.now(UTC).isoformat(),
                         ":err": "Failed to start job execution",
                     },
                 )
-            except ClientError:
+            except ClientError as update_err:
                 logger.error(
                     json.dumps(
                         {
                             "event": "sfn_failure_status_update_failed",
                             "job_id": job_id,
+                            "sfn_error": str(e),
+                            "update_error": str(update_err),
                         }
                     )
                 )
+                return error_response(500, "Job created but may be in inconsistent state")
             return error_response(500, "Job created but failed to start execution")
+
+        # Persist execution ARN (separate from SFN start — don't mark FAILED if only this fails)
+        try:
+            jobs_table.update_item(
+                Key={"job_id": job_id},
+                UpdateExpression="SET execution_arn = :arn",
+                ExpressionAttributeValues={":arn": execution_arn},
+            )
+        except ClientError as arn_err:
+            logger.error(
+                json.dumps(
+                    {
+                        "event": "arn_persistence_failed",
+                        "job_id": job_id,
+                        "execution_arn": execution_arn,
+                        "error": str(arn_err),
+                    }
+                )
+            )
+            # Job and SFN execution exist — ARN just isn't persisted. Not fatal.
 
         return success_response(
             201,
@@ -354,6 +390,32 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))
         return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
+    except ValueError as e:
+        logger.error(json.dumps({"event": "validation_error", "error": str(e)}))
+        return error_response(400, f"Validation error: {sanitize_error_message(str(e))}")
+
+    except ClientError as e:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "aws_service_error",
+                    "error_code": e.response["Error"]["Code"],
+                    "error": sanitize_error_message(str(e)),
+                }
+            ),
+            exc_info=True,
+        )
+        return error_response(500, "AWS service error")
+
     except Exception as e:
-        logger.error(json.dumps({"event": "unexpected_error", "error": str(e)}), exc_info=True)
+        logger.error(
+            json.dumps(
+                {
+                    "event": "unexpected_error",
+                    "exception_class": type(e).__name__,
+                    "error": str(e),
+                }
+            ),
+            exc_info=True,
+        )
         return error_response(500, "Internal server error")

@@ -140,6 +140,10 @@ Resources:
           AttributeType: N
         - AttributeName: user_id
           AttributeType: S
+        - AttributeName: is_public
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
       KeySchema:
         - AttributeName: template_id
           KeyType: HASH
@@ -152,6 +156,14 @@ Resources:
           KeySchema:
             - AttributeName: user_id
               KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: is_public-created_at-index
+          KeySchema:
+            - AttributeName: is_public
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
           Projection:
             ProjectionType: ALL
 

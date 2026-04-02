@@ -98,7 +98,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return error_response(500, "Error retrieving template")
 
         # Check ownership or public access
-        if template["user_id"] != user_id and not template.get("is_public", False):
+        if (
+            template["user_id"] != user_id
+            and str(template.get("is_public", "false")).lower() != "true"
+        ):
             return error_response(403, "Access denied to this template")
 
         # Build export data structure
@@ -110,7 +113,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "category": template.get("category", "general"),
                 "version": template.get("version", 1),
                 "schema_requirements": template.get("schema_requirements", []),
-                "is_public": template.get("is_public", False),
+                "is_public": str(template.get("is_public", "false")).lower() == "true",
                 "steps": template["template_definition"].get("steps", []),
             }
         }

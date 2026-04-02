@@ -70,4 +70,3 @@ export const authErrors = {
   passwordRequirements: new Error('Password does not conform to policy'),
   usernameExists: new Error('User already exists'),
 }
-

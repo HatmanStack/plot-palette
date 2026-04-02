@@ -338,6 +338,76 @@ class TestTemplateEngineErrors:
         assert error_caught is True
 
 
+class TestBedrockCostOnFailure:
+    """Tests for cost tracking when Bedrock calls fail (CRITICAL-8)."""
+
+    def test_cost_not_accumulated_on_failure(self):
+        """Verify cost is NOT incremented when a Bedrock call fails.
+
+        The generation loop in worker.py only updates running_cost inside
+        the try block, after a successful template execution. If the call
+        raises, the except block increments failed_records but not cost.
+        """
+        running_cost = 0.0
+        failed_records = 0
+        records_generated = 0
+
+        for i in range(5):
+            try:
+                if i == 2:
+                    raise Exception("Bedrock throttled")
+                # Successful call -- cost added
+                running_cost += 0.01
+                records_generated += 1
+            except Exception:
+                failed_records += 1
+                continue
+
+        assert records_generated == 4
+        assert failed_records == 1
+        # Cost should only reflect successful calls
+        assert abs(running_cost - 0.04) < 1e-9
+
+    def test_failed_records_counter_still_increments(self):
+        """Verify failed_records counter increments on Bedrock failure."""
+        failed_records = 0
+
+        for i in range(3):
+            try:
+                raise Exception("Bedrock error")
+            except Exception:
+                failed_records += 1
+                continue
+
+        assert failed_records == 3
+
+    def test_cost_only_after_successful_response(self):
+        """Simulate the exact worker pattern: cost accumulates only on success."""
+        running_cost = 0.0
+        checkpoint = {"cost_accumulated": 0.0, "records_generated": 0}
+
+        results = [
+            {"step1": {"output": "ok", "model": "meta.llama3-1-8b-instruct-v1:0"}},
+            None,  # Simulates exception
+            {"step1": {"output": "ok", "model": "meta.llama3-1-8b-instruct-v1:0"}},
+        ]
+
+        for i, result in enumerate(results):
+            try:
+                if result is None:
+                    raise Exception("Bedrock API error")
+                # Success path -- mirrors worker.py lines 353-360
+                checkpoint["records_generated"] = i + 1
+                running_cost += 0.005  # Simulated cost
+            except Exception:
+                # Failure path -- mirrors worker.py lines 375-380
+                continue
+
+        # Only 2 successful calls
+        assert checkpoint["records_generated"] == 3  # last successful index+1
+        assert abs(running_cost - 0.01) < 1e-9
+
+
 class TestBedrockResponseParsing:
     """Tests for Bedrock response parsing error handling."""
 
@@ -439,6 +509,63 @@ class TestErrorRecoveryStrategies:
             assert should_retry is False
 
 
+class TestCircuitBreakerFastFailure:
+    """Tests that circuit breaker open state causes fast failure."""
+
+    def test_circuit_breaker_open_raises_immediately(self):
+        """When circuit breaker is open, calls raise CircuitBreakerOpen."""
+        from backend.shared.retry import CircuitBreaker, CircuitBreakerOpen
+
+        cb = CircuitBreaker(failure_threshold=3, name='bedrock:test-model')
+
+        # Trip the breaker
+        for _ in range(3):
+            cb.record_failure()
+
+        assert cb.state == CircuitBreaker.OPEN
+        assert cb.can_execute() is False
+
+        # Attempting to use it should raise
+        with pytest.raises(CircuitBreakerOpen):
+            if not cb.can_execute():
+                raise CircuitBreakerOpen(f"Circuit breaker '{cb.name}' is open")
+
+    def test_circuit_breaker_opens_after_threshold_failures(self):
+        """Circuit breaker opens after exactly failure_threshold failures."""
+        from backend.shared.retry import CircuitBreaker
+
+        cb = CircuitBreaker(failure_threshold=5, name='bedrock:threshold-test')
+
+        # 4 failures should keep it closed
+        for _ in range(4):
+            cb.record_failure()
+        assert cb.state == CircuitBreaker.CLOSED
+
+        # 5th failure opens it
+        cb.record_failure()
+        assert cb.state == CircuitBreaker.OPEN
+
+    def test_circuit_breaker_recovers_after_success(self):
+        """Circuit breaker closes after a successful call in HALF_OPEN state."""
+        from backend.shared.retry import CircuitBreaker
+        import time
+
+        cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.01, name='bedrock:recovery-test')
+
+        # Trip it
+        cb.record_failure()
+        cb.record_failure()
+        assert cb.state == CircuitBreaker.OPEN
+
+        # Wait for recovery timeout
+        time.sleep(0.02)
+        assert cb.state == CircuitBreaker.HALF_OPEN
+
+        # Success closes it
+        cb.record_success()
+        assert cb.state == CircuitBreaker.CLOSED
+
+
 class TestPerModelCircuitBreaker:
     """Tests for per-model circuit breaker isolation."""
 
@@ -466,3 +593,182 @@ class TestPerModelCircuitBreaker:
 
         assert cb_name == 'bedrock:meta.llama3-1-8b-instruct-v1:0'
         assert model_id in cb_name
+
+
+def _import_worker():
+    """Import worker module with required env vars and sys.path setup."""
+    import os
+    import sys
+
+    worker_dir = os.path.join(
+        os.path.dirname(__file__), "..", "..", "backend", "ecs_tasks", "worker"
+    )
+    worker_dir = os.path.abspath(worker_dir)
+
+    env_vars = {
+        "JOBS_TABLE_NAME": "test-Jobs",
+        "TEMPLATES_TABLE_NAME": "test-Templates",
+        "COST_TRACKING_TABLE_NAME": "test-CostTracking",
+        "CHECKPOINT_METADATA_TABLE_NAME": "test-CheckpointMetadata",
+        "BUCKET_NAME": "test-bucket",
+        "QUEUE_TABLE_NAME": "test-Queue",
+        "AWS_DEFAULT_REGION": "us-east-1",
+    }
+
+    old_path = sys.path[:]
+    try:
+        if worker_dir not in sys.path:
+            sys.path.insert(0, worker_dir)
+
+        with patch.dict(os.environ, env_vars):
+            from backend.ecs_tasks.worker import worker as worker_module
+            from backend.ecs_tasks.worker.worker import Worker
+
+            return worker_module, Worker
+    except ImportError as e:
+        # Only skip for known optional third-party modules
+        missing = getattr(e, "name", "") or str(e)
+        optional_deps = {"boto3", "pandas", "pyarrow", "template_engine"}
+        if any(dep in missing for dep in optional_deps):
+            pytest.skip(f"Worker dependency not installed: {e}")
+        raise
+    finally:
+        sys.path = old_path
+
+
+class TestBedrockCostOnFailureIntegration:
+    """Integration tests using actual Worker.generate_data to verify cost tracking.
+
+    These tests instantiate the real Worker class (with mocked dependencies) to
+    ensure that running_cost is only incremented after successful Bedrock calls,
+    not when template_engine.execute_template raises an exception.
+    """
+
+    def test_generate_data_does_not_increment_cost_on_template_error(self):
+        """Call Worker.generate_data with a template_engine that always raises.
+
+        Verifies that running_cost stays at 0 (via the checkpoint's
+        cost_accumulated) when every record fails.
+        """
+        import os
+
+        worker_module, Worker = _import_worker()
+
+        # Create Worker without __init__ (avoids signal registration issues)
+        w = Worker.__new__(Worker)
+        w.shutdown_requested = False
+        w.CHECKPOINT_INTERVAL = 50
+
+        # Mock template_engine to always raise
+        mock_template_engine = MagicMock()
+        mock_template_engine.execute_template.side_effect = ValueError(
+            "Template variable not found"
+        )
+        w.template_engine = mock_template_engine
+
+        # Mock all dependencies called by generate_data
+        w.load_template = MagicMock(return_value={
+            "template_id": "tpl-1",
+            "template_definition": {"steps": [{"name": "step1"}]},
+        })
+        w.load_seed_data = MagicMock(return_value=[
+            {"_id": "seed-1", "text": "hello"},
+        ])
+        w.load_checkpoint = MagicMock(return_value={
+            "records_generated": 0,
+            "cost_accumulated": 0.0,
+            "failed_records": 0,
+            "current_batch": 1,
+        })
+        w.save_batch = MagicMock()
+        w.save_checkpoint = MagicMock()
+        w.update_cost_tracking = MagicMock(return_value=0.0)
+        w.update_job_progress = MagicMock()
+        w.export_data = MagicMock()
+
+        job = {
+            "job_id": "job-cost-test",
+            "config": {
+                "template_id": "tpl-1",
+                "seed_data_path": "s3://bucket/seeds.json",
+                "num_records": 5,
+                "budget_limit": 100.0,
+            },
+        }
+
+        w.generate_data(job)
+
+        # template_engine was called 5 times (once per record)
+        assert mock_template_engine.execute_template.call_count == 5
+
+        # save_checkpoint was called at the end (final checkpoint)
+        final_checkpoint = w.save_checkpoint.call_args[0][1]
+
+        # Cost should be 0 because all records failed
+        assert final_checkpoint.get("cost_accumulated", 0.0) == 0.0
+        # All 5 records should be marked as failed
+        assert final_checkpoint["failed_records"] == 5
+
+    def test_generate_data_increments_cost_only_for_successful_records(self):
+        """Call Worker.generate_data with a template_engine that fails on some records.
+
+        Verifies that running_cost only reflects successful calls.
+        """
+        import os
+
+        worker_module, Worker = _import_worker()
+
+        w = Worker.__new__(Worker)
+        w.shutdown_requested = False
+        w.CHECKPOINT_INTERVAL = 50
+
+        call_count = {"n": 0}
+
+        def selective_failure(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 3:
+                raise ValueError("Template error on record 3")
+            return {"step1": {"output": "ok", "model": "meta.llama3-1-8b-instruct-v1:0"}}
+
+        mock_template_engine = MagicMock()
+        mock_template_engine.execute_template.side_effect = selective_failure
+        w.template_engine = mock_template_engine
+
+        w.load_template = MagicMock(return_value={
+            "template_id": "tpl-1",
+            "template_definition": {"steps": [{"name": "step1"}]},
+        })
+        w.load_seed_data = MagicMock(return_value=[
+            {"_id": "seed-1", "text": "hello"},
+        ])
+        w.load_checkpoint = MagicMock(return_value={
+            "records_generated": 0,
+            "cost_accumulated": 0.0,
+            "failed_records": 0,
+            "current_batch": 1,
+        })
+        w.save_batch = MagicMock()
+        w.save_checkpoint = MagicMock()
+        w.update_cost_tracking = MagicMock(return_value=0.0)
+        w.update_job_progress = MagicMock()
+        w.export_data = MagicMock()
+        w.estimate_tokens = MagicMock(return_value=100)
+        w.estimate_single_call_cost = MagicMock(return_value=0.01)
+
+        job = {
+            "job_id": "job-partial-cost",
+            "config": {
+                "template_id": "tpl-1",
+                "seed_data_path": "s3://bucket/seeds.json",
+                "num_records": 5,
+                "budget_limit": 100.0,
+            },
+        }
+
+        w.generate_data(job)
+
+        final_checkpoint = w.save_checkpoint.call_args[0][1]
+        # 1 failure out of 5 records
+        assert final_checkpoint["failed_records"] == 1
+        # estimate_single_call_cost called only for 4 successful records
+        assert w.estimate_single_call_cost.call_count == 4

@@ -135,4 +135,3 @@ export const apiErrors = {
   badRequest: new Error('Bad Request'),
   rateLimited: new Error('Too Many Requests'),
 }
-

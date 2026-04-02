@@ -146,7 +146,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "template_definition": template_def,
             "schema_requirements": schema_reqs,
             "created_at": now,
-            "is_public": body.get("is_public", current_template.get("is_public", False)),
+            "is_public": "true"
+            if str(body.get("is_public", current_template.get("is_public", False))).lower()
+            in ("true", "1")
+            else "false",
             "description": body.get("description", current_template.get("description", "")),
         }
 

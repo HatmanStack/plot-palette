@@ -4,5 +4,17 @@
     "date": "2026-03-15",
     "plan": "v1.2",
     "verdict": "GO"
+  },
+  {
+    "skill": "audit",
+    "date": "2026-04-02",
+    "plan": "2026-04-02-audit-plot-palette",
+    "audits": ["health", "eval", "docs"]
+  },
+  {
+    "skill": "pipeline",
+    "date": "2026-04-02",
+    "plan": "2026-04-02-audit-plot-palette",
+    "verdict": "GO"
   }
 ]

@@ -15,20 +15,24 @@ class BudgetExceededError(Exception):
 class TestBudgetCheckBeforeGeneration:
     """Tests for budget check before each record."""
 
-    def test_budget_checked_before_each_record(self):
-        """Test that budget is checked before generating each record."""
+    def test_budget_checked_at_interval_boundaries(self):
+        """Test that budget is checked at interval boundaries, not every record."""
         budget_checks = 0
-        budget_limit = 10.0
+        budget_limit = 100.0
         current_cost = 0.0
-        records_to_generate = 5
+        records_to_generate = 25
+        budget_check_interval = 10
 
         for i in range(records_to_generate):
-            budget_checks += 1
-            if current_cost >= budget_limit:
-                break
+            if i % budget_check_interval == 0:
+                budget_checks += 1
+                if current_cost >= budget_limit:
+                    break
             current_cost += 1.0  # Simulate cost per record
 
-        assert budget_checks == 5
+        # Checks at i=0, i=10, i=20 = 3 checks (out of 25 records)
+        assert budget_checks == 3
+        assert budget_checks < records_to_generate
 
     def test_generation_stops_at_budget_limit(self):
         """Test that generation stops when budget is reached."""
@@ -219,22 +223,99 @@ class TestBudgetAtLimit:
 class TestBudgetEnforcementInterval:
     """Tests for budget enforcement interval."""
 
-    def test_budget_checked_every_record(self):
-        """Test that budget is checked for every record."""
-        budget_check_interval = 1  # Check every record
+    def test_budget_checked_every_n_records(self):
+        """Test that budget is checked every BUDGET_CHECK_INTERVAL records."""
+        budget_check_interval = 10
+        budget_limit = 5.0
+        running_cost = 10.0  # Already over budget
+        start_index = 0
+        check_count = 0
 
-        assert budget_check_interval == 1
+        for i in range(100):
+            if (i - start_index) % budget_check_interval == 0:
+                check_count += 1
+                if running_cost >= budget_limit:
+                    break
+
+        # Should catch it on the first check (i=0)
+        assert check_count == 1
+
+    def test_budget_check_triggers_within_interval(self):
+        """Test budget check catches overage within N records of occurrence."""
+        budget_check_interval = 10
+        budget_limit = 1.0
+        running_cost = 0.0
+        cost_per_record = 0.15  # Exceeds at record 7 (0.15 * 7 = 1.05)
+        start_index = 0
+        records_generated = 0
+
+        for i in range(100):
+            # Adaptive interval: check every record when near budget
+            budget_ratio = running_cost / budget_limit if budget_limit > 0 else 0
+            check_interval = 1 if budget_ratio >= 0.8 else budget_check_interval
+            if (i - start_index) % check_interval == 0 and running_cost >= budget_limit:
+                break
+            running_cost += cost_per_record
+            records_generated += 1
+
+        # With adaptive checking, catches at record 7 (when cost hits 1.05)
+        assert records_generated == 7
+        assert running_cost >= budget_limit
+
+    def test_adaptive_budget_interval_switches_to_per_record_near_limit(self):
+        """Once 80% of budget consumed, check every record instead of every N."""
+        budget_check_interval = 10
+        budget_limit = 10.0
+        running_cost = 0.0
+        cost_per_record = 1.0  # 80% at record 8
+        start_index = 0
+        checks_performed = 0
+
+        for i in range(20):
+            budget_ratio = running_cost / budget_limit if budget_limit > 0 else 0
+            check_interval = 1 if budget_ratio >= 0.8 else budget_check_interval
+            if (i - start_index) % check_interval == 0:
+                checks_performed += 1
+                if running_cost >= budget_limit:
+                    break
+            running_cost += cost_per_record
+
+        # Budget exceeded at record 10 ($10), caught immediately
+        assert running_cost >= budget_limit
+        # Checks: at 0, at 8 (80% threshold hit), 9, 10 (exceeded)
+        assert checks_performed >= 3
+
+    def test_budget_check_at_first_record(self):
+        """Test that budget is always checked at the first record."""
+        budget_check_interval = 10
+        budget_limit = 1.0
+        running_cost = 5.0  # Already over
+        start_index = 0
+        budget_exceeded = False
+
+        for i in range(100):
+            if (i - start_index) % budget_check_interval == 0 and running_cost >= budget_limit:
+                budget_exceeded = True
+                break
+
+        # Should catch at i=0 (first record)
+        assert budget_exceeded is True
 
     def test_no_records_skipped_between_checks(self):
-        """Test that no records are generated without budget check."""
-        check_count = 0
+        """Test that records are still generated between budget checks."""
+        budget_check_interval = 10
+        budget_limit = 100.0
+        running_cost = 0.0
+        start_index = 0
         record_count = 0
 
-        for i in range(10):
-            check_count += 1  # Check happens
-            record_count += 1  # Then record generated
+        for i in range(25):
+            if (i - start_index) % budget_check_interval == 0 and running_cost >= budget_limit:
+                break
+            running_cost += 0.1
+            record_count += 1
 
-        assert check_count == record_count
+        assert record_count == 25
 
 
 class TestCostAccumulation:
@@ -372,17 +453,19 @@ class TestInMemoryBudgetTracking:
         running_cost = 0.0
         records_generated = 0
         checkpoint_interval = 50
+        budget_check_interval = 10
 
         # Simulate high per-record cost
         cost_per_record = 0.05  # $0.05 per record
 
         for i in range(100):
-            if running_cost >= budget_limit:
+            if i % budget_check_interval == 0 and running_cost >= budget_limit:
                 break
             running_cost += cost_per_record
             records_generated += 1
 
-        # Should stop at 20 records (20 * 0.05 = 1.00)
+        # Budget exceeded at record 20 ($1.00), but check only at interval boundaries
+        # Check at i=0 (cost=0), i=10 (cost=0.50), i=20 (cost=1.00) -> stops
         assert records_generated == 20
         # This is well within the checkpoint interval of 50
         assert records_generated < checkpoint_interval
