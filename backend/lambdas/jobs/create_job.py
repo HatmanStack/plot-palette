@@ -259,6 +259,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         existing = jobs_table.get_item(Key={"job_id": job_id})
                         if "Item" in existing:
                             item = existing["Item"]
+                            # Verify ownership to prevent cross-user information leakage
+                            if item.get("user_id") != user_id:
+                                return error_response(409, "Conflict: Job ID already exists")
                             return success_response(
                                 200,
                                 {
