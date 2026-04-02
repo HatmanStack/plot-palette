@@ -111,3 +111,56 @@ class TestStreamProgress:
         response = lambda_handler(_make_event(), None)
 
         assert response["headers"]["Cache-Control"] == "no-cache"
+
+    def test_missing_path_parameters_returns_400(self):
+        """Missing pathParameters key entirely returns 400, not 500."""
+        event = _make_event()
+        del event["pathParameters"]
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 400
+
+    def test_null_path_parameters_returns_400(self):
+        """pathParameters set to None returns 400, not 500."""
+        event = _make_event()
+        event["pathParameters"] = None
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 400
+
+    def test_missing_job_id_in_path_parameters_returns_400(self):
+        """pathParameters present but missing job_id returns 400."""
+        event = _make_event()
+        event["pathParameters"] = {}
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 400
+
+    def test_missing_jwt_claims_returns_401(self):
+        """Missing JWT claims returns 401, not 500."""
+        event = {
+            "requestContext": {"requestId": "test-req-1"},
+            "pathParameters": {"job_id": "job-456"},
+            "queryStringParameters": None,
+            "body": None,
+        }
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 401
+
+    def test_dynamodb_error_returns_500(self):
+        """DynamoDB error returns 500 with logging."""
+        from botocore.exceptions import ClientError
+
+        self.mock_table.get_item.side_effect = ClientError(
+            {"Error": {"Code": "InternalServerError", "Message": "DDB error"}},
+            "GetItem",
+        )
+
+        response = lambda_handler(_make_event(), None)
+
+        assert response["statusCode"] == 500

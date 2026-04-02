@@ -65,7 +65,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         except (KeyError, TypeError):
             return error_response(401, "Authentication required")
 
-        job_id = event["pathParameters"]["job_id"]
+        try:
+            job_id = event["pathParameters"]["job_id"]
+        except (KeyError, TypeError):
+            return error_response(400, "Missing required field: job_id")
 
         logger.info(
             json.dumps(
