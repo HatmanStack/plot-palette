@@ -267,7 +267,13 @@ class Worker:
                 self.mark_job_budget_exceeded(job_id)
             except Exception as e:
                 logger.error(f"Error processing job {job_id}: {str(e)}", exc_info=True)
-                self.mark_job_failed(job_id, str(e))
+                try:
+                    self.mark_job_failed(job_id, str(e))
+                except Exception as mark_err:
+                    logger.error(
+                        f"Failed to mark job {job_id} as FAILED: {mark_err}",
+                        exc_info=True,
+                    )
 
     def generate_data(self, job):
         """Main data generation loop."""
