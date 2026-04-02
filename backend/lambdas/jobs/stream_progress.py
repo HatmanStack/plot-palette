@@ -101,22 +101,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
             return error_response(403, "Access denied - you do not own this job")
 
-        # Build progress data
-        cost_estimate = job.get("cost_estimate", 0)
-        if hasattr(cost_estimate, "__float__"):
-            cost_estimate = float(cost_estimate)
-
-        budget_limit = job.get("budget_limit", 0)
-        if hasattr(budget_limit, "__float__"):
-            budget_limit = float(budget_limit)
-
+        # Build progress data with explicit Decimal-to-float conversion
+        # DynamoDB returns numeric values as Decimal; convert to float for JSON
         progress_data = {
             "job_id": job_id,
             "status": job.get("status", "UNKNOWN"),
             "records_generated": int(job.get("records_generated", 0)),
             "tokens_used": int(job.get("tokens_used", 0)),
-            "cost_estimate": cost_estimate,
-            "budget_limit": budget_limit,
+            "cost_estimate": float(job.get("cost_estimate", 0)),
+            "budget_limit": float(job.get("budget_limit", 0)),
             "updated_at": str(job.get("updated_at", "")),
         }
 
