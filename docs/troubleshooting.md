@@ -10,7 +10,7 @@
 
 **Cause:** Invalid credentials, expired token, or user not confirmed.
 
-**Fix:** Verify the user exists in the Cognito User Pool and has a permanent password set. Check that `VITE_USER_POOL_ID` and `VITE_USER_POOL_CLIENT_ID` in `.env` match the deployed stack outputs.
+**Fix:** Verify the user exists in the Cognito User Pool and has a permanent password set. Check that `VITE_COGNITO_USER_POOL_ID` and `VITE_COGNITO_CLIENT_ID` in `.env` match the deployed stack outputs.
 
 ## `PYTHONPATH` Test Errors
 

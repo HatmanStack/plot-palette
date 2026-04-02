@@ -46,8 +46,8 @@ cp .env.example .env
 | `.env` Variable | SAM Output |
 |----------------|------------|
 | `VITE_API_ENDPOINT` | `ApiEndpoint` |
-| `VITE_USER_POOL_ID` | `UserPoolId` |
-| `VITE_USER_POOL_CLIENT_ID` | `UserPoolClientId` |
+| `VITE_COGNITO_USER_POOL_ID` | `UserPoolId` |
+| `VITE_COGNITO_CLIENT_ID` | `UserPoolClientId` |
 | `VITE_REGION` | Your chosen region |
 
 ## Cognito User Setup
