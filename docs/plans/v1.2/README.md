@@ -22,7 +22,7 @@ Before starting any phase, the engineer must have:
 - **Python 3.13** (managed via uv, see `.python-version`)
 - **uv** for Python package management (`uv pip install`, never bare `pip`)
 - **AWS CLI** configured with dummy credentials for local testing
-- **Docker** (for E2E tests with LocalStack)
+- **Docker** (for E2E tests with MiniStack)
 - **Pre-commit** hooks installed (`pre-commit install`)
 
 ### Initial Setup

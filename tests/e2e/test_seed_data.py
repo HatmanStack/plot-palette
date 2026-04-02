@@ -12,10 +12,10 @@ from tests.e2e.conftest import ENDPOINT_URL, USER_ID, make_api_event
 
 
 class TestSeedData:
-    """Seed data operations against real LocalStack S3."""
+    """Seed data operations against real MiniStack S3."""
 
     def test_generate_upload_url(self):
-        """Generate presigned upload URL contains LocalStack endpoint."""
+        """Generate presigned upload URL contains MiniStack endpoint."""
         from lambdas.seed_data.generate_upload_url import lambda_handler
 
         event = make_api_event('POST', '/seed-data/upload', body={
@@ -30,7 +30,7 @@ class TestSeedData:
         assert 'upload_url' in body
         assert 's3_key' in body
         assert USER_ID in body['s3_key']
-        # Presigned URL should point at LocalStack
+        # Presigned URL should point at MiniStack
         assert 'localhost' in body['upload_url'] or '4566' in body['upload_url']
 
     def test_upload_and_validate_seed_data(self):
@@ -39,7 +39,7 @@ class TestSeedData:
         from lambdas.templates.create_template import lambda_handler as create_template
 
         # Create template with NO schema requirements (no variables)
-        # This avoids Range header issues with LocalStack's S3
+        # This avoids Range header issues with MiniStack's S3
         template_event = make_api_event('POST', '/templates', body={
             'name': 'Simple Seed Template',
             'template_definition': {

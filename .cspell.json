@@ -9,7 +9,7 @@
     "DynamoDB",
     "CloudFormation",
     "Fargate",
-    "LocalStack",
+    "MiniStack",
     "openapi",
     "presigned",
     "serverless",

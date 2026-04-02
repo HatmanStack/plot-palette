@@ -1,5 +1,5 @@
 """
-E2E tests for template CRUD lifecycle against real LocalStack DynamoDB.
+E2E tests for template CRUD lifecycle against real MiniStack DynamoDB.
 """
 
 import json

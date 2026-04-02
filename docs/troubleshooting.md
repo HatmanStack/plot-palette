@@ -30,9 +30,9 @@ PYTHONPATH=. pytest tests/unit tests/integration -v
 cd backend && uv pip install -e ".[dev,worker]" --system
 ```
 
-## LocalStack E2E Test Failures
+## MiniStack E2E Test Failures
 
-**Cause:** Docker not running, or LocalStack container failed to start.
+**Cause:** Docker not running, or MiniStack container failed to start.
 
 **Fix:** Ensure Docker is running, then:
 ```bash

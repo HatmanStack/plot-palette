@@ -281,7 +281,7 @@ PYTHONPATH=. pytest tests/unit/test_specific.py::TestClass::test_fn  # Single te
 **Mocking approach:**
 - **Unit tests:** `unittest.mock.MagicMock` for all AWS clients. Fixtures in `tests/conftest.py` provide pre-configured mocks.
 - **Integration tests:** `moto` library for realistic AWS mocking (real boto3 calls against in-memory services).
-- **E2E tests:** LocalStack in Docker (real DynamoDB/S3 over HTTP).
+- **E2E tests:** MiniStack in Docker (real DynamoDB/S3 over HTTP).
 
 **New test file naming:** `tests/unit/test_{module}.py` or `tests/integration/test_{feature}.py`
 
@@ -289,7 +289,7 @@ PYTHONPATH=. pytest tests/unit/test_specific.py::TestClass::test_fn  # Single te
 1. `tests/conftest.py` — Mock AWS clients, env vars, sample user data
 2. `tests/unit/conftest.py` — Sample Pydantic model instances
 3. `tests/integration/conftest.py` — Real Cognito, real boto3 clients
-4. `tests/e2e/conftest.py` — LocalStack provisioning, Lambda import shims
+4. `tests/e2e/conftest.py` — MiniStack provisioning, Lambda import shims
 
 **Coverage:** 70% minimum (backend via pytest-cov)
 

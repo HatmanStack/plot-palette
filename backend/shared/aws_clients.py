@@ -13,7 +13,7 @@ from botocore.config import Config
 
 
 def _get_endpoint_url() -> str | None:
-    """Return AWS_ENDPOINT_URL if set (for LocalStack), else None."""
+    """Return AWS_ENDPOINT_URL if set (for MiniStack), else None."""
     return os.environ.get("AWS_ENDPOINT_URL")
 
 
