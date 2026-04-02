@@ -85,9 +85,9 @@ Remove the dead validation code.
 
 **Verification Checklist:**
 
-- [ ] Dead validator removed from `models.py`
-- [ ] No remaining references to this validator in tests
-- [ ] All existing model tests pass: `PYTHONPATH=. pytest tests/unit/test_shared.py -v`
+- [x] Dead validator removed from `models.py`
+- [x] No remaining references to this validator in tests
+- [x] All existing model tests pass: `PYTHONPATH=. pytest tests/unit/test_shared.py -v`
 
 **Testing Instructions:**
 

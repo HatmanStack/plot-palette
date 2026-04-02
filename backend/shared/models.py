@@ -12,7 +12,7 @@ from typing import Any, NotRequired, TypedDict
 from urllib.parse import urlparse
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .constants import BatchStatus, JobStatus, QualityStatus
 
@@ -82,13 +82,6 @@ class JobConfig(BaseModel):
     records_generated: int = Field(default=0, ge=0, description="Number of records generated")
     cost_estimate: float = Field(default=0.0, ge=0, description="Estimated cost in USD")
     execution_arn: str | None = Field(None, description="Step Functions execution ARN")
-
-    @model_validator(mode="after")
-    def validate_cross_fields(self) -> "JobConfig":
-        """Validate cross-field consistency."""
-        if self.status == JobStatus.COMPLETED and self.records_generated == 0:
-            raise ValueError("COMPLETED job must have records_generated > 0")
-        return self
 
     def to_dynamodb(self) -> dict[str, Any]:
         """Convert to low-level DynamoDB item format (for client.put_item)."""
