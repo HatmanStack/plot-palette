@@ -231,9 +231,9 @@ Add a brief section to CONTRIBUTING.md with scope conventions.
 
 **Verification Checklist:**
 
-- [ ] Scope list added to CONTRIBUTING.md
-- [ ] Guidance on choosing scopes included
-- [ ] Follows existing document formatting conventions
+- [x] Scope list added to CONTRIBUTING.md
+- [x] Guidance on choosing scopes included
+- [x] Follows existing document formatting conventions
 
 **Testing Instructions:**
 
