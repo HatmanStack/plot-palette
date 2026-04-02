@@ -85,8 +85,8 @@ use this variable anywhere. Remove the reference to avoid confusion.
 
 **Verification Checklist:**
 
-- [ ] `VITE_REGION` is not mentioned anywhere in docs
-- [ ] Remaining table entries are all valid and used by the code
+- [x] `VITE_REGION` is not mentioned anywhere in docs
+- [x] Remaining table entries are all valid and used by the code
 
 **Testing Instructions:**
 

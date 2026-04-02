@@ -48,7 +48,6 @@ cp .env.example .env
 | `VITE_API_ENDPOINT` | `ApiEndpoint` |
 | `VITE_COGNITO_USER_POOL_ID` | `UserPoolId` |
 | `VITE_COGNITO_CLIENT_ID` | `UserPoolClientId` |
-| `VITE_REGION` | Your chosen region |
 
 ## Cognito User Setup
 
