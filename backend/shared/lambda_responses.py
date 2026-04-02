@@ -12,7 +12,9 @@ from typing import Any
 
 _allowed_origin = os.environ.get("ALLOWED_ORIGIN")
 if not _allowed_origin:
-    logging.getLogger(__name__).warning("ALLOWED_ORIGIN not set, defaulting to 'null'")
+    logging.getLogger(__name__).error(
+        "ALLOWED_ORIGIN not set, defaulting to 'null' — all CORS requests will fail"
+    )
     _allowed_origin = "null"
 
 CORS_HEADERS = {

@@ -1,6 +1,7 @@
 """Tests for shared Lambda response helpers."""
 
 import json
+import logging
 
 from backend.shared.lambda_responses import CORS_HEADERS, error_response, success_response
 
@@ -60,3 +61,37 @@ class TestSuccessResponse:
         assert result["statusCode"] == 201
         body = json.loads(result["body"])
         assert body["id"] == "new"
+
+
+class TestCORSOriginValidation:
+    def test_missing_allowed_origin_logs_error(self):
+        """When ALLOWED_ORIGIN is not set, an ERROR log should be emitted."""
+        import importlib
+        import os
+
+        import backend.shared.lambda_responses as lr_mod
+
+        original = os.environ.pop("ALLOWED_ORIGIN", None)
+        try:
+            logger_obj = logging.getLogger("backend.shared.lambda_responses")
+            records: list[logging.LogRecord] = []
+
+            class _Handler(logging.Handler):
+                def emit(self, record):
+                    records.append(record)
+
+            handler = _Handler()
+            handler.setLevel(logging.DEBUG)
+            logger_obj.addHandler(handler)
+            try:
+                importlib.reload(lr_mod)
+            finally:
+                logger_obj.removeHandler(handler)
+
+            error_logs = [r for r in records if r.levelno >= logging.ERROR]
+            assert len(error_logs) >= 1
+            assert "ALLOWED_ORIGIN" in error_logs[0].getMessage()
+        finally:
+            if original is not None:
+                os.environ["ALLOWED_ORIGIN"] = original
+            importlib.reload(lr_mod)
