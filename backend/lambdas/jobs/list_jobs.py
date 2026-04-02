@@ -6,6 +6,7 @@ pagination and filtering support.
 """
 
 import json
+import math
 import os
 import sys
 from typing import Any
@@ -29,9 +30,10 @@ jobs_table = dynamodb.Table(os.environ.get("JOBS_TABLE_NAME", "plot-palette-Jobs
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
-    """Safely convert a value to float, returning default on failure."""
+    """Safely convert a value to float, returning default on failure or non-finite."""
     try:
-        return float(value)
+        result = float(value)
+        return result if math.isfinite(result) else default
     except (TypeError, ValueError):
         return default
 
