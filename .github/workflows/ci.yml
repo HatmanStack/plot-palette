@@ -169,7 +169,7 @@ jobs:
             fi
           done
           # E2E is advisory — flaky container infra should not block merges
-          if [[ "${{ needs.e2e.result }}" == "failure" ]]; then
-            echo "::warning::E2E tests failed (advisory, not blocking)"
+          if [[ "${{ needs.e2e.result }}" != "success" && "${{ needs.e2e.result }}" != "skipped" ]]; then
+            echo "::warning::E2E tests ${{ needs.e2e.result }} (advisory, not blocking)"
           fi
           echo "All required checks passed!"
