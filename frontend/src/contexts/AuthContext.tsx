@@ -19,22 +19,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    checkAuth()
-  }, [])
+    const AUTH_TIMEOUT_MS = 10_000
 
-  async function checkAuth() {
-    try {
-      const token = await authService.getIdToken()
-      if (token) {
-        setIdToken(token)
-        setIsAuthenticated(true)
-      }
-    } catch (error) {
-      console.error('Auth check failed:', error)
-    } finally {
+    const timeoutId = setTimeout(() => {
       setLoading(false)
+      setIsAuthenticated(false)
+    }, AUTH_TIMEOUT_MS)
+
+    async function checkAuth() {
+      try {
+        const token = await authService.getIdToken()
+        if (token) {
+          setIdToken(token)
+          setIsAuthenticated(true)
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error)
+      } finally {
+        clearTimeout(timeoutId)
+        setLoading(false)
+      }
     }
-  }
+
+    checkAuth()
+
+    return () => clearTimeout(timeoutId)
+  }, [])
 
   async function login(email: string, password: string) {
     const token = await authService.signIn(email, password)
