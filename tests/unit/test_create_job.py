@@ -166,6 +166,10 @@ class TestCreateJobIdempotency:
         body1 = json.loads(response1["body"])
         assert body2["job_id"] == body1["job_id"] == expected_job_id
 
+        # Idempotent fetch uses strongly consistent read
+        get_item_kwargs = self.mock_jobs_table.get_item.call_args[1]
+        assert get_item_kwargs.get("ConsistentRead") is True
+
         # SFN execution only started once (first call)
         assert self.mock_sfn.start_execution.call_count == 1
 

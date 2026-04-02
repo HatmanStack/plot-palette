@@ -19,10 +19,11 @@ export function useJobPolling(jobId: string, enablePolling: boolean = true) {
 
   const handleRefetchInterval = useCallback(
     (queryResult: { state: { data: Job | undefined } }) => {
-      // Reset counter when jobId changes (detected inside callback, not render)
+      // Reset counter and timeout when jobId changes (detected inside callback, not render)
       if (trackedJobIdRef.current !== jobId) {
         trackedJobIdRef.current = jobId
         pollCountRef.current = 0
+        setPollTimedOut(false)
       }
 
       const status = queryResult.state.data?.status

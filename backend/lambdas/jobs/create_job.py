@@ -160,8 +160,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Parse request body
         try:
-            body = json.loads(event["body"])
-        except json.JSONDecodeError:
+            body = json.loads(event.get("body") or "{}")
+        except (json.JSONDecodeError, TypeError):
             return error_response(400, "Invalid JSON in request body")
 
         if not isinstance(body, dict):
