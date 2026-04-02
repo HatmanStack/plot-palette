@@ -186,7 +186,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "template_definition": {"steps": template["steps"]},
             "schema_requirements": schema_reqs,
             "created_at": now,
-            "is_public": False,  # Imported templates are private by default
+            "is_public": "false",  # Imported templates are private by default
         }
 
         # Insert into DynamoDB

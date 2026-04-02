@@ -14,7 +14,7 @@ from typing import Any
 # Add shared library to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
-from boto3.dynamodb.conditions import Attr  # noqa: E402
+from boto3.dynamodb.conditions import Key  # noqa: E402
 from botocore.exceptions import ClientError  # noqa: E402
 from lambda_responses import error_response, success_response  # noqa: E402
 from utils import (  # noqa: E402
@@ -81,29 +81,30 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
         )
 
-        # Scan for public templates (DynamoDB FilterExpression)
+        # Query public templates using GSI (is_public + created_at index)
         all_public: list[dict[str, Any]] = []
-        scan_last_key = None
-        max_scan_items = 1000  # Safety cap on scan
+        query_last_key = None
+        max_query_items = 1000  # Safety cap
 
-        while len(all_public) < max_scan_items:
-            # TODO: Replace scan with GSI query (is_public + created_at index)
-            scan_kwargs: dict[str, Any] = {
-                "FilterExpression": Attr("is_public").eq(True),
+        while len(all_public) < max_query_items:
+            query_kwargs: dict[str, Any] = {
+                "IndexName": "is_public-created_at-index",
+                "KeyConditionExpression": Key("is_public").eq("true"),
+                "ScanIndexForward": False,  # Newest first
                 "Limit": 100,
             }
-            if scan_last_key:
-                scan_kwargs["ExclusiveStartKey"] = scan_last_key
+            if query_last_key:
+                query_kwargs["ExclusiveStartKey"] = query_last_key
 
             try:
-                response = templates_table.scan(**scan_kwargs)
+                response = templates_table.query(**query_kwargs)
             except ClientError as e:
-                logger.error(json.dumps({"event": "scan_error", "error": str(e)}))
+                logger.error(json.dumps({"event": "query_error", "error": str(e)}))
                 return error_response(500, "Error searching templates")
 
             all_public.extend(response.get("Items", []))
-            scan_last_key = response.get("LastEvaluatedKey")
-            if not scan_last_key:
+            query_last_key = response.get("LastEvaluatedKey")
+            if not query_last_key:
                 break
 
         # Group by template_id, keep latest version only

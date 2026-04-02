@@ -169,7 +169,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         template = response["Item"]
 
         # Check ownership or public access
-        if template["user_id"] != user_id and not template.get("is_public", False):
+        if (
+            template["user_id"] != user_id
+            and str(template.get("is_public", "false")).lower() != "true"
+        ):
             return error_response(403, "Access denied to this template")
 
         # Validate sample data has required fields

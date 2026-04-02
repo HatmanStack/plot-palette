@@ -62,6 +62,8 @@ def _create_templates_table(dynamodb):
             {"AttributeName": "template_id", "AttributeType": "S"},
             {"AttributeName": "version", "AttributeType": "N"},
             {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "is_public", "AttributeType": "S"},
+            {"AttributeName": "created_at", "AttributeType": "S"},
         ],
         GlobalSecondaryIndexes=[
             {
@@ -70,7 +72,15 @@ def _create_templates_table(dynamodb):
                     {"AttributeName": "user_id", "KeyType": "HASH"},
                 ],
                 "Projection": {"ProjectionType": "ALL"},
-            }
+            },
+            {
+                "IndexName": "is_public-created_at-index",
+                "KeySchema": [
+                    {"AttributeName": "is_public", "KeyType": "HASH"},
+                    {"AttributeName": "created_at", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            },
         ],
         BillingMode="PAY_PER_REQUEST",
     )
@@ -87,7 +97,7 @@ def _insert_templates(table):
             "name": "Poetry Generator",
             "description": "Generates poetry datasets from author data",
             "user_id": "user-A",
-            "is_public": True,
+            "is_public": "true",
             "schema_requirements": ["author.name", "poem.text"],
             "template_definition": {
                 "steps": [{"id": "q1", "prompt": "Write about {{ author.name }}"}]
@@ -100,7 +110,7 @@ def _insert_templates(table):
             "name": "Code Reviewer",
             "description": "Reviews code snippets and generates feedback",
             "user_id": "user-A",
-            "is_public": True,
+            "is_public": "true",
             "schema_requirements": ["code.snippet"],
             "template_definition": {
                 "steps": [{"id": "review", "prompt": "Review {{ code.snippet }}"}]
@@ -113,7 +123,7 @@ def _insert_templates(table):
             "name": "Private Template",
             "description": "A private template",
             "user_id": "user-A",
-            "is_public": False,
+            "is_public": "false",
             "schema_requirements": ["data.field"],
             "template_definition": {
                 "steps": [{"id": "gen", "prompt": "Generate {{ data.field }}"}]
@@ -126,7 +136,7 @@ def _insert_templates(table):
             "name": "Story Writer",
             "description": "Creates fictional stories",
             "user_id": "user-B",
-            "is_public": True,
+            "is_public": "true",
             "schema_requirements": ["character.name"],
             "template_definition": {
                 "steps": [{"id": "story", "prompt": "Write about {{ character.name }}"}]
@@ -200,7 +210,7 @@ def test_fork_creates_independent_copy():
     response = table.get_item(Key={"template_id": "tmpl-forked", "version": 1})
     item = response["Item"]
     assert item["user_id"] == "user-C"
-    assert item["is_public"] is False
+    assert item["is_public"] == "false"
     assert item["name"] == "Poetry Generator (fork)"
     assert item["template_definition"] == {
         "steps": [{"id": "q1", "prompt": "Write about {{ author.name }}"}]

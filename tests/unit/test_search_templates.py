@@ -71,9 +71,9 @@ def make_template(
 
 
 def _invoke(event, templates):
-    """Invoke lambda_handler with mocked DynamoDB scan."""
+    """Invoke lambda_handler with mocked DynamoDB query (GSI)."""
     mock_table = MagicMock()
-    mock_table.scan.return_value = {"Items": templates}
+    mock_table.query.return_value = {"Items": templates}
     _mod.templates_table = mock_table
     return lambda_handler(event, None)
 
