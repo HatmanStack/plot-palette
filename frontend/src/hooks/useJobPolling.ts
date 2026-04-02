@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchJobDetails } from '../services/api'
 import type { Job } from '../services/api'
 
-const MAX_POLL_COUNT = 300 // At 5s intervals = ~25 minutes max
+const MAX_POLL_COUNT = 300 // ~25 min at 5s (RUNNING) or ~75 min at 15s (QUEUED)
 
 /**
  * Hook for polling job details. When enablePolling is false (SSE active),

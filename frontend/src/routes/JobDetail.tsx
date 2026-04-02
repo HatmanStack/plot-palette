@@ -15,7 +15,7 @@ export default function JobDetail() {
 
   // SSE streaming with polling fallback
   const { isConnected, useFallbackPolling } = useJobStream(jobId!)
-  const { data: job, isLoading, error } = useJobPolling(jobId!, useFallbackPolling)
+  const { data: job, isLoading, error, pollTimedOut } = useJobPolling(jobId!, useFallbackPolling)
 
   async function handleCancel() {
     if (!jobId || !confirm('Are you sure you want to cancel this job?')) return
@@ -99,6 +99,11 @@ export default function JobDetail() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      {pollTimedOut && (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded mb-4">
+          Live updates stopped — polling timed out. Refresh the page for the latest status.
+        </div>
+      )}
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
