@@ -135,12 +135,12 @@ class TemplateEngine:
         template = self.env.from_string(prompt)
 
         result: list[str] = []
-        error: list[BaseException] = []
+        error: list[Exception] = []
 
         def _render():
             try:
                 result.append(template.render(**context))
-            except BaseException as e:
+            except Exception as e:
                 error.append(e)
 
         render_thread = threading.Thread(target=_render, daemon=True)

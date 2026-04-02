@@ -419,6 +419,8 @@ class Worker:
 
             except CircuitBreakerOpen as e:
                 logger.error(f"Circuit breaker open, failing job: {str(e)}")
+                if batch_records:
+                    self.save_batch(job_id, batch_number, batch_records)
                 checkpoint["cost_accumulated"] = running_cost
                 checkpoint["failed_records"] = failed_records
                 self.save_checkpoint(job_id, checkpoint)
