@@ -250,15 +250,40 @@ class TestBudgetEnforcementInterval:
         records_generated = 0
 
         for i in range(100):
-            # Budget check only on interval boundaries
-            if (i - start_index) % budget_check_interval == 0 and running_cost >= budget_limit:
+            # Adaptive interval: check every record when near budget
+            budget_ratio = running_cost / budget_limit if budget_limit > 0 else 0
+            check_interval = 1 if budget_ratio >= 0.8 else budget_check_interval
+            if (i - start_index) % check_interval == 0 and running_cost >= budget_limit:
                 break
             running_cost += cost_per_record
             records_generated += 1
 
-        # Budget exceeded at record 7, but check only at record 10
-        assert records_generated == 10
+        # With adaptive checking, catches at record 7 (when cost hits 1.05)
+        assert records_generated == 7
         assert running_cost >= budget_limit
+
+    def test_adaptive_budget_interval_switches_to_per_record_near_limit(self):
+        """Once 80% of budget consumed, check every record instead of every N."""
+        budget_check_interval = 10
+        budget_limit = 10.0
+        running_cost = 0.0
+        cost_per_record = 1.0  # 80% at record 8
+        start_index = 0
+        checks_performed = 0
+
+        for i in range(20):
+            budget_ratio = running_cost / budget_limit if budget_limit > 0 else 0
+            check_interval = 1 if budget_ratio >= 0.8 else budget_check_interval
+            if (i - start_index) % check_interval == 0:
+                checks_performed += 1
+                if running_cost >= budget_limit:
+                    break
+            running_cost += cost_per_record
+
+        # Budget exceeded at record 10 ($10), caught immediately
+        assert running_cost >= budget_limit
+        # Checks: at 0, at 8 (80% threshold hit), 9, 10 (exceeded)
+        assert checks_performed >= 3
 
     def test_budget_check_at_first_record(self):
         """Test that budget is always checked at the first record."""

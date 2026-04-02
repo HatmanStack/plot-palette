@@ -339,8 +339,10 @@ class Worker:
                     logger.error(f"Best-effort checkpoint failed during shutdown: {e}")
                 break
 
-            # Check budget every N records to reduce overhead in the hot loop
-            if (i - start_index) % self.BUDGET_CHECK_INTERVAL == 0 and running_cost >= budget_limit:
+            # Check budget — every N records normally, every record when near limit
+            budget_ratio = running_cost / budget_limit if budget_limit > 0 else 0
+            check_interval = 1 if budget_ratio >= 0.8 else self.BUDGET_CHECK_INTERVAL
+            if (i - start_index) % check_interval == 0 and running_cost >= budget_limit:
                 logger.warning(f"Budget limit reached: ${running_cost:.2f} >= ${budget_limit:.2f}")
                 raise BudgetExceededError(f"Exceeded budget limit of ${budget_limit}")
 
