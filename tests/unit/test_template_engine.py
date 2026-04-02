@@ -452,6 +452,61 @@ class TestMissingTemplateHandling:
             engine.load_template_string("some-template")
 
 
+class TestTemplateRenderTimeout:
+    """Test that template rendering has a timeout (HIGH-7, MEDIUM-17)."""
+
+    def test_render_has_timeout_attribute(self):
+        """TemplateEngine should have a render timeout configured."""
+        engine = TemplateEngine()
+        assert hasattr(engine, 'RENDER_TIMEOUT_SECONDS')
+        assert engine.RENDER_TIMEOUT_SECONDS > 0
+
+    def test_slow_render_raises_timeout_error(self):
+        """A template that takes too long should raise TimeoutError."""
+        import time
+
+        engine = TemplateEngine()
+        # Override timeout to be very short for testing
+        engine.RENDER_TIMEOUT_SECONDS = 0.1
+
+        # Mock the Jinja2 template render to simulate a slow operation
+        original_from_string = engine.env.from_string
+
+        def slow_from_string(source):
+            template = original_from_string(source)
+            original_render = template.render
+
+            def slow_render(**kwargs):
+                time.sleep(1)  # Sleep longer than timeout
+                return original_render(**kwargs)
+
+            template.render = slow_render
+            return template
+
+        engine.env.from_string = slow_from_string
+
+        step_def = {
+            'id': 'slow',
+            'prompt': 'Hello {{ name }}'
+        }
+        context = {'name': 'World'}
+
+        with pytest.raises(TimeoutError):
+            engine.render_step(step_def, context)
+
+    def test_fast_render_succeeds(self):
+        """Normal templates render without timeout."""
+        engine = TemplateEngine()
+        step_def = {
+            'id': 'fast',
+            'prompt': 'Hello {{ name }}'
+        }
+        context = {'name': 'World'}
+
+        result = engine.render_step(step_def, context)
+        assert result == 'Hello World'
+
+
 class TestSandboxedEnvironment:
     """Test that template engine uses SandboxedEnvironment."""
 
