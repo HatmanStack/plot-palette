@@ -35,7 +35,7 @@ def error_response(status_code: int, message: str) -> dict[str, Any]:
     return {
         "statusCode": status_code,
         "headers": CORS_HEADERS.copy(),
-        "body": json.dumps({"error": message}),
+        "body": json.dumps({"error": message}, default=str),
     }
 
 

@@ -24,6 +24,14 @@ class TestErrorResponse:
             result = error_response(code, "msg")
             assert result["statusCode"] == code
 
+    def test_handles_non_serializable_message(self):
+        from decimal import Decimal
+
+        # error_response should not crash when message contains non-JSON-native types
+        result = error_response(400, str(Decimal("3.14")))
+        body = json.loads(result["body"])
+        assert body == {"error": "3.14"}
+
 
 class TestSuccessResponse:
     def test_returns_correct_status_code(self):

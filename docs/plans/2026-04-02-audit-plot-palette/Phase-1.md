@@ -126,9 +126,9 @@ which will fail if the error message contains a Decimal or datetime object. Add
 
 **Verification Checklist:**
 
-- [ ] `error_response()` uses `default=str` in `json.dumps()`
-- [ ] `success_response()` is unchanged
-- [ ] Existing tests pass
+- [x] `error_response()` uses `default=str` in `json.dumps()`
+- [x] `success_response()` is unchanged
+- [x] Existing tests pass
 
 **Testing Instructions:**
 
