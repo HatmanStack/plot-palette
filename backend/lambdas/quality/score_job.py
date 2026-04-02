@@ -124,8 +124,6 @@ def _invoke_bedrock_scoring(prompt: str) -> tuple[list[dict[str, Any]], int, int
         cb.record_failure()
         raise
 
-    cb.record_success()
-
     response_body = json.loads(response["body"].read())
     content = response_body.get("content", [])
     text = ""
@@ -153,7 +151,11 @@ def _invoke_bedrock_scoring(prompt: str) -> tuple[list[dict[str, Any]], int, int
         if match:
             scores = json.loads(match.group())
         else:
+            cb.record_failure()
             raise ValueError("Could not parse scoring response as JSON") from None
+
+    # Only mark success after response is fully parsed and validated
+    cb.record_success()
 
     if not isinstance(scores, list):
         scores = [scores]
