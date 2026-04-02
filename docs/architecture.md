@@ -52,3 +52,4 @@ graph TD
 | Templates | `template_id` (S) | `version` (N) | `user_id` | Prompt template definitions |
 | CostTracking | `job_id` (S) | `timestamp` (S) | -- | Per-job cost events (TTL-enabled) |
 | CheckpointMetadata | `job_id` (S) | -- | -- | Version counter for checkpoint concurrency |
+| Batches | `batch_id` (S) | -- | `user_id` + `created_at` | Batch job metadata and grouping |

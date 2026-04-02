@@ -180,9 +180,9 @@ but is not documented in `.env.example` or `docs/architecture.md`.
 
 **Verification Checklist:**
 
-- [ ] `BATCHES_TABLE_NAME` is in `.env.example`
-- [ ] Batches table is documented in `docs/architecture.md`
-- [ ] Default value follows the naming pattern of other tables
+- [x] `BATCHES_TABLE_NAME` is in `.env.example`
+- [x] Batches table is documented in `docs/architecture.md`
+- [x] Default value follows the naming pattern of other tables
 
 **Testing Instructions:**
 
