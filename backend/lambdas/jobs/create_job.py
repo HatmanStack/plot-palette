@@ -318,27 +318,45 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 )
             )
             # Mark job as failed so it doesn't stay QUEUED with no execution
+            sfn_error = str(e)
             try:
                 jobs_table.update_item(
                     Key={"job_id": job_id},
                     UpdateExpression="SET #s = :failed, updated_at = :now, error_message = :err",
+                    ConditionExpression="#s = :queued",
                     ExpressionAttributeNames={"#s": "status"},
                     ExpressionAttributeValues={
                         ":failed": "FAILED",
+                        ":queued": "QUEUED",
                         ":now": datetime.now(UTC).isoformat(),
                         ":err": "Failed to start job execution",
                     },
                 )
-            except ClientError:
+            except ClientError as update_err:
                 logger.error(
                     json.dumps(
                         {
                             "event": "sfn_failure_status_update_failed",
                             "job_id": job_id,
+                            "sfn_error": sfn_error,
+                            "update_error": str(update_err),
                         }
                     )
                 )
-            return error_response(500, "Job created but failed to start execution")
+                return success_response(
+                    500,
+                    {
+                        "error": "Job created but may be in inconsistent state",
+                        "job_id": job_id,
+                    },
+                )
+            return success_response(
+                500,
+                {
+                    "error": "Job created but failed to start execution",
+                    "job_id": job_id,
+                },
+            )
 
         return success_response(
             201,
