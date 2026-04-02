@@ -132,14 +132,20 @@ jobs:
         env:
           SERVICES: dynamodb,s3,iam
           PERSISTENCE: "0"
-        options: >-
-          --health-cmd="curl -f http://localhost:4566/_ministack/health"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=15
-          --health-start-period=10s
     steps:
       - uses: actions/checkout@v6
+
+      - name: Wait for ministack
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4566/_ministack/health > /dev/null 2>&1; then
+              echo "ministack ready after ${i}s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ministack failed to start"
+          exit 1
 
       - uses: actions/setup-python@v6
         with:
