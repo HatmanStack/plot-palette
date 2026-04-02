@@ -35,6 +35,71 @@ def _make_event(user_id="user-123", body=None):
     }
 
 
+class TestCreateJobTypedExceptions:
+    """Tests for typed exception catches in create_job handler."""
+
+    def setup_method(self):
+        self.mock_jobs_table = MagicMock()
+        self.mock_templates_table = MagicMock()
+        self.mock_sfn = MagicMock()
+        _mod.jobs_table = self.mock_jobs_table
+        _mod.templates_table = self.mock_templates_table
+        _mod.sfn_client = self.mock_sfn
+
+    def test_malformed_json_body_returns_400(self):
+        """Malformed JSON in request body returns 400."""
+        event = _make_event()
+        event["body"] = "not valid json {{"
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 400
+        body = json.loads(response["body"])
+        assert "Invalid JSON" in body.get("message", body.get("error", ""))
+
+    def test_missing_required_fields_returns_400(self):
+        """Missing required fields (KeyError) returns 400."""
+        # Remove requestContext entirely to trigger KeyError on user_id extraction
+        event = {
+            "requestContext": {},
+            "pathParameters": None,
+            "queryStringParameters": None,
+            "body": json.dumps({"template_id": "tpl-1"}),
+        }
+
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 400
+
+    def test_dynamodb_client_error_returns_500(self):
+        """DynamoDB ClientError at the outer level returns 500."""
+        self.mock_templates_table.query.return_value = {
+            "Items": [{"template_id": "tpl-1", "version": 1}]
+        }
+        # put_item raises a non-conditional ClientError
+        self.mock_jobs_table.put_item.side_effect = ClientError(
+            {"Error": {"Code": "InternalServerError", "Message": "DDB down"}},
+            "PutItem",
+        )
+
+        response = lambda_handler(_make_event(), None)
+
+        assert response["statusCode"] == 500
+
+    def test_safety_net_logs_exception_class(self):
+        """Safety-net except logs exception class name and full traceback."""
+        self.mock_templates_table.query.side_effect = RuntimeError("Unexpected")
+
+        with patch.object(_mod.logger, "error") as mock_log:
+            response = lambda_handler(_make_event(), None)
+
+        assert response["statusCode"] == 500
+        # Verify exc_info=True was passed for traceback
+        mock_log.assert_called()
+        call_kwargs = mock_log.call_args
+        assert call_kwargs[1].get("exc_info") is True
+
+
 class TestCreateJobSFNFailure:
     def setup_method(self):
         self.mock_jobs_table = MagicMock()

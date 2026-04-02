@@ -368,10 +368,40 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             },
         )
 
+    except json.JSONDecodeError as e:
+        logger.error(json.dumps({"event": "json_decode_error", "error": str(e)}))
+        return error_response(400, "Invalid JSON in request")
+
     except KeyError as e:
         logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))
         return error_response(400, f"Missing required field: {sanitize_error_message(str(e))}")
 
+    except ValueError as e:
+        logger.error(json.dumps({"event": "validation_error", "error": str(e)}))
+        return error_response(400, f"Validation error: {sanitize_error_message(str(e))}")
+
+    except ClientError as e:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "aws_service_error",
+                    "error_code": e.response["Error"]["Code"],
+                    "error": sanitize_error_message(str(e)),
+                }
+            ),
+            exc_info=True,
+        )
+        return error_response(500, "AWS service error")
+
     except Exception as e:
-        logger.error(json.dumps({"event": "unexpected_error", "error": str(e)}), exc_info=True)
+        logger.error(
+            json.dumps(
+                {
+                    "event": "unexpected_error",
+                    "exception_class": type(e).__name__,
+                    "error": str(e),
+                }
+            ),
+            exc_info=True,
+        )
         return error_response(500, "Internal server error")
