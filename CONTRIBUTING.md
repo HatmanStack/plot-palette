@@ -5,7 +5,7 @@
 - **Node.js 24** (via nvm)
 - **Python 3.13** (via pyenv or system)
 - **uv** — Python package manager ([install](https://docs.astral.sh/uv/getting-started/installation/))
-- **Docker** — for E2E tests (LocalStack)
+- **Docker** — for E2E tests (MiniStack)
 - **pre-commit** — `uv pip install pre-commit` or `pipx install pre-commit`
 
 ## Getting Started

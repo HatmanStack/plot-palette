@@ -125,7 +125,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}
     services:
       ministack:
-        image: ministack/ministack
+        image: nahuelnucera/ministack
         ports:
           - 4566:4566
         env:

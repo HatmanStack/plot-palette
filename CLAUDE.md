@@ -36,7 +36,7 @@ PYTHONPATH=. pytest tests/unit/test_specific.py::test_fn # Single test function
 ### E2E Tests (requires Docker)
 
 ```bash
-npm run test:e2e                         # Spins up LocalStack, runs tests, tears down
+npm run test:e2e                         # Spins up MiniStack, runs tests, tears down
 ```
 
 ### Full Check
@@ -91,7 +91,7 @@ React 19 SPA with React Router, React Query for server state, Cognito auth, Mona
 
 Backend tests live at the repo root in `tests/` (not inside `backend/`). Uses `moto[all]` for AWS mocking. Frontend tests live in `frontend/src/test/`. Pytest markers: `unit`, `integration`, `worker`, `slow`.
 
-Test fixtures are layered: `tests/conftest.py` (mock AWS clients, env vars) > `tests/unit/conftest.py` (sample models) > `tests/integration/conftest.py` (Cognito, real boto3) > `tests/e2e/conftest.py` (LocalStack provisioning, Lambda import shims).
+Test fixtures are layered: `tests/conftest.py` (mock AWS clients, env vars) > `tests/unit/conftest.py` (sample models) > `tests/integration/conftest.py` (Cognito, real boto3) > `tests/e2e/conftest.py` (MiniStack provisioning, Lambda import shims).
 
 Coverage requirement: 70% (backend via pytest-cov, frontend via vitest/v8 at 70% statements).
 

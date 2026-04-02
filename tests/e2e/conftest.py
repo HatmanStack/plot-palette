@@ -1,7 +1,7 @@
 """
-E2E test fixtures using LocalStack.
+E2E test fixtures using MiniStack.
 
-Sets up real DynamoDB tables and S3 buckets via LocalStack,
+Sets up real DynamoDB tables and S3 buckets via MiniStack,
 then configures Lambda handlers to use them.
 """
 
@@ -54,9 +54,9 @@ USER_ID = 'e2e-test-user-001'
 
 
 @pytest.fixture(scope='session', autouse=True)
-def localstack_resources():
-    """Provision LocalStack resources once per test session."""
-    from tests.e2e.localstack_setup import create_buckets, create_tables
+def ministack_resources():
+    """Provision MiniStack resources once per test session."""
+    from tests.e2e.ministack_setup import create_buckets, create_tables
 
     tables = create_tables(ENDPOINT_URL)
     bucket = create_buckets(ENDPOINT_URL)
@@ -73,7 +73,7 @@ def localstack_resources():
         'TEMPLATES_TABLE_NAME': tables['templates'],
         'COST_TRACKING_TABLE_NAME': tables['cost_tracking'],
         'BUCKET_NAME': bucket,
-        # ECS config (mocked - LocalStack free doesn't support ECS)
+        # ECS config (mocked - MiniStack free doesn't support ECS)
         'ECS_CLUSTER_NAME': 'e2e-cluster',
         'TASK_DEFINITION_ARN': 'e2e-task-def',
         'SUBNET_IDS': 'subnet-e2e001',
@@ -84,7 +84,7 @@ def localstack_resources():
     for k, v in env.items():
         os.environ[k] = v
 
-    # Clear the aws_clients cache so new clients use LocalStack endpoint
+    # Clear the aws_clients cache so new clients use MiniStack endpoint
     shared.aws_clients.clear_client_cache()
 
     yield {'tables': tables, 'bucket': bucket}
@@ -102,7 +102,7 @@ def _clear_client_cache():
 
 @pytest.fixture(autouse=True)
 def mock_ecs():
-    """Mock ECS client since LocalStack free doesn't support ECS."""
+    """Mock ECS client since MiniStack free doesn't support ECS."""
     mock = MagicMock()
     mock.run_task.return_value = {
         'tasks': [{
@@ -118,7 +118,7 @@ def mock_ecs():
 
 @pytest.fixture(autouse=True)
 def mock_sfn():
-    """Mock Step Functions client since LocalStack free doesn't support SFN."""
+    """Mock Step Functions client since MiniStack free doesn't support SFN."""
     mock = MagicMock()
     mock.start_execution.return_value = {
         'executionArn': 'arn:aws:states:us-east-1:000000000000:execution:plot-palette-job-lifecycle-e2e:mock-exec',
