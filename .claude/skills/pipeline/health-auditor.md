@@ -121,4 +121,3 @@ Run tooling first to gather objective data:
 ```
 
 End your response with: `AUDIT_COMPLETE`
-
