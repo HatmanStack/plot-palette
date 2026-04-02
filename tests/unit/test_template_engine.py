@@ -400,6 +400,58 @@ class TestTemplateSyntaxValidation:
         assert is_valid is True
 
 
+class TestMissingTemplateHandling:
+    """Test that missing templates raise exceptions instead of HTML comments (HIGH-7)."""
+
+    def test_missing_template_raises_error(self):
+        """load_template_string should raise ValueError for missing templates."""
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}  # No 'Item' key
+
+        mock_dynamodb = MagicMock()
+        engine = TemplateEngine(dynamodb_client=mock_dynamodb)
+        engine.templates_table = mock_table
+
+        with pytest.raises(ValueError, match="Template not found"):
+            engine.load_template_string("nonexistent-template")
+
+    def test_missing_template_does_not_return_html_comment(self):
+        """Ensure no HTML comments are returned for missing templates."""
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+
+        mock_dynamodb = MagicMock()
+        engine = TemplateEngine(dynamodb_client=mock_dynamodb)
+        engine.templates_table = mock_table
+
+        try:
+            result = engine.load_template_string("missing")
+            # If it doesn't raise, it should NOT contain HTML comments
+            assert "<!--" not in (result or "")
+        except ValueError:
+            pass  # Expected behavior after fix
+
+    def test_missing_template_error_includes_template_id(self):
+        """Error message should include the template identifier."""
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}
+
+        mock_dynamodb = MagicMock()
+        engine = TemplateEngine(dynamodb_client=mock_dynamodb)
+        engine.templates_table = mock_table
+
+        with pytest.raises(ValueError, match="my-template-id"):
+            engine.load_template_string("my-template-id")
+
+    def test_unconfigured_loader_raises_error(self):
+        """load_template_string should raise when DynamoDB is not configured."""
+        engine = TemplateEngine()
+        engine.templates_table = None
+
+        with pytest.raises(ValueError, match="Template loader not configured"):
+            engine.load_template_string("some-template")
+
+
 class TestSandboxedEnvironment:
     """Test that template engine uses SandboxedEnvironment."""
 

@@ -83,7 +83,7 @@ class TemplateEngine:
         """
         if not self.templates_table:
             logger.error("DynamoDB template loader not configured")
-            return f"<!-- Template loader not configured: {template_name} -->"
+            raise ValueError(f"Template loader not configured: {template_name}")
 
         try:
             response = self.templates_table.get_item(
@@ -91,8 +91,8 @@ class TemplateEngine:
             )
 
             if "Item" not in response:
-                logger.warning(f"Template not found for include: {template_name}")
-                return f"<!-- Template not found: {template_name} -->"
+                logger.error(f"Template not found: {template_name}")
+                raise ValueError(f"Template not found: {template_name}")
 
             template_item = response["Item"]
             steps = template_item.get("template_definition", {}).get("steps", [])
@@ -113,10 +113,11 @@ class TemplateEngine:
             logger.info(f"Loaded template for include: {template_name}")
             return result
 
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Error loading template {template_name}: {str(e)}", exc_info=True)
-            # Sanitize error to prevent information leakage in rendered output
-            return f"<!-- Error loading template {template_name} -->"
+            raise ValueError(f"Error loading template {template_name}: {e}") from e
 
     @staticmethod
     def _find_referenced_steps(prompt_text: str) -> set[str]:
