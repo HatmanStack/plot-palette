@@ -651,8 +651,7 @@ class Worker:
 
         except Exception as e:
             logger.error(f"Error calculating cost: {str(e)}", exc_info=True)
-            # Fail open to avoid blocking generation
-            return 0.0
+            raise
 
     def _calculate_bedrock_cost(self, tokens: int, model_id: str) -> float:
         """Calculate Bedrock cost for a token count assuming 40/60 input/output split."""
