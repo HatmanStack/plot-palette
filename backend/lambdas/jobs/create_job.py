@@ -276,8 +276,16 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                                     "message": "Existing job returned (idempotent)",
                                 },
                             )
-                    except ClientError:
-                        pass  # Fall through to conflict response
+                    except ClientError as fetch_err:
+                        logger.warning(
+                            json.dumps(
+                                {
+                                    "event": "idempotent_fetch_failed",
+                                    "job_id": job_id,
+                                    "error": str(fetch_err),
+                                }
+                            )
+                        )
                 logger.warning(
                     json.dumps(
                         {
@@ -347,20 +355,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         }
                     )
                 )
-                return success_response(
-                    500,
-                    {
-                        "error": "Job created but may be in inconsistent state",
-                        "job_id": job_id,
-                    },
-                )
-            return success_response(
-                500,
-                {
-                    "error": "Job created but failed to start execution",
-                    "job_id": job_id,
-                },
-            )
+                return error_response(500, "Job created but may be in inconsistent state")
+            return error_response(500, "Job created but failed to start execution")
 
         return success_response(
             201,
@@ -371,10 +367,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "message": "Job created successfully",
             },
         )
-
-    except json.JSONDecodeError as e:
-        logger.error(json.dumps({"event": "json_decode_error", "error": str(e)}))
-        return error_response(400, "Invalid JSON in request")
 
     except KeyError as e:
         logger.error(json.dumps({"event": "missing_field_error", "error": str(e)}))

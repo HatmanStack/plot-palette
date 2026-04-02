@@ -123,7 +123,12 @@ class TestCreateJobIdempotency:
 
     def test_idempotent_duplicate_returns_existing_job(self):
         """Second creation with same idempotency token returns existing job."""
+        import uuid
+
         token = "my-unique-token-123"
+        expected_job_id = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:user-123:{token}")
+        )
 
         # First call succeeds
         self.mock_jobs_table.put_item.return_value = {}
@@ -145,7 +150,7 @@ class TestCreateJobIdempotency:
         )
         self.mock_jobs_table.get_item.return_value = {
             "Item": {
-                "job_id": "existing-job-id",
+                "job_id": expected_job_id,
                 "user_id": "user-123",
                 "status": "QUEUED",
                 "created_at": "2026-01-01T00:00:00",
@@ -156,6 +161,13 @@ class TestCreateJobIdempotency:
         assert response2["statusCode"] == 200
         body2 = json.loads(response2["body"])
         assert body2["message"] == "Existing job returned (idempotent)"
+
+        # Same job returned (deterministic job_id from token)
+        body1 = json.loads(response1["body"])
+        assert body2["job_id"] == body1["job_id"] == expected_job_id
+
+        # SFN execution only started once (first call)
+        assert self.mock_sfn.start_execution.call_count == 1
 
     def test_put_item_uses_condition_expression(self):
         """put_item is called with attribute_not_exists(job_id) condition."""
@@ -274,8 +286,8 @@ class TestCreateJobSFNFailure:
         assert ":failed" in call_kwargs["ExpressionAttributeValues"]
         assert call_kwargs["ExpressionAttributeValues"][":failed"] == "FAILED"
 
-    def test_double_failure_returns_500_with_job_id(self):
-        """When both SFN and DynamoDB update fail, response includes job_id."""
+    def test_double_failure_returns_500_with_error(self):
+        """When both SFN and DynamoDB update fail, response is an error."""
         self.mock_sfn.start_execution.side_effect = ClientError(
             {"Error": {"Code": "StateMachineDoesNotExist", "Message": "Not found"}},
             "StartExecution",
@@ -289,8 +301,8 @@ class TestCreateJobSFNFailure:
 
         assert response["statusCode"] == 500
         body = json.loads(response["body"])
-        # Response should include job_id for client recovery
-        assert "job_id" in body
+        assert "error" in body
+        assert "inconsistent" in body["error"]
 
     def test_sfn_failure_uses_condition_expression(self):
         """Status update to FAILED uses ConditionExpression to prevent stale updates."""
