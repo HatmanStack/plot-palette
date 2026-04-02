@@ -14,6 +14,7 @@ import signal
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -89,12 +90,23 @@ class Worker:
     # Checkpoint every N records
     CHECKPOINT_INTERVAL = int(os.environ.get("CHECKPOINT_INTERVAL", "50"))
 
+    # Health marker file path for Docker HEALTHCHECK
+    HEALTH_FILE = Path(os.environ.get("WORKER_HEALTH_FILE", "/tmp/worker_healthy"))
+
     def __init__(self):
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self.handle_shutdown)
         signal.signal(signal.SIGALRM, self.handle_alarm_timeout)
         self.template_engine = TemplateEngine()
+        self._touch_health_file()
         logger.info("Worker initialized")
+
+    def _touch_health_file(self):
+        """Update health marker file timestamp for Docker HEALTHCHECK."""
+        try:
+            self.HEALTH_FILE.touch()
+        except OSError as e:
+            logger.warning(f"Failed to touch health file: {e}")
 
     def handle_shutdown(self, signum, frame):
         """Handle SIGTERM for Spot interruption (120 seconds to shutdown)."""
@@ -373,6 +385,7 @@ class Worker:
                     checkpoint["cost_accumulated"] = total_cost
                     self.save_checkpoint(job_id, checkpoint)
                     self.update_job_progress(job_id, checkpoint)
+                    self._touch_health_file()
 
                     batch_records = []
                     batch_number += 1

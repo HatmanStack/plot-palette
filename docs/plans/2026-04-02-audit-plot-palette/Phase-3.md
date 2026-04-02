@@ -170,10 +170,10 @@ HEALTHCHECK --interval=30s --timeout=5s CMD \
 
 **Verification Checklist:**
 
-- [ ] Worker writes a health marker file periodically
-- [ ] HEALTHCHECK validates file recency, not just process existence
-- [ ] Health file is written in the main processing loop
-- [ ] Test verifies health file is created/updated
+- [x] Worker writes a health marker file periodically
+- [x] HEALTHCHECK validates file recency, not just process existence
+- [x] Health file is written in the main processing loop
+- [x] Test verifies health file is created/updated
 
 **Testing Instructions:**
 

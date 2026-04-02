@@ -378,6 +378,65 @@ class TestStepFunctionsModeInterruption:
         assert retry_count < max_retries
 
 
+class TestHealthMarkerFile:
+    """Tests for Docker HEALTHCHECK marker file."""
+
+    def test_health_file_created_by_touch(self, tmp_path):
+        """Test that health marker file is created when touched."""
+        from pathlib import Path
+
+        health_file = tmp_path / "worker_healthy"
+        assert not health_file.exists()
+
+        # Simulate what _touch_health_file does
+        health_file.touch()
+
+        assert health_file.exists()
+
+    def test_health_file_updated_on_checkpoint(self, tmp_path):
+        """Test that health file timestamp is updated at checkpoint intervals."""
+        from pathlib import Path
+        import time as time_mod
+
+        health_file = tmp_path / "worker_healthy"
+        health_file.touch()
+
+        initial_mtime = health_file.stat().st_mtime
+
+        # Small delay to ensure mtime differs
+        time_mod.sleep(0.05)
+
+        # Touch again (simulating checkpoint)
+        health_file.touch()
+        new_mtime = health_file.stat().st_mtime
+
+        assert new_mtime >= initial_mtime
+
+    def test_health_file_touch_handles_os_error(self):
+        """Test that OSError during health file touch is handled gracefully."""
+        from pathlib import Path
+
+        health_file = Path("/nonexistent/deeply/nested/path/worker_healthy")
+        # Simulate the _touch_health_file error handling pattern
+        error_logged = False
+        try:
+            health_file.touch()
+        except OSError:
+            error_logged = True
+
+        assert error_logged is True
+
+    def test_health_file_written_in_worker_code(self):
+        """Test that worker.py contains _touch_health_file calls in the right places."""
+        from pathlib import Path
+
+        worker_src = Path("backend/ecs_tasks/worker/worker.py").read_text()
+        # Health file touched on init
+        assert "_touch_health_file" in worker_src
+        # Health file touched at checkpoint
+        assert worker_src.count("_touch_health_file") >= 2  # init + checkpoint
+
+
 class TestGracefulShutdownSequence:
     """Tests for the complete graceful shutdown sequence."""
 

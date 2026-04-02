@@ -22,8 +22,10 @@ RUN chmod +x entrypoint.sh
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 USER appuser
 
-# Health check (batch process, not HTTP)
-HEALTHCHECK --interval=30s --timeout=5s CMD pgrep -f "python worker" || exit 1
+# Health check: verify process exists AND health marker file is recent (< 2 min)
+HEALTHCHECK --interval=30s --timeout=5s CMD \
+  pgrep -f "python worker" && \
+  find /tmp/worker_healthy -mmin -2 | grep -q . || exit 1
 
 # Set entrypoint
 ENTRYPOINT ["./entrypoint.sh"]
