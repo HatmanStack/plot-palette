@@ -133,11 +133,11 @@ It outputs `VITE_USER_POOL_ID` and `VITE_CLIENT_ID` but the frontend expects
 
 **Verification Checklist:**
 
-- [ ] Deploy script echoes `VITE_COGNITO_USER_POOL_ID` (not `VITE_USER_POOL_ID`)
-- [ ] Deploy script echoes `VITE_COGNITO_CLIENT_ID` (not `VITE_CLIENT_ID`)
-- [ ] Deploy script echoes `VITE_API_ENDPOINT` (not `VITE_API_URL`, if applicable)
-- [ ] No reference to `VITE_AWS_REGION` in the frontend section
-- [ ] Variable names match `.env.example`
+- [x] Deploy script echoes `VITE_COGNITO_USER_POOL_ID` (not `VITE_USER_POOL_ID`)
+- [x] Deploy script echoes `VITE_COGNITO_CLIENT_ID` (not `VITE_CLIENT_ID`)
+- [x] Deploy script echoes `VITE_API_ENDPOINT` (not `VITE_API_URL`, if applicable)
+- [x] No reference to `VITE_AWS_REGION` in the frontend section
+- [x] Variable names match `.env.example`
 
 **Testing Instructions:**
 
