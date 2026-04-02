@@ -52,7 +52,7 @@ def simulate_download_handler(event, jobs_table_mock, s3_client_mock, bucket_nam
         try:
             s3_client_mock.head_object(Bucket=bucket_name, Key=s3_key)
         except ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response['Error']['Code'] in ('404', 'NoSuchKey'):
                 return error_response(404, "Export file not found - job may still be processing")
             return error_response(500, "Error checking export file")
 
@@ -125,6 +125,22 @@ class TestDownloadJobLogic:
         mock_table.get_item.return_value = {'Item': self._completed_job()}
         mock_s3.head_object.side_effect = ClientError(
             {'Error': {'Code': '404', 'Message': 'Not Found'}}, 'HeadObject'
+        )
+
+        result = simulate_download_handler(make_event(), mock_table, mock_s3)
+        assert result['statusCode'] == 404
+        body = json.loads(result['body'])
+        assert 'not found' in body['error'].lower()
+
+    def test_export_file_not_found_nosuchkey(self):
+        from unittest.mock import MagicMock
+        from botocore.exceptions import ClientError
+
+        mock_table = MagicMock()
+        mock_s3 = MagicMock()
+        mock_table.get_item.return_value = {'Item': self._completed_job()}
+        mock_s3.head_object.side_effect = ClientError(
+            {'Error': {'Code': 'NoSuchKey', 'Message': 'Not Found'}}, 'HeadObject'
         )
 
         result = simulate_download_handler(make_event(), mock_table, mock_s3)

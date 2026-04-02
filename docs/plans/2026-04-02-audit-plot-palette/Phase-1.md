@@ -175,8 +175,8 @@ is correct.
 
 **Verification Checklist:**
 
-- [ ] Error code check handles both `"404"` and `"NoSuchKey"`
-- [ ] Test covers the error path
+- [x] Error code check handles both `"404"` and `"NoSuchKey"`
+- [x] Test covers the error path
 
 **Testing Instructions:**
 
