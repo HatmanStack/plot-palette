@@ -306,6 +306,10 @@ class Worker:
                 try:
                     self.mark_job_failed(job_id, str(e))
                 except Exception as mark_err:
+                    # Intentionally swallowed: re-raising here would crash the standalone
+                    # worker process without any additional benefit — the job is already
+                    # in a failure state, and the error is logged for investigation.
+                    # In SFN mode (line 297), exceptions propagate to the state machine.
                     logger.error(
                         f"Failed to mark job {job_id} as FAILED: {mark_err}",
                         exc_info=True,

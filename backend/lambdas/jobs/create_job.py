@@ -168,7 +168,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return error_response(400, "Request body must be a JSON object")
 
         # Idempotency: use client-provided token or generate server-side
-        client_idempotency_token = body.get("idempotency_token")
+        client_idempotency_token = None
+        if "idempotency_token" in body:
+            token_value = body["idempotency_token"]
+            if not isinstance(token_value, str) or not token_value.strip():
+                return error_response(400, "idempotency_token must be a non-empty string")
+            client_idempotency_token = token_value.strip()
         idempotency_token = client_idempotency_token or str(uuid.uuid4())
 
         # Validate configuration
@@ -313,12 +318,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Start Step Functions execution for the job
         try:
             execution_arn = start_job_execution(job_id, user_id)
-            # Store execution ARN on job record
-            jobs_table.update_item(
-                Key={"job_id": job_id},
-                UpdateExpression="SET execution_arn = :arn",
-                ExpressionAttributeValues={":arn": execution_arn},
-            )
         except Exception as e:
             logger.error(
                 json.dumps(
@@ -329,8 +328,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     }
                 )
             )
-            # Mark job as failed so it doesn't stay QUEUED with no execution
-            sfn_error = str(e)
+            # Mark job as FAILED so it doesn't stay QUEUED with no execution
             try:
                 jobs_table.update_item(
                     Key={"job_id": job_id},
@@ -350,13 +348,33 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         {
                             "event": "sfn_failure_status_update_failed",
                             "job_id": job_id,
-                            "sfn_error": sfn_error,
+                            "sfn_error": str(e),
                             "update_error": str(update_err),
                         }
                     )
                 )
                 return error_response(500, "Job created but may be in inconsistent state")
             return error_response(500, "Job created but failed to start execution")
+
+        # Persist execution ARN (separate from SFN start — don't mark FAILED if only this fails)
+        try:
+            jobs_table.update_item(
+                Key={"job_id": job_id},
+                UpdateExpression="SET execution_arn = :arn",
+                ExpressionAttributeValues={":arn": execution_arn},
+            )
+        except ClientError as arn_err:
+            logger.error(
+                json.dumps(
+                    {
+                        "event": "arn_persistence_failed",
+                        "job_id": job_id,
+                        "execution_arn": execution_arn,
+                        "error": str(arn_err),
+                    }
+                )
+            )
+            # Job and SFN execution exist — ARN just isn't persisted. Not fatal.
 
         return success_response(
             201,
