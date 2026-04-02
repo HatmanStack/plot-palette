@@ -3,14 +3,9 @@ import { getIdToken } from './auth'
 
 const BASE_URL = import.meta.env.VITE_API_ENDPOINT
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
-  try {
-    const token = await getIdToken()
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  } catch (error) {
-    console.error('Failed to get auth token:', error)
-    return {}
-  }
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getIdToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 async function request<T>(

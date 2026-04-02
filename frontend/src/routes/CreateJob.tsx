@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { createJob, generateUploadUrl, fetchTemplateVersions } from '../services/api'
 import { estimateCostRange } from '../constants/pricing'
 import SeedDataGenerator from '../components/SeedDataGenerator'
-import axios from 'axios'
 
 interface WizardData {
   templateId: string
