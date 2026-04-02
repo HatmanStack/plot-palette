@@ -1,42 +1,39 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ZodError } from 'zod'
-import axios from 'axios'
 import * as authService from './auth'
 
-// Mock modules before importing the module under test
-vi.mock('axios', () => {
-  const mockAxios = {
-    create: vi.fn(() => mockAxios),
-    get: vi.fn(),
-    post: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-    interceptors: {
-      request: {
-        use: vi.fn((fn) => {
-          mockAxios._requestInterceptor = fn
-          return 0
-        }),
-      },
-      response: {
-        use: vi.fn((_onFulfilled, onRejected) => {
-          mockAxios._responseErrorInterceptor = onRejected
-          return 0
-        }),
-      },
-    },
-    _requestInterceptor: null as ((config: unknown) => Promise<unknown>) | null,
-    _responseErrorInterceptor: null as ((error: unknown) => unknown) | null,
-  }
-  return { default: mockAxios }
-})
-
+// Mock auth module
 vi.mock('./auth', () => ({
   getIdToken: vi.fn(),
 }))
 
 const mockGetIdToken = vi.mocked(authService.getIdToken)
-const mockAxios = vi.mocked(axios)
+
+// Mock fetch globally
+const mockFetch = vi.fn()
+vi.stubGlobal('fetch', mockFetch)
+
+// Helper to create a mock Response
+function mockResponse(data: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.resolve(data),
+    headers: new Headers(),
+    redirected: false,
+    statusText: 'OK',
+    type: 'basic' as ResponseType,
+    url: '',
+    clone: () => mockResponse(data, status),
+    body: null,
+    bodyUsed: false,
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+    blob: () => Promise.resolve(new Blob()),
+    formData: () => Promise.resolve(new FormData()),
+    text: () => Promise.resolve(JSON.stringify(data)),
+    bytes: () => Promise.resolve(new Uint8Array()),
+  } as Response
+}
 
 // Import the module after mocking
 import {
@@ -56,6 +53,7 @@ import {
 describe('API Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetIdToken.mockResolvedValue('test-token')
   })
 
   describe('fetchJobs', () => {
@@ -64,11 +62,11 @@ describe('API Service', () => {
         { 'job_id': 'job-1', status: 'RUNNING' },
         { 'job_id': 'job-2', status: 'COMPLETED' },
       ]
-      mockAxios.get.mockResolvedValueOnce({ data: { jobs: mockJobs } })
+      mockFetch.mockResolvedValueOnce(mockResponse({ jobs: mockJobs }))
 
       const result = await fetchJobs()
 
-      expect(mockAxios.get).toHaveBeenCalledWith('/jobs')
+      expect(mockFetch).toHaveBeenCalledOnce()
       // Zod adds default values for fields not in the mock data
       expect(result).toEqual([
         { 'job_id': 'job-1', status: 'RUNNING', 'user_id': '', 'created_at': '', 'updated_at': '', 'budget_limit': 0, 'num_records': 0, 'records_generated': 0, 'tokens_used': 0, 'cost_estimate': 0 },
@@ -77,7 +75,7 @@ describe('API Service', () => {
     })
 
     it('returns empty array when no jobs property', async () => {
-      mockAxios.get.mockResolvedValueOnce({ data: {} })
+      mockFetch.mockResolvedValueOnce(mockResponse({}))
 
       const result = await fetchJobs()
 
@@ -85,7 +83,7 @@ describe('API Service', () => {
     })
 
     it('returns empty array when jobs is null', async () => {
-      mockAxios.get.mockResolvedValueOnce({ data: { jobs: null } })
+      mockFetch.mockResolvedValueOnce(mockResponse({ jobs: null }))
 
       const result = await fetchJobs()
 
@@ -100,11 +98,12 @@ describe('API Service', () => {
         status: 'RUNNING',
         'records_generated': 50,
       }
-      mockAxios.get.mockResolvedValueOnce({ data: mockJob })
+      mockFetch.mockResolvedValueOnce(mockResponse(mockJob))
 
       const result = await fetchJobDetails('job-123')
 
-      expect(mockAxios.get).toHaveBeenCalledWith('/jobs/job-123')
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).toContain('/jobs/job-123')
       // Zod adds default values for fields not in the mock data
       expect(result).toEqual({
         'job_id': 'job-123', status: 'RUNNING', 'records_generated': 50,
@@ -127,11 +126,14 @@ describe('API Service', () => {
         'budget_limit': 100,
         'num_records': 1000,
       }
-      mockAxios.post.mockResolvedValueOnce({ data: createdJob })
+      mockFetch.mockResolvedValueOnce(mockResponse(createdJob))
 
       const result = await createJob(jobData)
 
-      expect(mockAxios.post).toHaveBeenCalledWith('/jobs', jobData)
+      const [url, options] = mockFetch.mock.calls[0]
+      expect((url as string)).toContain('/jobs')
+      expect((options as RequestInit).method).toBe('POST')
+      expect(JSON.parse((options as RequestInit).body as string)).toEqual(jobData)
       // Zod adds default values for fields not in the response
       expect(result).toEqual({
         'job_id': 'new-job-123', status: 'QUEUED',
@@ -144,22 +146,25 @@ describe('API Service', () => {
 
   describe('deleteJob', () => {
     it('sends DELETE request with job ID', async () => {
-      mockAxios.delete.mockResolvedValueOnce({})
+      mockFetch.mockResolvedValueOnce(mockResponse({}, 204))
 
       await deleteJob('job-to-delete')
 
-      expect(mockAxios.delete).toHaveBeenCalledWith('/jobs/job-to-delete')
+      const [url, options] = mockFetch.mock.calls[0]
+      expect((url as string)).toContain('/jobs/job-to-delete')
+      expect((options as RequestInit).method).toBe('DELETE')
     })
   })
 
   describe('cancelJob', () => {
     it('sends DELETE request with job ID (same as delete)', async () => {
-      mockAxios.delete.mockResolvedValueOnce({})
+      mockFetch.mockResolvedValueOnce(mockResponse({}, 204))
 
       await cancelJob('job-to-cancel')
 
-      // Note: cancelJob uses the same endpoint as deleteJob
-      expect(mockAxios.delete).toHaveBeenCalledWith('/jobs/job-to-cancel')
+      const [url, options] = mockFetch.mock.calls[0]
+      expect((url as string)).toContain('/jobs/job-to-cancel')
+      expect((options as RequestInit).method).toBe('DELETE')
     })
   })
 
@@ -169,11 +174,12 @@ describe('API Service', () => {
         upload_url: 'https://s3.example.com/presigned-url',
         s3_key: 'seed-data/file.json',
       }
-      mockAxios.post.mockResolvedValueOnce({ data: response })
+      mockFetch.mockResolvedValueOnce(mockResponse(response))
 
       const result = await generateUploadUrl('file.json', 'application/json')
 
-      expect(mockAxios.post).toHaveBeenCalledWith('/seed-data/upload', {
+      const [, options] = mockFetch.mock.calls[0]
+      expect(JSON.parse((options as RequestInit).body as string)).toEqual({
         filename: 'file.json',
         content_type: 'application/json',
       })
@@ -185,72 +191,59 @@ describe('API Service', () => {
         upload_url: 'https://s3.example.com/presigned-url',
         s3_key: 'seed-data/file.json',
       }
-      mockAxios.post.mockResolvedValueOnce({ data: response })
+      mockFetch.mockResolvedValueOnce(mockResponse(response))
 
       await generateUploadUrl('file.json')
 
-      expect(mockAxios.post).toHaveBeenCalledWith('/seed-data/upload', {
+      const [, options] = mockFetch.mock.calls[0]
+      expect(JSON.parse((options as RequestInit).body as string)).toEqual({
         filename: 'file.json',
         content_type: 'application/json',
       })
     })
   })
 
-  describe('Auth interceptor', () => {
+  describe('Auth headers', () => {
     it('adds Authorization header when token exists', async () => {
       mockGetIdToken.mockResolvedValueOnce('test-token-123')
+      mockFetch.mockResolvedValueOnce(mockResponse({ jobs: [] }))
 
-      // Get the registered interceptor and call it
-      const interceptor = mockAxios._requestInterceptor
-      expect(interceptor).not.toBeNull()
+      await fetchJobs()
 
-      const config = { headers: {} as Record<string, string> }
-      const result = await interceptor!(config)
-
-      expect(mockGetIdToken).toHaveBeenCalled()
-      expect((result as { headers: { Authorization: string } }).headers.Authorization).toBe('Bearer test-token-123')
+      const [, options] = mockFetch.mock.calls[0]
+      const headers = (options as RequestInit).headers as Record<string, string>
+      expect(headers['Authorization']).toBe('Bearer test-token-123')
     })
 
     it('does not add Authorization header when token is null', async () => {
       mockGetIdToken.mockResolvedValueOnce(null)
+      mockFetch.mockResolvedValueOnce(mockResponse({ jobs: [] }))
 
-      const interceptor = mockAxios._requestInterceptor
-      const config = { headers: {} as Record<string, string> }
-      const result = await interceptor!(config)
+      await fetchJobs()
 
-      expect((result as { headers: Record<string, string> }).headers.Authorization).toBeUndefined()
+      const [, options] = mockFetch.mock.calls[0]
+      const headers = (options as RequestInit).headers as Record<string, string>
+      expect(headers['Authorization']).toBeUndefined()
     })
 
-    it('continues without error when getIdToken throws', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    it('propagates auth errors instead of swallowing', async () => {
       mockGetIdToken.mockRejectedValueOnce(new Error('Token error'))
 
-      const interceptor = mockAxios._requestInterceptor
-      const config = { headers: {} as Record<string, string> }
-      const result = await interceptor!(config)
-
-      expect(consoleSpy).toHaveBeenCalled()
-      expect((result as { headers: Record<string, string> }).headers.Authorization).toBeUndefined()
-
-      consoleSpy.mockRestore()
+      await expect(fetchJobs()).rejects.toThrow('Token error')
     })
   })
 
-  describe('Response interceptor', () => {
+  describe('HTTP error handling', () => {
     it('redirects to /login on 401 response', async () => {
-      const interceptor = mockAxios._responseErrorInterceptor
-      expect(interceptor).not.toBeNull()
-
-      // Mock window.location
       const originalLocation = window.location
       Object.defineProperty(window, 'location', {
         writable: true,
         value: { ...originalLocation, href: '' },
       })
 
-      const error = { response: { status: 401 } }
-      await expect(interceptor!(error)).rejects.toEqual(error)
+      mockFetch.mockResolvedValueOnce(mockResponse({}, 401))
 
+      await expect(fetchJobs()).rejects.toThrow('Unauthorized')
       expect(window.location.href).toBe('/login')
 
       Object.defineProperty(window, 'location', {
@@ -260,16 +253,15 @@ describe('API Service', () => {
     })
 
     it('redirects to /login on 403 response', async () => {
-      const interceptor = mockAxios._responseErrorInterceptor
       const originalLocation = window.location
       Object.defineProperty(window, 'location', {
         writable: true,
         value: { ...originalLocation, href: '' },
       })
 
-      const error = { response: { status: 403 } }
-      await expect(interceptor!(error)).rejects.toEqual(error)
+      mockFetch.mockResolvedValueOnce(mockResponse({}, 403))
 
+      await expect(fetchJobs()).rejects.toThrow('Unauthorized')
       expect(window.location.href).toBe('/login')
 
       Object.defineProperty(window, 'location', {
@@ -278,14 +270,20 @@ describe('API Service', () => {
       })
     })
 
-    it('does not redirect on other error codes', async () => {
-      const interceptor = mockAxios._responseErrorInterceptor
-      const originalHref = window.location.href
+    it('throws with error message from response body', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ message: 'Not found' }, 404))
 
-      const error = { response: { status: 500 } }
-      await expect(interceptor!(error)).rejects.toEqual(error)
+      await expect(fetchJobs()).rejects.toThrow('Not found')
+    })
 
-      expect(window.location.href).toBe(originalHref)
+    it('throws with status code when no message in body', async () => {
+      const resp = mockResponse({}, 500)
+      Object.defineProperty(resp, 'json', {
+        value: () => Promise.reject(new Error('no json')),
+      })
+      mockFetch.mockResolvedValueOnce(resp)
+
+      await expect(fetchJobs()).rejects.toThrow('HTTP error! status: 500')
     })
   })
 
@@ -298,18 +296,19 @@ describe('API Service', () => {
         format: 'jsonl',
         expires_in: 3600,
       }
-      mockAxios.get.mockResolvedValueOnce({ data: response })
+      mockFetch.mockResolvedValueOnce(mockResponse(response))
 
       const result = await downloadPartialExport('job-abc123')
 
-      expect(mockAxios.get).toHaveBeenCalledWith('/jobs/job-abc123/download-partial')
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).toContain('/jobs/job-abc123/download-partial')
       expect(result).toEqual(response)
     })
 
     it('propagates network errors', async () => {
-      mockAxios.get.mockRejectedValueOnce(new Error('Network Error'))
+      mockFetch.mockRejectedValueOnce(new TypeError('fetch failed'))
 
-      await expect(downloadPartialExport('job-abc123')).rejects.toThrow('Network Error')
+      await expect(downloadPartialExport('job-abc123')).rejects.toThrow('Network error: unable to reach the server')
     })
   })
 
@@ -328,34 +327,38 @@ describe('API Service', () => {
     }
 
     it('fetches template without version parameter', async () => {
-      mockAxios.get.mockResolvedValueOnce({ data: templateResponse })
+      mockFetch.mockResolvedValueOnce(mockResponse(templateResponse))
 
       const result = await fetchTemplate('tmpl-123')
 
-      expect(mockAxios.get).toHaveBeenCalledWith('/templates/tmpl-123')
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).toContain('/templates/tmpl-123')
+      expect(calledUrl).not.toContain('version=')
       expect(result.template_id).toBe('tmpl-123')
       expect(result.version).toBe(2)
     })
 
     it('appends version=latest query parameter', async () => {
-      mockAxios.get.mockResolvedValueOnce({ data: { ...templateResponse, version: 3 } })
+      mockFetch.mockResolvedValueOnce(mockResponse({ ...templateResponse, version: 3 }))
 
       const result = await fetchTemplate('tmpl-123', 'latest')
 
-      expect(mockAxios.get).toHaveBeenCalledWith('/templates/tmpl-123?version=latest')
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).toContain('version=latest')
       expect(result.version).toBe(3)
     })
 
     it('appends specific version number as query parameter', async () => {
-      mockAxios.get.mockResolvedValueOnce({ data: templateResponse })
+      mockFetch.mockResolvedValueOnce(mockResponse(templateResponse))
 
       await fetchTemplate('tmpl-123', 2)
 
-      expect(mockAxios.get).toHaveBeenCalledWith('/templates/tmpl-123?version=2')
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).toContain('version=2')
     })
 
     it('rejects with ZodError for invalid template response', async () => {
-      mockAxios.get.mockResolvedValueOnce({ data: { invalid: true } })
+      mockFetch.mockResolvedValueOnce(mockResponse({ invalid: true }))
 
       await expect(fetchTemplate('tmpl-123')).rejects.toThrow(ZodError)
     })
@@ -371,17 +374,18 @@ describe('API Service', () => {
           { version: 1, name: 'v1', description: '', created_at: '2025-01-01T00:00:00' },
         ],
       }
-      mockAxios.get.mockResolvedValueOnce({ data: response })
+      mockFetch.mockResolvedValueOnce(mockResponse(response))
 
       const result = await fetchTemplateVersions('tmpl-123')
 
-      expect(mockAxios.get).toHaveBeenCalledWith('/templates/tmpl-123/versions')
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).toContain('/templates/tmpl-123/versions')
       expect(result).toHaveLength(3)
       expect(result[0].version).toBe(3)
     })
 
     it('rejects with ZodError for malformed response', async () => {
-      mockAxios.get.mockResolvedValueOnce({ data: { no_versions: true } })
+      mockFetch.mockResolvedValueOnce(mockResponse({ no_versions: true }))
 
       await expect(fetchTemplateVersions('tmpl-123')).rejects.toThrow(ZodError)
     })
@@ -399,11 +403,13 @@ describe('API Service', () => {
         name: 'Updated Name',
         steps: [{ id: 'step1', prompt: 'Updated prompt' }],
       }
-      mockAxios.put.mockResolvedValueOnce({ data: response })
+      mockFetch.mockResolvedValueOnce(mockResponse(response))
 
       const result = await updateTemplate('tmpl-123', templateData)
 
-      expect(mockAxios.put).toHaveBeenCalledWith('/templates/tmpl-123', templateData)
+      const [url, options] = mockFetch.mock.calls[0]
+      expect((url as string)).toContain('/templates/tmpl-123')
+      expect((options as RequestInit).method).toBe('PUT')
       expect(result.version).toBe(3)
       expect(result.name).toBe('Updated Name')
     })
@@ -421,11 +427,13 @@ describe('API Service', () => {
         name: 'New Template',
         steps: [{ id: 'step1', prompt: 'Generate text' }],
       }
-      mockAxios.post.mockResolvedValueOnce({ data: response })
+      mockFetch.mockResolvedValueOnce(mockResponse(response))
 
       const result = await createTemplate(templateData)
 
-      expect(mockAxios.post).toHaveBeenCalledWith('/templates', templateData)
+      const [url, options] = mockFetch.mock.calls[0]
+      expect((url as string)).toContain('/templates')
+      expect((options as RequestInit).method).toBe('POST')
       expect(result.template_id).toBe('tmpl-new-456')
       expect(result.version).toBe(1)
     })
@@ -433,17 +441,15 @@ describe('API Service', () => {
 
   describe('Edge cases', () => {
     it('rejects with ZodError when response data is invalid', async () => {
-      mockAxios.get.mockResolvedValueOnce({
-        data: { jobs: [{ invalid_field: true }] },
-      })
+      mockFetch.mockResolvedValueOnce(mockResponse({ jobs: [{ invalid_field: true }] }))
 
       await expect(fetchJobs()).rejects.toThrow(ZodError)
     })
 
-    it('propagates network errors without swallowing', async () => {
-      mockAxios.get.mockRejectedValueOnce(new Error('Network Error'))
+    it('wraps network errors with descriptive message', async () => {
+      mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 
-      await expect(fetchJobs()).rejects.toThrow('Network Error')
+      await expect(fetchJobs()).rejects.toThrow('Network error: unable to reach the server')
     })
   })
 })
