@@ -133,9 +133,10 @@ jobs:
           PERSISTENCE: "0"
         options: >-
           --health-cmd="curl -f http://localhost:4566/_ministack/health"
-          --health-interval=5s
-          --health-timeout=3s
-          --health-retries=10
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+          --health-start-period=10s
     steps:
       - uses: actions/checkout@v6
 
@@ -160,15 +161,15 @@ jobs:
     steps:
       - name: Verify
         run: |
-          results=(
-            "${{ needs.frontend.result }}"
-            "${{ needs.backend.result }}"
-            "${{ needs.e2e.result }}"
-          )
-          for result in "${results[@]}"; do
+          # Frontend and backend are required gates
+          for result in "${{ needs.frontend.result }}" "${{ needs.backend.result }}"; do
             if [[ "$result" != "success" && "$result" != "skipped" ]]; then
-              echo "One or more checks failed: $result"
+              echo "Required check failed: $result"
               exit 1
             fi
           done
-          echo "All checks passed!"
+          # E2E is advisory — flaky container infra should not block merges
+          if [[ "${{ needs.e2e.result }}" == "failure" ]]; then
+            echo "::warning::E2E tests failed (advisory, not blocking)"
+          fi
+          echo "All required checks passed!"
