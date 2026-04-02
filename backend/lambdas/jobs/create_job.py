@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
 import uuid
 
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from constants import ExportFormat, JobStatus
 from lambda_responses import error_response, success_response
@@ -164,44 +164,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         except json.JSONDecodeError:
             return error_response(400, "Invalid JSON in request body")
 
-        # Check idempotency token (generate server-side if client doesn't provide one)
-        idempotency_token = body.get("idempotency_token") or str(uuid.uuid4())
-        if body.get("idempotency_token"):
-            try:
-                existing = jobs_table.query(
-                    IndexName="user-id-index",
-                    KeyConditionExpression=Key("user_id").eq(user_id),
-                    FilterExpression=Attr("idempotency_token").eq(idempotency_token),
-                )
-                if existing.get("Items"):
-                    item = existing["Items"][0]
-                    logger.info(
-                        json.dumps(
-                            {
-                                "event": "idempotent_job_returned",
-                                "job_id": item["job_id"],
-                                "idempotency_token": idempotency_token,
-                            }
-                        )
-                    )
-                    return success_response(
-                        200,
-                        {
-                            "job_id": item["job_id"],
-                            "status": item["status"],
-                            "created_at": item.get("created_at", ""),
-                            "message": "Existing job returned (idempotent)",
-                        },
-                    )
-            except ClientError as e:
-                logger.warning(
-                    json.dumps(
-                        {
-                            "event": "idempotency_check_failed",
-                            "error": str(e),
-                        }
-                    )
-                )
+        # Idempotency: use client-provided token or generate server-side
+        client_idempotency_token = body.get("idempotency_token")
+        idempotency_token = client_idempotency_token or str(uuid.uuid4())
 
         # Validate configuration
         is_valid, error_msg = validate_job_config(body)
@@ -245,8 +210,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Store resolved version in config for reproducibility
         body["template_version"] = template_version
 
-        # Generate job ID
-        job_id = generate_job_id()
+        # Generate job ID (deterministic from idempotency token if client-provided,
+        # so the conditional write on job_id makes idempotency atomic)
+        if client_idempotency_token:
+            # Deterministic UUID5 from the token ensures same token -> same job_id
+            job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:{client_idempotency_token}"))
+        else:
+            job_id = generate_job_id()
         now = datetime.now(UTC)
 
         # Create job record
@@ -274,6 +244,32 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                if client_idempotency_token:
+                    # Idempotent duplicate: fetch and return the existing job
+                    logger.info(
+                        json.dumps(
+                            {
+                                "event": "idempotent_job_returned",
+                                "job_id": job_id,
+                                "idempotency_token": idempotency_token,
+                            }
+                        )
+                    )
+                    try:
+                        existing = jobs_table.get_item(Key={"job_id": job_id})
+                        if "Item" in existing:
+                            item = existing["Item"]
+                            return success_response(
+                                200,
+                                {
+                                    "job_id": item["job_id"],
+                                    "status": item.get("status", ""),
+                                    "created_at": str(item.get("created_at", "")),
+                                    "message": "Existing job returned (idempotent)",
+                                },
+                            )
+                    except ClientError:
+                        pass  # Fall through to conflict response
                 logger.warning(
                     json.dumps(
                         {

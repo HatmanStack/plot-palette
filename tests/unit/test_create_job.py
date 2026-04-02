@@ -100,6 +100,112 @@ class TestCreateJobTypedExceptions:
         assert call_kwargs[1].get("exc_info") is True
 
 
+class TestCreateJobIdempotency:
+    """Tests for atomic idempotency via conditional write."""
+
+    def setup_method(self):
+        self.mock_jobs_table = MagicMock()
+        self.mock_templates_table = MagicMock()
+        self.mock_sfn = MagicMock()
+        _mod.jobs_table = self.mock_jobs_table
+        _mod.templates_table = self.mock_templates_table
+        _mod.sfn_client = self.mock_sfn
+
+        # Template lookup succeeds
+        self.mock_templates_table.query.return_value = {
+            "Items": [{"template_id": "tpl-1", "version": 1}]
+        }
+
+        # SFN succeeds
+        self.mock_sfn.start_execution.return_value = {
+            "executionArn": "arn:aws:states:us-east-1:123456789012:execution:sm:job-1"
+        }
+
+    def test_idempotent_duplicate_returns_existing_job(self):
+        """Second creation with same idempotency token returns existing job."""
+        token = "my-unique-token-123"
+
+        # First call succeeds
+        self.mock_jobs_table.put_item.return_value = {}
+        body = {
+            "template_id": "tpl-1",
+            "seed_data_path": "s3://bucket/seeds.json",
+            "budget_limit": 10.0,
+            "output_format": "JSONL",
+            "num_records": 100,
+            "idempotency_token": token,
+        }
+        response1 = lambda_handler(_make_event(body=body), None)
+        assert response1["statusCode"] == 201
+
+        # Second call: put_item raises ConditionalCheckFailedException
+        self.mock_jobs_table.put_item.side_effect = ClientError(
+            {"Error": {"Code": "ConditionalCheckFailedException", "Message": "exists"}},
+            "PutItem",
+        )
+        self.mock_jobs_table.get_item.return_value = {
+            "Item": {
+                "job_id": "existing-job-id",
+                "status": "QUEUED",
+                "created_at": "2026-01-01T00:00:00",
+            }
+        }
+        response2 = lambda_handler(_make_event(body=body), None)
+
+        assert response2["statusCode"] == 200
+        body2 = json.loads(response2["body"])
+        assert body2["message"] == "Existing job returned (idempotent)"
+
+    def test_put_item_uses_condition_expression(self):
+        """put_item is called with attribute_not_exists(job_id) condition."""
+        self.mock_jobs_table.put_item.return_value = {}
+
+        lambda_handler(_make_event(), None)
+
+        call_kwargs = self.mock_jobs_table.put_item.call_args[1]
+        assert "ConditionExpression" in call_kwargs
+        assert "attribute_not_exists(job_id)" in str(call_kwargs["ConditionExpression"])
+
+    def test_no_separate_query_for_idempotency(self):
+        """No query-then-put pattern: no query call on user-id-index for idempotency."""
+        self.mock_jobs_table.put_item.return_value = {}
+        body = {
+            "template_id": "tpl-1",
+            "seed_data_path": "s3://bucket/seeds.json",
+            "budget_limit": 10.0,
+            "output_format": "JSONL",
+            "num_records": 100,
+            "idempotency_token": "token-xyz",
+        }
+
+        lambda_handler(_make_event(body=body), None)
+
+        # jobs_table.query should NOT be called (no user-id-index query)
+        self.mock_jobs_table.query.assert_not_called()
+
+    def test_same_token_produces_same_job_id(self):
+        """Same idempotency token deterministically produces the same job_id."""
+        import uuid
+
+        token = "deterministic-token"
+        expected_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"plot-palette:{token}"))
+
+        self.mock_jobs_table.put_item.return_value = {}
+        body = {
+            "template_id": "tpl-1",
+            "seed_data_path": "s3://bucket/seeds.json",
+            "budget_limit": 10.0,
+            "output_format": "JSONL",
+            "num_records": 100,
+            "idempotency_token": token,
+        }
+
+        lambda_handler(_make_event(body=body), None)
+
+        put_item = self.mock_jobs_table.put_item.call_args[1]["Item"]
+        assert put_item["job_id"] == expected_id
+
+
 class TestCreateJobSFNFailure:
     def setup_method(self):
         self.mock_jobs_table = MagicMock()
