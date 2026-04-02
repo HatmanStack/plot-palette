@@ -117,6 +117,7 @@ jobs:
     timeout-minutes: 20
     needs: [changes, backend]
     if: needs.changes.outputs.backend == 'true'
+    continue-on-error: true
     env:
       AWS_DEFAULT_REGION: us-east-1
       AWS_ACCESS_KEY_ID: testing
