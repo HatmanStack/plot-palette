@@ -386,3 +386,123 @@ class TestDynamoDBQueryFailures:
         has_items = len(response['Items']) > 0
 
         assert has_items is False
+
+
+def _import_worker():
+    """Import worker module with required env vars and sys.path setup."""
+    import os
+    import sys
+    from unittest.mock import patch
+
+    worker_dir = os.path.join(
+        os.path.dirname(__file__), "..", "..", "backend", "ecs_tasks", "worker"
+    )
+    worker_dir = os.path.abspath(worker_dir)
+
+    env_vars = {
+        "JOBS_TABLE_NAME": "test-Jobs",
+        "TEMPLATES_TABLE_NAME": "test-Templates",
+        "COST_TRACKING_TABLE_NAME": "test-CostTracking",
+        "CHECKPOINT_METADATA_TABLE_NAME": "test-CheckpointMetadata",
+        "BUCKET_NAME": "test-bucket",
+        "QUEUE_TABLE_NAME": "test-Queue",
+        "AWS_DEFAULT_REGION": "us-east-1",
+    }
+
+    old_path = sys.path[:]
+    try:
+        if worker_dir not in sys.path:
+            sys.path.insert(0, worker_dir)
+
+        with patch.dict(os.environ, env_vars):
+            from backend.ecs_tasks.worker import worker as worker_module
+            from backend.ecs_tasks.worker.worker import Worker
+
+            return worker_module, Worker
+    except ImportError as e:
+        pytest.skip(f"Worker dependency not installed: {e}")
+    finally:
+        sys.path = old_path
+
+
+class TestStandaloneModeExitRaceIntegration:
+    """Integration tests using actual Worker.process_job to verify failure handling.
+
+    These tests instantiate the real Worker class (with mocked dependencies) to
+    ensure that when generate_data raises, process_job catches the exception and
+    calls mark_job_failed before returning.
+    """
+
+    def test_process_job_calls_mark_job_failed_on_exception(self):
+        """Verify process_job catches generate_data exceptions and calls mark_job_failed.
+
+        This exercises the actual code path in Worker.process_job (standalone mode)
+        rather than simulating the behavior with mock functions.
+        """
+        import os
+        from unittest.mock import patch, MagicMock
+
+        worker_module, Worker = _import_worker()
+
+        w = Worker.__new__(Worker)
+        w.shutdown_requested = False
+
+        # Mock generate_data to raise an exception
+        w.generate_data = MagicMock(
+            side_effect=RuntimeError("Bedrock unavailable")
+        )
+        w.mark_job_failed = MagicMock()
+        w.mark_job_complete = MagicMock()
+        w.mark_job_budget_exceeded = MagicMock()
+
+        job = {"job_id": "job-fail-test", "config": {"template_id": "tpl-1"}}
+
+        # Ensure standalone mode (not step_functions)
+        with patch.object(worker_module, "ORCHESTRATION_MODE", "standalone"):
+            w.process_job(job)
+
+        # mark_job_failed MUST have been called with the job_id and error message
+        w.mark_job_failed.assert_called_once()
+        call_args = w.mark_job_failed.call_args[0]
+        assert call_args[0] == "job-fail-test"
+        assert "Bedrock unavailable" in call_args[1]
+
+        # mark_job_complete should NOT have been called
+        w.mark_job_complete.assert_not_called()
+
+    def test_process_job_still_returns_when_mark_failed_raises(self):
+        """Verify process_job handles mark_job_failed itself failing gracefully.
+
+        If the DynamoDB call inside mark_job_failed fails, process_job should
+        catch that secondary exception and not crash.
+        """
+        import os
+        from unittest.mock import patch, MagicMock
+
+        worker_module, Worker = _import_worker()
+
+        w = Worker.__new__(Worker)
+        w.shutdown_requested = False
+
+        w.generate_data = MagicMock(
+            side_effect=RuntimeError("Original error")
+        )
+        w.mark_job_failed = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "InternalServerError", "Message": "DDB down"}},
+                "UpdateItem",
+            )
+        )
+        w.mark_job_complete = MagicMock()
+        w.mark_job_budget_exceeded = MagicMock()
+
+        job = {"job_id": "job-double-fail", "config": {"template_id": "tpl-1"}}
+
+        # Should not raise -- process_job catches the secondary exception
+        with patch.object(worker_module, "ORCHESTRATION_MODE", "standalone"):
+            w.process_job(job)
+
+        # mark_job_failed was attempted
+        w.mark_job_failed.assert_called_once()
+        # mark_job_complete was NOT called
+        w.mark_job_complete.assert_not_called()
