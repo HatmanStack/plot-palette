@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createBatch, generateUploadUrl } from '../services/api'
-import axios from 'axios'
 
 interface BatchWizardData {
   name: string
@@ -84,7 +83,9 @@ export default function CreateBatch() {
           data.seedDataFile.name,
           data.seedDataFile.type || 'application/json'
         )
-        await axios.put(upload_url, data.seedDataFile, {
+        await fetch(upload_url, {
+          method: 'PUT',
+          body: data.seedDataFile,
           headers: { 'Content-Type': data.seedDataFile.type || 'application/json' },
         })
         seedDataPath = s3_key

@@ -11,10 +11,6 @@ vi.mock('../services/api', () => ({
   generateUploadUrl: vi.fn(),
 }))
 
-vi.mock('axios', () => ({
-  default: { put: vi.fn() },
-}))
-
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
