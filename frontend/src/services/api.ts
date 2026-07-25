@@ -39,14 +39,17 @@ async function request<T>(
     // Network-level errors: no response received at all
     if (error instanceof TypeError) {
       // TypeError indicates network failure (no connection, CORS pre-flight failure, DNS)
-      throw new Error('Network error: unable to reach the server. Check your connection.')
+      throw new Error('Network error: unable to reach the server. Check your connection.', {
+        cause: error,
+      })
     }
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Request timed out. Please try again.')
+      throw new Error('Request timed out. Please try again.', { cause: error })
     }
     // Re-throw any other unexpected errors
     throw new Error(
-      `Network error: ${error instanceof Error ? error.message : 'unknown error'}`
+      `Network error: ${error instanceof Error ? error.message : 'unknown error'}`,
+      { cause: error }
     )
   }
 
